@@ -27,7 +27,7 @@ function ApiHistory({ isApiHistoryOpen, projectId: propProjectId }) {
     const username = user?.username;
     if (!projectId) return;
     if (!username || username === "Guest") {
-      setError("Please log in to see API history.");
+      setError("Please log in to seee API history.");
       return;
     }
     abortControllerRef.current?.abort();
@@ -41,7 +41,7 @@ function ApiHistory({ isApiHistoryOpen, projectId: propProjectId }) {
       const res = await fetch(url, { signal: controller.signal, credentials: "include" });
       if (!res.ok) throw new Error(await res.text());
       let data = await res.json();
-      // Normalize if backend still returns old format
+      // Normalize if backendstill returns old format
       if (data.length && !data[0].versions && data[0].actualFullUrls) {
         data = data.map(ep => ({
           baseUrlPath: ep.baseUrlPath,

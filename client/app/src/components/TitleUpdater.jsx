@@ -35,6 +35,10 @@ function getTitleFromPath(pathname) {
   return 'MockAPI';
 }
 
+
+
+
+
 export default function TitleUpdater() {
   const { pathname } = useLocation();
 
