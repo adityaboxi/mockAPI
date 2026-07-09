@@ -18,7 +18,6 @@ async function unsubscribe(req, res) {
     user.subscribe = false;
     await user.save();
 
-    console.log(`✅ Subscription cancelled for user: ${user.username}`);
     return res.status(200).json({
       success: true,
       message: 'Subscription cancelled',

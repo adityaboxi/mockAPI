@@ -32,13 +32,6 @@ async function update_api(req, res) {
   const { project_id, urlpath, apihistorydata, airesponse } = req.body;
   const username = req.user?.username;
 
-  // ---- LOG: Incoming request ----
-  console.log('\n📥 [update-api] Received request:');
-  console.log('  project_id:', project_id);
-  console.log('  urlpath:', urlpath);
-  console.log('  airesponse:', airesponse);
-  console.log('  username:', username);
-  console.log('  apihistorydata:', JSON.stringify(apihistorydata, null, 2));
 
   if (!project_id || !urlpath || !apihistorydata) {
     return res.status(400).json({ error: 'Missing required fields: project_id, urlpath, apihistorydata' });
@@ -47,44 +40,31 @@ async function update_api(req, res) {
   const aiResponseBool = airesponse === true || airesponse === 'true';
 
   try {
-    // ---- LOG: Looking for project ----
-    console.log(`🔍 [update-api] Looking for project with id: ${project_id}`);
     const project = await Project.findOne({ id: project_id });
     if (!project) {
-      console.log(`❌ [update-api] Project not found: ${project_id}`);
       return res.status(404).json({ error: 'Project not found' });
     }
-    console.log(`✅ [update-api] Project found: ${project.id} (${project.projectname})`);
-
+   
     if (!project.members.includes(username)) {
-      console.log(`👤 [update-api] Adding ${username} to project members.`);
       project.members.push(username);
       await project.save();
-      console.log(`✅ [update-api] Member added.`);
     }
 
     // ---- ProjectHistory ----
-    console.log(`📚 [update-api] Looking for ProjectApiHistory with projectCode: ${project.invitationCode}`);
     const projectHistory = await ProjectApiHistory.findOne({ projectCode: project.invitationCode });
     if (!projectHistory) {
-      console.log(`❌ [update-api] No ProjectApiHistory found for ${project.invitationCode}`);
-      return res.status(404).json({ error: 'No API history found. Use /add-api first.' });
+     return res.status(404).json({ error: 'No API history found. Use /add-api first.' });
     }
-    console.log(`✅ [update-api] ProjectApiHistory found with ${projectHistory.endpoints.length} endpoints.`);
-
+   
     if (!projectHistory.accessByUsernames.includes(username)) {
-      console.log(`➕ [update-api] Adding ${username} to accessByUsernames.`);
-      projectHistory.accessByUsernames.push(username);
+     projectHistory.accessByUsernames.push(username);
     }
 
     // ---- Find endpoint ----
-    console.log(`🔍 [update-api] Looking for endpoint with baseUrlPath: ${urlpath}`);
     const endpointIndex = projectHistory.endpoints.findIndex(ep => ep.baseUrlPath === urlpath);
     if (endpointIndex === -1) {
-      console.log(`❌ [update-api] Endpoint ${urlpath} not found.`);
       return res.status(404).json({ error: 'URL path not found. Use /add-api to create it.' });
     }
-    console.log(`✅ [update-api] Endpoint found at index ${endpointIndex}.`);
 
     const endpoint = projectHistory.endpoints[endpointIndex];
     const existingVersions = endpoint.versions || [];
@@ -92,7 +72,6 @@ async function update_api(req, res) {
       ? parseInt(existingVersions[existingVersions.length - 1].version.replace('v', ''), 10)
       : 0;
     const newVersion = `v${lastNum + 1}`;
-    console.log(`📌 [update-api] New version: ${newVersion} (last was ${lastNum > 0 ? existingVersions[existingVersions.length - 1].version : 'none'})`);
 
     // ---- Extract fields ----
     const {
@@ -143,7 +122,6 @@ async function update_api(req, res) {
     const customId = project.id;
 
     const actualFullUrl = buildActualFullUrl(protocol, host, customId, newVersion, urlpath, pathParams, queryParams);
-    console.log(`🔗 [update-api] Actual full URL: ${actualFullUrl}`);
 
     // ---- Build new version object ----
     const newVersionObj = {
@@ -171,13 +149,10 @@ async function update_api(req, res) {
       updatedAt: new Date(),
     };
 
-    console.log(`📦 [update-api] New version object:`, JSON.stringify(newVersionObj, null, 2));
-
     // ---- Update endpoint ----
     endpoint.versions.push(newVersionObj);
     endpoint.updatedAt = new Date();
     await projectHistory.save();
-    console.log(`✅ [update-api] ProjectApiHistory saved (new version added to endpoint).`);
 
     // ---- Prepare definition data for Redis & worker ----
     const definitionData = {
@@ -188,14 +163,9 @@ async function update_api(req, res) {
       apihistorydata: newVersionObj,
     };
 
-    console.log(`📤 [update-api] Storing in Redis and enqueuing worker job with:`);
-    console.log(JSON.stringify(definitionData, null, 2));
-
     await storeMockDefinition(customId, newVersion, method, urlpath, definitionData);
-    console.log(`✅ [update-api] Stored in Redis (mock definition).`);
 
     await addMockSyncJob('set', definitionData);
-    console.log(`✅ [update-api] Enqueued mockSyncJob (set).`);
 
     // ---- Create system event log ----
     const newLog = await SystemEventLog.create({
@@ -208,7 +178,6 @@ async function update_api(req, res) {
       statusCode: 200,
       createdAt: new Date(),
     });
-    console.log(`📝 [update-api] SystemEventLog created:`, JSON.stringify(newLog.toObject(), null, 2));
 
     if (req.io) {
       req.io.to(project_id).emit('new_api_log', newLog.toObject());

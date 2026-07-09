@@ -30,14 +30,6 @@ async function add_api(req, res) {
   const { project_id, urlpath, apihistorydata, airesponse } = req.body;
   const username = req.user?.username;
 
-  // ---- LOG: Incoming request ----
-  console.log('\n📥 [add-api] Received request:');
-  console.log('  project_id:', project_id);
-  console.log('  urlpath:', urlpath);
-  console.log('  airesponse:', airesponse);
-  console.log('  username:', username);
-  console.log('  apihistorydata:', JSON.stringify(apihistorydata, null, 2));
-
   if (!project_id || !urlpath || !apihistorydata) {
     return res.status(400).json({ error: 'Missing required fields: project_id, urlpath, apihistorydata' });
   }
@@ -45,27 +37,19 @@ async function add_api(req, res) {
   const aiResponseBool = airesponse === true || airesponse === 'true';
 
   try {
-    // ---- LOG: Looking for project ----
-    console.log(`🔍 [add-api] Looking for project with id: ${project_id}`);
     const project = await Project.findOne({ id: project_id });
     if (!project) {
-      console.log(`❌ [add-api] Project not found: ${project_id}`);
       return res.status(404).json({ error: 'Project not found' });
     }
-    console.log(`✅ [add-api] Project found: ${project.id} (${project.projectname})`);
 
     if (!project.members.includes(username)) {
-      console.log(`👤 [add-api] Adding ${username} to project members.`);
       project.members.push(username);
       await project.save();
-      console.log(`✅ [add-api] Member added.`);
     }
 
     // ---- ProjectHistory ----
-    console.log(`📚 [add-api] Looking for ProjectApiHistory with projectCode: ${project.invitationCode}`);
     let projectHistory = await ProjectApiHistory.findOne({ projectCode: project.invitationCode });
     if (!projectHistory) {
-      console.log(`🆕 [add-api] Creating new ProjectApiHistory for projectCode: ${project.invitationCode}`);
       projectHistory = new ProjectApiHistory({
         projectID: project.id,
         projectCode: project.invitationCode,
@@ -73,13 +57,11 @@ async function add_api(req, res) {
         endpoints: []
       });
     } else if (!projectHistory.accessByUsernames.includes(username)) {
-      console.log(`➕ [add-api] Adding ${username} to accessByUsernames.`);
       projectHistory.accessByUsernames.push(username);
     }
 
     // Check if endpoint already exists
     if (projectHistory.endpoints.some(ep => ep.baseUrlPath === urlpath)) {
-      console.log(`⚠️ [add-api] URL path already exists: ${urlpath}`);
       return res.status(409).json({ error: 'URL path already exists. Use /update-api to add a new version.' });
     }
 
@@ -162,8 +144,6 @@ async function add_api(req, res) {
       updatedAt: new Date()
     };
 
-    console.log(`📦 [add-api] New version object:`, JSON.stringify(newVersionObj, null, 2));
-
     const newEndpoint = {
       baseUrlPath: urlpath,
       versions: [newVersionObj],
@@ -172,11 +152,8 @@ async function add_api(req, res) {
       updatedAt: new Date()
     };
 
-    console.log(`📦 [add-api] New endpoint object:`, JSON.stringify(newEndpoint, null, 2));
-
     projectHistory.endpoints.push(newEndpoint);
     await projectHistory.save();
-    console.log(`✅ [add-api] ProjectApiHistory saved (${projectHistory.endpoints.length} endpoints).`);
 
     // ---- Prepare definition data for Redis & worker ----
     const definitionData = {
@@ -187,14 +164,9 @@ async function add_api(req, res) {
       apihistorydata: newVersionObj,
     };
 
-    console.log(`📤 [add-api] Storing in Redis and enqueuing worker job with:`);
-    console.log(JSON.stringify(definitionData, null, 2));
-
     await storeMockDefinition(customId, version, method, urlpath, definitionData);
-    console.log(`✅ [add-api] Stored in Redis (mock definition).`);
 
     await addMockSyncJob('set', definitionData);
-    console.log(`✅ [add-api] Enqueued mockSyncJob (set).`);
 
     // ---- Create system event log ----
     const newLog = await SystemEventLog.create({
@@ -207,7 +179,6 @@ async function add_api(req, res) {
       statusCode: 201,
       createdAt: new Date()
     });
-    console.log(`📝 [add-api] SystemEventLog created:`, JSON.stringify(newLog.toObject(), null, 2));
 
     if (req.io) {
       req.io.to(project_id).emit('new_api_log', newLog.toObject());

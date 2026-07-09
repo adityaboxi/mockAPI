@@ -17,7 +17,6 @@ const emailQueue = new Queue('emailQueue', redisConnectionOptions);
 const emailWorker = new Worker(
   'emailQueue',
   async (job) => {
-    console.log(`[Worker] Processing job ${job.id}...`);
     
     if (job.name === 'sendOTP') {
       const { email, otp, username } = job.data;

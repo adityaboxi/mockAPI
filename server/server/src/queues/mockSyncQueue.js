@@ -19,7 +19,6 @@ async function addMockSyncJob(action, data) {
       removeOnComplete: 100,
       removeOnFail: 50,
     });
-    console.log(`[Queue] Job ${job.id} queued — action: ${action}, projectId: ${data.projectId}, version: ${data.version}`);
     return job;
   } catch (err) {
     console.error('[Queue] Failed to add job:', err.message);

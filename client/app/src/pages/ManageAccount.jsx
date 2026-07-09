@@ -170,7 +170,6 @@ function ManageAccount() {
 
     try {
       const url = `${DELETE_VERSION_BASE_URL}/${encodeURIComponent(versionId)}?projectId=${encodeURIComponent(projectId)}`;
-      console.log("Deleting version ID:", versionId);
 
       const response = await fetch(url, {
         method: "DELETE",
@@ -192,7 +191,6 @@ function ManageAccount() {
             return { ...project, apis: updatedApis.filter((api) => api.versions.length > 0) };
           })
         );
-        console.log("Version deleted successfully");
       } else {
         const errorData = await response.json();
         console.error("Delete failed:", errorData);

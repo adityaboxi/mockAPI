@@ -32,8 +32,7 @@ async function reverse_ai(req, res) {
     }
 
     await redisClient.del(cacheKey);
-    console.log('[reverse-ai] Retrieved and deleted key:', cacheKey);
-
+    
     res.status(200).json({
       success: true,
       previousData: JSON.parse(originalData),

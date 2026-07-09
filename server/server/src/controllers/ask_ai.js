@@ -83,7 +83,6 @@ async function callGemini(userInput) {
 
   const result = await model.generateContent(prompt);
   const responseText = result.response.text();
-  console.log('[AI] Raw Gemini response:', responseText);
   return JSON.parse(responseText);
 }
 
@@ -113,7 +112,6 @@ async function ask_ai(req, res) {
     }
 
     const userInput = req.body;
-    console.log(`[ask-ai] geminiInput ------> ${req.body.geminiInput}`);
     if (!userInput || typeof userInput !== 'object') {
       return res.status(400).json({ error: 'Invalid input' });
     }
@@ -123,7 +121,6 @@ async function ask_ai(req, res) {
     await redisClient.setEx(cacheKey, ttl, JSON.stringify(userInput));
 
     const userType = isSubscribed ? 'subscribed user' : (isGuest ? 'guest' : 'unsubscribed user');
-    console.log(`[ask-ai] ${userType} ${username || 'guest'} request`);
 
     let aiResponse;
     try {

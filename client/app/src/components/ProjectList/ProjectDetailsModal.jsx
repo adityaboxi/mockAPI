@@ -196,7 +196,6 @@ const handleDeleteProject = async () => {
     }
 
     const result = await response.json();
-    console.log("✅ Project deleted:", result);
     onClose();
   } catch (err) {
     setDeleteError(err.message);

@@ -8,8 +8,7 @@ async function verify_project(req, res) {
     }
 
     try {
-        console.log('🔵 Verification request received:', { projectId });
-
+      
         // Query using the custom string 'id' field
         const project = await Project.findOne({
             id: projectId,
