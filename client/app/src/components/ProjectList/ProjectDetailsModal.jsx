@@ -116,15 +116,6 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
     }
   };
 
-
-
-
-
-
-
-
-
-
   const handleStatusChange = async (newStatus, target) => {
     if (statusUpdating) return;
     setStatusUpdating(true);
@@ -158,54 +149,76 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
 
   const copyInvitationCode = async () => {
     if (!localInvitationCode) return;
-    await navigator.clipboard.writeText(localInvitationCode);
-    setInviteCopied(true);
-    if (inviteTimeoutRef.current) clearTimeout(inviteTimeoutRef.current);
-    inviteTimeoutRef.current = setTimeout(() => setInviteCopied(false), 2000);
-  };
 
+    const showCopied = () => {
+      setInviteCopied(true);
+      if (inviteTimeoutRef.current) clearTimeout(inviteTimeoutRef.current);
+      inviteTimeoutRef.current = setTimeout(() => setInviteCopied(false), 2000);
+    };
 
-
-
-
-const handleDeleteProject = async () => {
-  if (isDeleting) return;
-
-  // ✅ Use local state if available, else fallback to prop
-  const invitationCode = localInvitationCode || project?.invitationCode;
-
-  if (!invitationCode) {
-    setDeleteError("Missing invitation code - cannot delete project");
-    return;
-  }
-
-  setIsDeleting(true);
-  setDeleteError(null);
-
-  try {
-    const response = await fetch(API_DELETE_PROJECT, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      credentials: "include",
-      body: JSON.stringify({ invitationCode }),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || errorData.message || "Failed to delete project");
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        await navigator.clipboard.writeText(localInvitationCode);
+        showCopied();
+        return;
+      } catch (err) {
+        console.error("Clipboard write failed, falling back:", err);
+      }
     }
 
-    const result = await response.json();
-    onClose();
-  } catch (err) {
-    setDeleteError(err.message);
-    console.error("❌ Deleeete error:", err);
-  } finally {
-    setIsDeleting(false);
-  }
-};
+    // Fallback for non-secure contexts / older browsers
+    const textarea = document.createElement("textarea");
+    textarea.value = localInvitationCode;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand("copy");
+      showCopied();
+    } catch (err) {
+      console.error("Fallback copy failed:", err);
+    } finally {
+      document.body.removeChild(textarea);
+    }
+  };
 
+  const handleDeleteProject = async () => {
+    if (isDeleting) return;
 
+    // ✅ Use local state if available, else fallback to prop
+    const invitationCode = localInvitationCode || project?.invitationCode;
+
+    if (!invitationCode) {
+      setDeleteError("Missing invitation code - cannot delete project");
+      return;
+    }
+
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    try {
+      const response = await fetch(API_DELETE_PROJECT, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ invitationCode }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || errorData.message || "Failed to delete project");
+      }
+
+      const result = await response.json();
+      onClose();
+    } catch (err) {
+      setDeleteError(err.message);
+      console.error("❌ Deleeete error:", err);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   if (!isOpen) return null;
   const displayMembers = members.length > 0 ? members : ["No members yet"];
@@ -228,15 +241,30 @@ const handleDeleteProject = async () => {
             <span>Code:</span>
             <div className="flex items-center gap-2 cursor-pointer" onClick={copyInvitationCode}>
               <code className="text-indigo-400 font-mono font-bold">{localInvitationCode}</code>
-              {inviteCopied ? (
-                <svg className="w-3.5 h-3.5 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              <span className="relative w-3.5 h-3.5 inline-block">
+                <svg
+                  key={inviteCopied ? "check" : "copy"}
+                  className={`w-3.5 h-3.5 absolute inset-0 transition-all duration-200 ease-out ${
+                    inviteCopied
+                      ? "text-green-500 scale-100 opacity-100"
+                      : "text-gray-400 hover:text-gray-300 scale-100 opacity-100"
+                  }`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  {inviteCopied ? (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  ) : (
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                    />
+                  )}
                 </svg>
-              ) : (
-                <svg className="w-3.5 h-3.5 text-gray-400 hover:text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                </svg>
-              )}
+              </span>
             </div>
           </div>
           <div className="flex justify-between">
