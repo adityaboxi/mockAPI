@@ -489,7 +489,7 @@ app.listen(PORT, () => {
 });
 
 process.on('SIGTERM', async () => {
-  console.log('[SHUTDOWN] Closing...');
+  console.log('[SHUTDOWN] Closing....');
   await redis.quit();
   process.exit(0);
 });
