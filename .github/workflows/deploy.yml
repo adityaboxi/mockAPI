@@ -1,0 +1,70 @@
+name: Deploy All Services
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            cd /home/ubuntu
+
+            # 1. If mockAPI folder is missing or not a Git repo, clone it
+            if [ ! -d "mockAPI/.git" ]; then
+              echo "📦 Cloning mockAPI repository..."
+              rm -rf mockAPI
+              git clone https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/adityaboxi/mockAPI.git mockAPI
+            fi
+
+            cd mockAPI
+
+            # 2. Write .env files from secrets (overwrites existing)
+            echo "${{ secrets.SERVER_ENV }}" > server/.env
+            echo "${{ secrets.CLIENT_ENV }}" > client/.env
+            echo "${{ secrets.MOCK_SERVER_ENV }}" > mock-server/.env
+
+            # 3. Pull latest changes
+            git pull origin main
+
+            # 4. Make deploy.sh executable and run it
+            chmod +x deploy.sh
+            ./deploy.sh
+
+            # 5. Health checks (optional – deploy.sh already handles success/failure,
+            #    but we add extra verification)
+            echo "⏳ Verifying services..."
+            for i in {1..30}; do
+              if curl -s -f http://localhost:8081/ > /dev/null; then
+                echo "✅ Server healthy"
+                break
+              fi
+              sleep 1
+            done
+            for i in {1..30}; do
+              if curl -s -f http://localhost:8080/healthz > /dev/null; then
+                echo "✅ Mock-server healthy"
+                break
+              fi
+              sleep 1
+            done
+            for i in {1..30}; do
+              if curl -s -f http://localhost:8082/ > /dev/null; then
+                echo "✅ Client healthy"
+                break
+              fi
+              sleep 1
+            done
+
+            echo "✅ All services deployed successfully!"
