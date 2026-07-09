@@ -1,8 +1,9 @@
 #!/bin/bash
 set -e
 
-# Clear Docker build cache (fixes corrupted snapshot errors)
-docker builder prune -f
+# 🔥 Remove ALL unused Docker data (containers, networks, images, build cache)
+docker system prune -af
+docker builder prune -af
 
 docker network create orch-net 2>/dev/null || true
 docker network create shared-net 2>/dev/null || true
