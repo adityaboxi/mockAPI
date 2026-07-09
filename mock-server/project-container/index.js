@@ -483,7 +483,7 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`\n🚀 [MOCK SERVER RUNNING]`);
   console.log(`📌 Target Project: ${PROJECT_ID}`);
-  console.log(`📌 Listening URL: http://localhost:${PORT}`);
+  console.log(`📌 Listeing URL: http://localhost:${PORT}`);
   console.log(`📌 Routes loaded: ${registeredKeys.size}`);
   console.log(`💡 Pausing this container (docker pause) will NOT delete routes – they are preserved in memory.`);
 });
