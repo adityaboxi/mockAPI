@@ -200,7 +200,7 @@ const handleDeleteProject = async () => {
     onClose();
   } catch (err) {
     setDeleteError(err.message);
-    console.error("❌ Delete error:", err);
+    console.error("❌ Deleeete error:", err);
   } finally {
     setIsDeleting(false);
   }
