@@ -1,4 +1,4 @@
-name: Deploy All Services
+name: Deploy Changed Services
 
 on:
   push:
@@ -21,7 +21,7 @@ jobs:
             set -e
             cd /home/ubuntu
 
-            # 1. If mockAPI folder is missing or not a Git repo, clone it
+            # Clone monorepo if missing
             if [ ! -d "mockAPI/.git" ]; then
               echo "📦 Cloning mockAPI repository..."
               rm -rf mockAPI
@@ -30,41 +30,79 @@ jobs:
 
             cd mockAPI
 
-            # 2. Write .env files from secrets (overwrites existing)
+            # Write .env files from secrets
             echo "${{ secrets.SERVER_ENV }}" > server/.env
             echo "${{ secrets.CLIENT_ENV }}" > client/.env
             echo "${{ secrets.MOCK_SERVER_ENV }}" > mock-server/.env
 
-            # 3. Pull latest changes
+            # Pull latest changes
             git pull origin main
 
-            # 4. Make deploy.sh executable and run it
+            # ---------- Detect changed folders ----------
+            # Compare with previous commit (if available)
+            if [ -z "$(git rev-parse HEAD^)" ]; then
+              CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+            else
+              CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
+            fi
+
+            echo "Changed files: $CHANGED_FILES"
+
+            # Initialize deployment flags
+            DEPLOY_SERVER=false
+            DEPLOY_MOCK=false
+            DEPLOY_CLIENT=false
+
+            # Check each service folder
+            if echo "$CHANGED_FILES" | grep -q "^server/"; then
+              DEPLOY_SERVER=true
+            fi
+            if echo "$CHANGED_FILES" | grep -q "^mock-server/"; then
+              DEPLOY_MOCK=true
+            fi
+            if echo "$CHANGED_FILES" | grep -q "^client/"; then
+              DEPLOY_CLIENT=true
+            fi
+
+            # If no service folder changed, skip deployment entirely
+            if [ "$DEPLOY_SERVER" = false ] && [ "$DEPLOY_MOCK" = false ] && [ "$DEPLOY_CLIENT" = false ]; then
+              echo "ℹ️ No service folder changed – skipping deployment."
+              exit 0
+            fi
+
+            # Export flags for deploy.sh
+            export DEPLOY_SERVER DEPLOY_MOCK DEPLOY_CLIENT
+
+            # Make deploy.sh executable and run it
             chmod +x deploy.sh
             ./deploy.sh
 
-            # 5. Health checks (optional – deploy.sh already handles success/failure,
-            #    but we add extra verification)
-            echo "⏳ Verifying services..."
-            for i in {1..30}; do
-              if curl -s -f http://localhost:8081/ > /dev/null; then
-                echo "✅ Server healthy"
-                break
-              fi
-              sleep 1
-            done
-            for i in {1..30}; do
-              if curl -s -f http://localhost:8080/healthz > /dev/null; then
-                echo "✅ Mock-server healthy"
-                break
-              fi
-              sleep 1
-            done
-            for i in {1..30}; do
-              if curl -s -f http://localhost:8082/ > /dev/null; then
-                echo "✅ Client healthy"
-                break
-              fi
-              sleep 1
-            done
+            # Health checks (only for deployed services)
+            echo "⏳ Verifying deployed services..."
+            if [ "$DEPLOY_SERVER" = "true" ] || [ "$DEPLOY_MOCK" = "true" ]; then
+              for i in {1..30}; do
+                if curl -s -f http://localhost:8081/ > /dev/null; then
+                  echo "✅ Server healthy"
+                  break
+                fi
+                sleep 1
+              done
+              for i in {1..30}; do
+                if curl -s -f http://localhost:8080/healthz > /dev/null; then
+                  echo "✅ Mock-server healthy"
+                  break
+                fi
+                sleep 1
+              done
+            fi
+            if [ "$DEPLOY_CLIENT" = "true" ]; then
+              for i in {1..30}; do
+                if curl -s -f http://localhost:8082/ > /dev/null; then
+                  echo "✅ Client healthy"
+                  break
+                fi
+                sleep 1
+              done
+            fi
 
-            echo "✅ All services deployed successfully!"
+            echo "✅ Deployment complete for changed services!"

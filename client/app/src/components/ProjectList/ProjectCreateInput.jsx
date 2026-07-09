@@ -11,6 +11,7 @@ const ProjectCreateInput = React.memo(({ user, onProjectCreated, isWhiteTheme })
     const projectName = newProjectNameInput.trim();
     if (!projectName) return;
     setIsCreating(true);
+
     try {
       const url = `${import.meta.env.VITE_API_URL_CREATEPROJECT}`;
       const res = await fetch(url, {
@@ -112,3 +113,8 @@ const ProjectCreateInput = React.memo(({ user, onProjectCreated, isWhiteTheme })
 });
 
 export default ProjectCreateInput;
+
+
+
+
+
