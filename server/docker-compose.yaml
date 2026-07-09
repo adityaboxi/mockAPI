@@ -1,0 +1,66 @@
+version: '3.8'
+
+# ======================== VOLUMES ========================
+volumes:
+  redis_data:
+
+# ======================== NETWORKS (external, created beforehand) ========================
+networks:
+  backend:
+    driver: bridge
+  orch-net:
+    external: true
+  shared-net:
+    external: true
+
+# ======================== SERVICES ========================
+services:
+  # ---------- Redis (external – used by BullMQ & Socket.IO) ----------
+  redis-external:
+    image: redis:7-alpine
+    container_name: redis-external
+    volumes:
+      - redis_data:/data
+    networks:
+      - shared-net
+    restart: unless-stopped
+
+  # ---------- App instances (3 replicas) ----------
+  app: &app-base
+    build: ./server
+    image: mockapi-server:latest
+    container_name: mockapi-app
+    env_file: .env        
+    networks:
+      - backend
+      - orch-net
+      - shared-net
+    depends_on:
+      - redis-external
+    restart: unless-stopped
+
+  app-2:
+    <<: *app-base
+    container_name: mockapi-app-2
+
+  app-3:
+    <<: *app-base
+    container_name: mockapi-app-3
+
+  # ---------- Nginx load balancer ----------
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: mockapi-nginx
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    depends_on:
+      - app
+      - app-2
+      - app-3
+    networks:
+      - backend
+      - orch-net
+      - shared-net

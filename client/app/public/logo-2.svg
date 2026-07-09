@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 500" width="100%" height="100%">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E293B" />
+      <stop offset="40%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+    
+    <!-- Code Highlight Gradient -->
+    <linearGradient id="highlightGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#2563EB" />
+    </linearGradient>
+
+    <!-- Glow Circle Gradient -->
+    <radialGradient id="glowGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.15" />
+      <stop offset="100%" stop-color="#38BDF8" stop-opacity="0" />
+    </radialGradient>
+  </defs>
+
+  <!-- Background Base -->
+  <rect width="500" height="500" rx="120" fill="url(#bgGrad)" />
+
+  <!-- Ambient Glow in Center -->
+  <circle cx="250" cy="230" r="180" fill="url(#glowGrad)" />
+
+  <!-- Inner border ring -->
+  <rect x="20" y="20" width="460" height="460" rx="100" fill="none" stroke="#334155" stroke-width="2" stroke-opacity="0.6" />
+
+  <!-- Schema graph node connection line decoration (underneath braces) -->
+  <g stroke="#1E293B" stroke-width="4" stroke-dasharray="8 8">
+    <line x1="160" y1="230" x2="340" y2="230" />
+    <line x1="250" y1="140" x2="250" y2="320" />
+  </g>
+
+  <!-- Brackets and Center API Node block -->
+  <g transform="translate(0, -10)">
+    <!-- Behind-glow behind braces -->
+    <path d="M 170,140 C 130,140 120,165 120,205 C 120,225 110,235 80,240 C 110,245 120,255 120,275 C 120,315 130,340 170,340" 
+          fill="none" stroke="#0284C7" stroke-width="28" stroke-opacity="0.2" stroke-linecap="round" />
+    <path d="M 330,140 C 370,140 380,165 380,205 C 380,225 390,235 420,240 C 390,245 380,255 380,275 C 380,315 370,340 330,340" 
+          fill="none" stroke="#0284C7" stroke-width="28" stroke-opacity="0.2" stroke-linecap="round" />
+
+    <!-- Code Curly Brackets {} -->
+    <!-- Left curly bracket { -->
+    <path d="M 170,140 C 130,140 120,165 120,205 C 120,225 110,235 80,240 C 110,245 120,255 120,275 C 120,315 130,340 170,340" 
+          fill="none" stroke="#38BDF8" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" />
+
+    <!-- Right curly bracket } -->
+    <path d="M 330,140 C 370,140 380,165 380,205 C 380,225 390,235 420,240 C 390,245 380,255 380,275 C 380,315 370,340 330,340" 
+          fill="none" stroke="#38BDF8" stroke-width="16" stroke-linecap="round" stroke-linejoin="round" />
+
+    <!-- Inner Mock Server Node & JSON Payload Interface -->
+    <g transform="translate(195, 175)">
+      <!-- Central core plate of API server -->
+      <rect x="0" y="0" width="110" height="130" rx="16" fill="url(#highlightGrad)" />
+      
+      <!-- Inside UI representation - 3 wire mock rows -->
+      <rect x="18" y="24" width="74" height="12" rx="4" fill="#FFFFFF" fill-opacity="0.9" />
+      <rect x="18" y="48" width="54" height="10" rx="4" fill="#FFFFFF" fill-opacity="0.6" />
+      <rect x="18" y="70" width="74" height="10" rx="4" fill="#FFFFFF" fill-opacity="0.6" />
+      <rect x="18" y="92" width="40" height="10" rx="4" fill="#FFFFFF" fill-opacity="0.8" />
+      
+      <!-- Little interactive pulse light inside -->
+      <circle cx="82" cy="53" r="5" fill="#34D399" />
+      <circle cx="82" cy="97" r="5" fill="#38BDF8" />
+    </g>
+  </g>
+
+  <!-- Professional Clean Typography for "MockAPI" label -->
+  <text x="250" y="435" font-family="'Space Grotesk', 'Inter', system-ui, sans-serif" font-size="44" font-weight="700" fill="#FFFFFF" text-anchor="middle" letter-spacing="4">
+    MOCKAPI
+  </text>
+  
+  <text x="250" y="465" font-family="'JetBrains Mono', monospace" font-size="14" font-weight="500" fill="#94A3B8" text-anchor="middle" letter-spacing="2">
+    SCHEMA ENGINE ACTIVE
+  </text>
+</svg>

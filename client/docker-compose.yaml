@@ -1,0 +1,57 @@
+services:
+  # ======================== REACT APP INSTANCE 1 ========================
+  react-app-1:
+    build:
+      context: .                     # points to client/ (so .env is available)
+      dockerfile: app/Dockerfile     # path to the Dockerfile inside app/
+      args:
+        - VITE_API_BASE_URL=${VITE_API_BASE_URL:-}
+        - VITE_SOCKET_URL=${VITE_SOCKET_URL:-}
+        # Add any other build‑time variables if needed
+    image: mockapi-react:latest
+    container_name: react-app-1
+    restart: unless-stopped
+    env_file: .env                   # loads runtime env from client/.env
+    networks:
+      - client-net
+
+  # ======================== REACT APP INSTANCE 2 ========================
+  react-app-2:
+    image: mockapi-react:latest
+    container_name: react-app-2
+    restart: unless-stopped
+    env_file: .env
+    networks:
+      - client-net
+
+  # ======================== REACT APP INSTANCE 3 ========================
+  react-app-3:
+    image: mockapi-react:latest
+    container_name: react-app-3
+    restart: unless-stopped
+    env_file: .env
+    networks:
+      - client-net
+
+  # ======================== NGINX LOAD BALANCER (client) ========================
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: mockapi-client
+    ports:
+      - "8082:80"
+    depends_on:
+      - react-app-1
+      - react-app-2
+      - react-app-3
+    networks:
+      - client-net
+      - shared-net           # to reach the server load balancer
+    restart: unless-stopped
+
+networks:
+  client-net:
+    driver: bridge
+  shared-net:
+    external: true           # must already exist

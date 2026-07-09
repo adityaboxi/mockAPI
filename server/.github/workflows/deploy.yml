@@ -1,0 +1,55 @@
+name: Deploy Server
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            cd /home/ubuntu
+            mkdir -p mockAPI
+            cd mockAPI
+
+            # Clone if missing
+            if [ ! -d "server/.git" ]; then
+              echo "📦 Cloning server..."
+              rm -rf server
+              git clone https://${{ secrets.GITHUB_TOKEN }}@github.com/adityaboxi/mockapi-server.git server
+            fi
+
+            # Write .env
+            echo "${{ secrets.SERVER_ENV }}" > server/.env
+
+            cd server
+            git pull origin main
+
+            # Stop and remove old container (to avoid image lock)
+            docker-compose down
+
+            # Rebuild and start
+            docker-compose up -d --build
+
+            # Health check
+            echo "⏳ Waiting for server health..."
+            for i in {1..30}; do
+              if curl -s -f http://localhost:8081/ > /dev/null; then
+                echo "✅ Server healthy"
+                exit 0
+              fi
+              sleep 1
+            done
+            echo "❌ Server health check failed"
+            exit 1

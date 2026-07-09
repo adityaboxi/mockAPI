@@ -1,0 +1,53 @@
+name: Deploy Client
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+            cd /home/ubuntu
+
+            # 1. Ensure mockAPI root exists
+            mkdir -p mockAPI
+            cd mockAPI
+
+            # 2. If client folder is missing or not a Git repo, clone it
+            if [ ! -d "client/.git" ]; then
+              echo "📦 Client folder missing/empty – cloning..."
+              rm -rf client
+              git clone https://github.com/adityaboxi/mockapi-client.git client
+            fi
+
+            # 3. Write .env file from secret (overwrites existing)
+            echo "${{ secrets.CLIENT_ENV }}" > client/.env
+
+            # 4. Pull latest code & deploy
+            cd client
+            git pull origin main
+            docker-compose up -d --build
+
+            # 5. Health check (retry up to 30s)
+            echo "⏳ Waiting for client health..."
+            for i in {1..30}; do
+              if curl -s -f http://localhost:8082/ > /dev/null; then
+                echo "✅ Client healthy"
+                exit 0
+              fi
+              sleep 1
+            done
+            echo "❌ Client health check failed"
+            exit 1
