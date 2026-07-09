@@ -17,7 +17,7 @@ app.use(compression({
 // ---------- Configuration ----------
 const PROJECT_ID = process.env.PROJECT_ID;
 if (!PROJECT_ID) {
-  console.error('FATAL: PROJECT_ID envvironment variable is required');
+ 
   process.exit(1);
 }
 const PORT = process.env.PORT || 3000;
@@ -90,21 +90,42 @@ const rateLimitScript = `
   local ttl = redis.call('TTL', key)
   return {current, ttl}
 `;
+
+
+
 async function checkRateLimit(routeKey, clientId, limit, windowMs = 60000) {
-if (!limit || limit <= 0) return { allowed: true };
-const redisKey = `rate:${PROJECT_ID}:${routeKey}:${clientId}`;
-const windowSec = Math.ceil(windowMs / 1000);
-try {
-const [count, ttl] = await redis.eval(rateLimitScript, 1, redisKey, limit, windowSec);
-if (count > limit) {
-return { allowed: false, resetSeconds: Math.max(1, ttl), remaining: 0 };
+  // Apply the deduction: user's effective limit = max(0, configured - 300)
+  const effectiveLimit = Math.max(0, limit - 300);
+  
+  // If effective limit is 0 or less, bypass rate limiting entirely
+  if (!effectiveLimit || effectiveLimit <= 0) {
+    return { allowed: true };
+  }
+
+  const redisKey = `rate:${PROJECT_ID}:${routeKey}:${clientId}`;
+  const windowSec = Math.ceil(windowMs / 1000);
+
+  try {
+    const [count, ttl] = await redis.eval(rateLimitScript, 1, redisKey, effectiveLimit, windowSec);
+    if (count > effectiveLimit) {
+      return {
+        allowed: false,
+        resetSeconds: Math.max(1, ttl),
+        remaining: 0
+      };
     }
-return { allowed: true, remaining: limit - count, resetSeconds: Math.max(1, ttl) };
+    return {
+      allowed: true,
+      remaining: effectiveLimit - count,
+      resetSeconds: Math.max(1, ttl)
+    };
   } catch (err) {
     console.warn('[RateLimit] Redis error, allowing request:', err.message);
-return { allowed: true };
+    return { allowed: true };
   }
 }
+
+
 // ---------- Faker Helpers ----------
 const fakerCache = new Map();
 const MAX_FAKER_CACHE = 200;
