@@ -6,6 +6,7 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 async function sendOTPEmail(email, otp, username) {
   const expirationTime = process.env.OTP_VALIDATION_TIME ; 
 
+  
   const msg = {
     to: email,
     from: process.env.FROM_EMAIL,

@@ -153,6 +153,7 @@ export const AuthProvider = ({ children }) => {
     setIsGuest(false);
   };
 
+  
   const logout = async () => {
     try {
       await fetch(LOGOUT_URL, {
