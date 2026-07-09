@@ -470,31 +470,33 @@ const TermsCondition = () => {
           </section>
 
           {/* -------- SECTION 12: MODIFICATIONS & CONTACT -------- */}
-          <section className="space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-bold tracking-tight">12. Modifications & Inquiries</h2>
-              {badge("blue", "TL;DR: Check here for updates")}
-            </div>
-            <p className="text-sm opacity-85 leading-relaxed">
-              These terms are fluid and subject to revision. Continued use of the platform
-              following any adjustment reflects binding acceptance of the updated terms. For
-              legal, compliance, or feature inquiries, contact us at:
-            </p>
-            <div className="flex flex-col space-y-1 text-sm">
-              
-                href="mailto:adityaboxi2005@gmail.com"
-                className="text-blue-500 hover:underline hover:text-blue-400 font-medium"
-              
-                adityaboxi2005@gmail.com
-              <a>
-              
-                href="mailto:krishnaboxi1983@gmail.com"
-                className="text-blue-500 hover:underline hover:text-blue-400 font-medium"
-              
-                krishnaboxi1983@gmail.com
-              </a>
-            </div>
-          </section>
+         <section className="space-y-3">
+  <div className="flex flex-wrap items-center justify-between gap-2">
+    <h2 className="text-lg font-bold tracking-tight">12. Modifications & Inquiries</h2>
+    <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-blue-500/10 text-blue-500 uppercase tracking-wider">
+      TL;DR: Check here for updates
+    </span>
+  </div>
+  <p className="text-sm opacity-85 leading-relaxed">
+    These terms are fluid and subject to revision. Continued use of the platform
+    following any adjustment reflects binding acceptance of the updated terms. For
+    legal, compliance, or feature inquiries, contact us at:
+  </p>
+  <div className="flex flex-col space-y-1 text-sm">
+    <a
+      href="mailto:adityaboxi2005@gmail.com"
+      className="text-blue-500 hover:underline hover:text-blue-400 font-medium"
+    >
+      adityaboxi2005@gmail.com
+    </a>
+    <a
+      href="mailto:krishnaboxi1983@gmail.com"
+      className="text-blue-500 hover:underline hover:text-blue-400 font-medium"
+    >
+      krishnaboxi1983@gmail.com
+    </a>
+  </div>
+</section>
 
           {/* -------- FOOTER ---------- */}
           <hr className={isWhiteTheme ? "border-gray-100" : "border-zinc-800"} />
