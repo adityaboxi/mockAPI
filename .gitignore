@@ -1,4 +1,4 @@
-# Environment files (secrets)
+# Environment files
 .env
 .env.local
 .env.production
@@ -24,12 +24,10 @@ Thumbs.db
 *.swp
 *.swo
 
-# Docker
+# Docker (root)
 .dockerignore
 
-# GitHub workflows (ignore .github folders in subdirectories)
+# Ignore .github, .gitignore, .dockerignore inside subdirectories
 /*/.github
-
-# Ignore .gitignore and .dockerignore files in subdirectories
 /*/.gitignore
 /*/.dockerignore
