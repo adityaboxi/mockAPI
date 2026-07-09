@@ -3,6 +3,7 @@ name: Deploy Changed Services
 on:
   push:
     branches: [ main ]
+  workflow_dispatch:   # 👈 manual trigger to deploy everything
 
 jobs:
   deploy:
@@ -21,16 +22,18 @@ jobs:
             set -e
             cd /home/ubuntu
 
-            # Clone monorepo if missing
+            # Clone monorepo if missing (fresh clone detection)
+            CLONED=false
             if [ ! -d "mockAPI/.git" ]; then
               echo "📦 Cloning mockAPI repository..."
               rm -rf mockAPI
               git clone https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/adityaboxi/mockAPI.git mockAPI
+              CLONED=true
             fi
 
             cd mockAPI
 
-            # Write .env files from secrets
+            # Write .env files from secrets (always overwrite)
             echo "${{ secrets.SERVER_ENV }}" > server/.env
             echo "${{ secrets.CLIENT_ENV }}" > client/.env
             echo "${{ secrets.MOCK_SERVER_ENV }}" > mock-server/.env
@@ -38,39 +41,44 @@ jobs:
             # Pull latest changes
             git pull origin main
 
-            # ---------- Detect changed folders ----------
-            # Compare with previous commit (if available)
-            if [ -z "$(git rev-parse HEAD^)" ]; then
-              CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
-            else
-              CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
-            fi
-
-            echo "Changed files: $CHANGED_FILES"
-
-            # Initialize deployment flags
+            # ---------- Determine what to deploy ----------
             DEPLOY_SERVER=false
             DEPLOY_MOCK=false
             DEPLOY_CLIENT=false
 
-            # Check each service folder
-            if echo "$CHANGED_FILES" | grep -q "^server/"; then
+            # If manual trigger or fresh clone – deploy ALL services
+            if [ "${{ github.event_name }}" == "workflow_dispatch" ] || [ "$CLONED" == "true" ]; then
+              echo "🔄 Manual trigger or fresh clone – deploying ALL services"
               DEPLOY_SERVER=true
-            fi
-            if echo "$CHANGED_FILES" | grep -q "^mock-server/"; then
               DEPLOY_MOCK=true
-            fi
-            if echo "$CHANGED_FILES" | grep -q "^client/"; then
               DEPLOY_CLIENT=true
+            else
+              # Detect changed folders (for normal push)
+              if [ -z "$(git rev-parse HEAD^)" ]; then
+                CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
+              else
+                CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
+              fi
+
+              echo "Changed files: $CHANGED_FILES"
+
+              if echo "$CHANGED_FILES" | grep -q "^server/"; then
+                DEPLOY_SERVER=true
+              fi
+              if echo "$CHANGED_FILES" | grep -q "^mock-server/"; then
+                DEPLOY_MOCK=true
+              fi
+              if echo "$CHANGED_FILES" | grep -q "^client/"; then
+                DEPLOY_CLIENT=true
+              fi
+
+              # If no service folder changed, skip deployment
+              if [ "$DEPLOY_SERVER" = false ] && [ "$DEPLOY_MOCK" = false ] && [ "$DEPLOY_CLIENT" = false ]; then
+                echo "ℹ️ No service folder changed – skipping deployment."
+                exit 0
+              fi
             fi
 
-            # If no service folder changed, skip deployment entirely
-            if [ "$DEPLOY_SERVER" = false ] && [ "$DEPLOY_MOCK" = false ] && [ "$DEPLOY_CLIENT" = false ]; then
-              echo "ℹ️ No service folder changed – skipping deployment."
-              exit 0
-            fi
-
-            # Export flags for deploy.sh
             export DEPLOY_SERVER DEPLOY_MOCK DEPLOY_CLIENT
 
             # Make deploy.sh executable and run it
@@ -105,4 +113,4 @@ jobs:
               done
             fi
 
-            echo "✅ Deployment complete for changed services!"
+            echo "✅ Deployment complete!"
