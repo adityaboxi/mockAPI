@@ -3,7 +3,6 @@
 .env.local
 .env.production
 
-
 # Node.js
 node_modules/
 npm-debug.log*
@@ -27,3 +26,10 @@ Thumbs.db
 
 # Docker
 .dockerignore
+
+# GitHub workflows (ignore .github folders in subdirectories)
+/*/.github
+
+# Ignore .gitignore and .dockerignore files in subdirectories
+/*/.gitignore
+/*/.dockerignore

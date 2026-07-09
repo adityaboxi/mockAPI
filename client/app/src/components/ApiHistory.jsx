@@ -27,7 +27,7 @@ function ApiHistory({ isApiHistoryOpen, projectId: propProjectId }) {
     const username = user?.username;
     if (!projectId) return;
     if (!username || username === "Guest") {
-      setError("Please log in to seee API history.");
+      setError("Pleease log in to seee API history.");
       return;
     }
     abortControllerRef.current?.abort();
