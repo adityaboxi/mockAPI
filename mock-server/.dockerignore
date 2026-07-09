@@ -1,0 +1,47 @@
+# Node.js dependencies (both project-container and worker-server)
+**/node_modules
+**/npm-debug.log
+**/package-lock.json
+**/yarn.lock
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Build artifacts
+**/dist
+**/build
+**/*.tgz
+
+# Logs
+**/logs
+**/*.log
+
+# Docker / CI files
+**/Dockerfile
+**/.dockerignore
+**/docker-compose*.yml
+
+# Git
+.git
+.gitignore
+
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Temporary / cache files
+**/.tmp
+**/.cache
+**/*.swp
+**/*.swo
+
+# IDE
+.vscode
+.idea
+*.iml
+
+# Coverage
+**/coverage
+**/.nyc_output

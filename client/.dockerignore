@@ -1,0 +1,50 @@
+# === Environment variables (secrets) ===
+
+.env.local
+.env.production
+.env.development
+.env.*.local
+
+# === Node.js ===
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# === Build outputs (we don't need to copy these; they are generated inside the container) ===
+dist
+build
+*.tsbuildinfo
+
+# === Version control ===
+.git
+.gitignore
+.gitattributes
+
+# === IDE / OS ===
+.vscode
+.idea
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# === Docker related (avoid infinite loops) ===
+Dockerfile
+.dockerignore
+docker-compose.yaml
+docker-compose*.yml
+
+# === Logs ===
+logs
+*.log
+
+# === Miscellaneous ===
+*.md
+*.pid
+*.seed

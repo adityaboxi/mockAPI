@@ -24,10 +24,8 @@ Thumbs.db
 *.swp
 *.swo
 
-# Docker (root)
-.dockerignore
+
 
 # Ignore .github, .gitignore, .dockerignore inside ALL subdirectories (any depth)
 **/.github
 **/.gitignore
-**/.dockerignore
