@@ -28,13 +28,13 @@ const io = new Server(server, {
   },
 });
 
-// ============ DATABASE CONNECTION (with graceful failure) ============
+// ============ DATABASE CONNECTION ============
 let dbConnected = false;
 let redisConnected = false;
 
 // Redis adapter clients (for clean shutdown)
 let pubClient, subClient;
-// Main Redis client (BullMQ) – adjust based on what connectRedis() returns
+// Main Redis client (BullMQ)
 let mainRedisClient;
 
 const startServer = async () => {
@@ -42,31 +42,28 @@ const startServer = async () => {
   try {
     await connectDB();
     dbConnected = true;
-  } catch (err) {
-    console.error('❌ MongoDB connection failed:', err.message);
+  } catch (_) {
     process.exit(1);
   }
 
   // ---------- Redis (BullMQ) ----------
   try {
-    const redisConn = await connectRedis();   // <-- this should return the Redis client
+    const redisConn = await connectRedis();
     redisConnected = true;
-    mainRedisClient = redisConn;             // save for shutdown
-  } catch (err) {
-    console.error('❌ Redis connection failed:', err.message);
+    mainRedisClient = redisConn;
+  } catch (_) {
     process.exit(1);
   }
 
-  // ---------- Socket.IO Redis adapter (multi-instance support) ----------
+  // ---------- Socket.IO Redis adapter ----------
   try {
     pubClient = createClient({ url: process.env.REDIS_URL || 'redis://redis-internal:6379' });
     subClient = pubClient.duplicate();
 
     await Promise.all([pubClient.connect(), subClient.connect()]);
     io.adapter(createAdapter(pubClient, subClient));
-  } catch (err) {
-    console.error('❌ Redis adapter failed:', err.message);
-    // non‑fatal – server can still run, but sticky sessions would be needed
+  } catch (_) {
+    // non‑fatal – server can still run
   }
 
   // ============ BACKGROUND QUEUE SERVICES ============
@@ -126,7 +123,7 @@ const startServer = async () => {
     res.json({ csrfToken: generateToken(req, res) });
   });
 
-  // ============ CONTROLLERS (unchanged) ============
+  // ============ CONTROLLERS ============
   const login = require('./controllers/login');
   const setuser = require('./controllers/setuser');
   const isemailvalid = require('./controllers/isemailvalid');
@@ -204,7 +201,7 @@ const startServer = async () => {
   let lastCheckedTime = new Date();
 
   io.on('connection', (socket) => {
-    console.warn(`✅ Socket connected: ${socket.id}`); // kept as warning
+    // no logging
 
     socket.on('join_room', (roomName) => {
       if (roomName && typeof roomName === 'string') {
@@ -220,8 +217,7 @@ const startServer = async () => {
           .sort({ createdAt: -1 })
           .limit(50);
         socket.emit('initial_logs', initialLogs);
-      } catch (err) {
-        console.error('Error fetching initial logs:', err);
+      } catch (_) {
         socket.emit('initial_logs', []);
       }
     });
@@ -230,9 +226,7 @@ const startServer = async () => {
       socket.leave(projectId);
     });
 
-    socket.on('disconnect', () => {
-      // no console log
-    });
+    socket.on('disconnect', () => {});
   });
 
   // Heartbeat interval – read from env
@@ -261,8 +255,8 @@ const startServer = async () => {
         }
       }
       lastCheckedTime = now;
-    } catch (error) {
-      console.error('Error polling logs:', error);
+    } catch (_) {
+      // ignore polling errors
     }
   }, LOG_POLLING_INTERVAL);
 
@@ -271,23 +265,18 @@ const startServer = async () => {
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     if (dataPollingInterval) clearInterval(dataPollingInterval);
 
-    // Close Socket.IO adapter Redis clients
     try {
       if (pubClient) await pubClient.quit();
       if (subClient) await subClient.quit();
-    } catch (err) {
-      console.error('Error closing Redis adapter clients:', err);
-    }
+    } catch (_) {}
 
-    // Close main Redis client (BullMQ) – if available
     if (mainRedisClient) {
-      try { await mainRedisClient.quit(); } catch (err) {}
+      try { await mainRedisClient.quit(); } catch (_) {}
     }
 
     server.close(() => {
       process.exit(0);
     });
-    // Force exit if server.close() hangs
     setTimeout(() => process.exit(1), 5000);
   };
 
@@ -296,12 +285,9 @@ const startServer = async () => {
 
   // ============ START SERVER ============
   const PORT = process.env.PORT || 3000;
-  server.listen(PORT, () => {
-    // no console log – silent start
-  });
+  server.listen(PORT, () => {});
 };
 
-startServer().catch(err => {
-  console.error('Fatal eror during sartup:', err);
+startServer().catch(() => {
   process.exit(1);
 });
