@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Clear Docker build cache (fixes corrupted snapshot errors)
+docker builder prune -f
+
 docker network create orch-net 2>/dev/null || true
 docker network create shared-net 2>/dev/null || true
 
