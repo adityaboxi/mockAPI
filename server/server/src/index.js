@@ -302,6 +302,6 @@ const startServer = async () => {
 };
 
 startServer().catch(err => {
-  console.error('Fatal errror durring sartup:', err);
+  console.error('Fatal eror durring sartup:', err);
   process.exit(1);
 });
