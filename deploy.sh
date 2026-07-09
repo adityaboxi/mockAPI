@@ -3,7 +3,7 @@ set -e
 
 # If no flags are set, do nothing
 if [ -z "$DEPLOY_SERVER" ] && [ -z "$DEPLOY_MOCK" ] && [ -z "$DEPLOY_CLIENT" ]; then
-  echo "No deployment flags set – skipping."
+  echo "No deployment flags set - skipping."
   exit 0
 fi
 
