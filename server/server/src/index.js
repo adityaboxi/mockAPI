@@ -28,6 +28,9 @@ const io = new Server(server, {
   },
 });
 
+console.log('[BOOT] CLIENT_URL =', process.env.CLIENT_URL);
+console.log('[BOOT] Socket.io server initialized');
+
 // ============ DATABASE CONNECTION ============
 let dbConnected = false;
 let redisConnected = false;
@@ -42,7 +45,9 @@ const startServer = async () => {
   try {
     await connectDB();
     dbConnected = true;
-  } catch (_) {
+    console.log('[BOOT] MongoDB connected');
+  } catch (err) {
+    console.error('[BOOT] MongoDB connection failed:', err.message);
     process.exit(1);
   }
 
@@ -51,7 +56,9 @@ const startServer = async () => {
     const redisConn = await connectRedis();
     redisConnected = true;
     mainRedisClient = redisConn;
-  } catch (_) {
+    console.log('[BOOT] BullMQ Redis connected');
+  } catch (err) {
+    console.error('[BOOT] BullMQ Redis connection failed:', err.message);
     process.exit(1);
   }
 
@@ -62,8 +69,9 @@ const startServer = async () => {
 
     await Promise.all([pubClient.connect(), subClient.connect()]);
     io.adapter(createAdapter(pubClient, subClient));
-  } catch (_) {
-    // non‑fatal – server can still run
+    console.log('[BOOT] Socket.io Redis adapter attached');
+  } catch (err) {
+    console.error('[BOOT] Socket.io Redis adapter failed (non-fatal):', err.message);
   }
 
   // ============ BACKGROUND QUEUE SERVICES ============
@@ -79,6 +87,12 @@ const startServer = async () => {
   app.use(express.json());
   app.use(cookieParser());
   app.use((req, res, next) => { req.io = io; next(); });
+
+  // ---------- DEBUG: log every incoming request ----------
+  app.use((req, res, next) => {
+    console.log(`[REQ] ${req.method} ${req.originalUrl} | Origin: ${req.headers.origin} | Cookie: ${req.headers.cookie ? 'present' : 'MISSING'}`);
+    next();
+  });
 
   // ---------- SECURITY: XSS Sanitizer ----------
   app.use((req, res, next) => {
@@ -200,33 +214,50 @@ const startServer = async () => {
   let dataPollingInterval;
   let lastCheckedTime = new Date();
 
+  // ---------- DEBUG: log engine-level connection errors (handshake rejections) ----------
+  io.engine.on('connection_error', (err) => {
+    console.error('[SOCKET.IO ENGINE ERROR]', {
+      code: err.code,
+      message: err.message,
+      context: err.context,
+      req_url: err.req?.url,
+      req_headers: err.req?.headers,
+    });
+  });
+
   io.on('connection', (socket) => {
-    // no logging
+    console.log(`[SOCKET] Connected: ${socket.id} | transport: ${socket.conn.transport.name}`);
 
     socket.on('join_room', (roomName) => {
       if (roomName && typeof roomName === 'string') {
+        console.log(`[SOCKET] ${socket.id} joined room: ${roomName}`);
         socket.join(roomName);
       }
     });
 
     socket.on('join_project', async (projectId) => {
       if (!projectId) return;
+      console.log(`[SOCKET] ${socket.id} joined project: ${projectId}`);
       socket.join(projectId);
       try {
         const initialLogs = await SystemEventLog.find({ projectId })
           .sort({ createdAt: -1 })
           .limit(50);
         socket.emit('initial_logs', initialLogs);
-      } catch (_) {
+      } catch (err) {
+        console.error('[SOCKET] Error fetching initial logs:', err.message);
         socket.emit('initial_logs', []);
       }
     });
 
     socket.on('leave_project', (projectId) => {
+      console.log(`[SOCKET] ${socket.id} left project: ${projectId}`);
       socket.leave(projectId);
     });
 
-    socket.on('disconnect', () => {});
+    socket.on('disconnect', (reason) => {
+      console.log(`[SOCKET] Disconnected: ${socket.id} | reason: ${reason}`);
+    });
   });
 
   // Heartbeat interval – read from env
@@ -255,13 +286,14 @@ const startServer = async () => {
         }
       }
       lastCheckedTime = now;
-    } catch (_) {
-      // ignore polling errors
+    } catch (err) {
+      console.error('[POLLING] Error polling logs:', err.message);
     }
   }, LOG_POLLING_INTERVAL);
 
   // ============ GRACEFUL SHUTDOWN ============
   const gracefulShutdown = async () => {
+    console.log('[SHUTDOWN] Graceful shutdown initiated');
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     if (dataPollingInterval) clearInterval(dataPollingInterval);
 
@@ -285,9 +317,12 @@ const startServer = async () => {
 
   // ============ START SERVER ============
   const PORT = process.env.PORT || 3000;
-  server.listen(PORT, () => {});
+  server.listen(PORT, () => {
+    console.log(`[BOOT] Server listening on port ${PORT}`);
+  });
 };
 
-startServer().catch(() => {
+startServer().catch((err) => {
+  console.error('[BOOT] Fatal startup error:', err);
   process.exit(1);
 });

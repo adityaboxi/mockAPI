@@ -15,6 +15,23 @@ const socketInstance = io(import.meta.env.VITE_API_BASE_URL, {
   withCredentials: true,
   transports: ["websocket"],
 });
+
+socketInstance.on("connect", () => {
+  console.log("[SOCKET] connected:", socketInstance.id);
+});
+
+socketInstance.on("connect_error", (err) => {
+  console.error("[SOCKET] connect_error:", err.message, err);
+});
+
+socketInstance.on("disconnect", (reason) => {
+  console.log("[SOCKET] disconnected:", reason);
+});
+
+socketInstance.on("error", (err) => {
+  console.error("[SOCKET] error:", err);
+});
+
     setSocket(socketInstance);
 return () => {
       socketInstance.disconnect();
