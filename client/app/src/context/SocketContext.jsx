@@ -1,44 +1,28 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { io } from "socket.io-client";
-
 const SocketContext = createContext(null);
-
 export const useSocket = () => {
-  const context = useContext(SocketContext);
-  if (context === undefined) {
-    throw new Error("useSocket must be used within a SocketProvider");
+const context = useContext(SocketContext);
+if (context === undefined) {
+throw new Error("useSocket must be used within a SocketProvider");
   }
-  return context;
+return context;
 };
-
 export const SocketProvider = ({ children }) => {
-  const [socket, setSocket] = useState(null);
-
+const [socket, setSocket] = useState(null);
   useEffect(() => {
-    // Force WebSocket transport to bypass Render proxy issues
-  const socketInstance = io(import.meta.env.VITE_API_BASE_URL, {
+const socketInstance = io(import.meta.env.VITE_API_BASE_URL, {
   withCredentials: true,
-  transports: ["polling", "websocket"], // ✅ ORDER MATTERS
+  transports: ["websocket"], // websocket-only, skips the polling handshake
 });
-
-    // Log success
-    socketInstance.on("connect", () => {
-    });
-
-    // Log the exact error
-    socketInstance.on("connect_error", (err) => {
-    });
-
     setSocket(socketInstance);
-
-    return () => {
+return () => {
       socketInstance.disconnect();
     };
   }, []);
-
-  return (
-    <SocketContext.Provider value={socket}>
-      {children}
-    </SocketContext.Provider>
+return (
+<SocketContext.Provider value={socket}>
+{children}
+</SocketContext.Provider>
   );
 };
