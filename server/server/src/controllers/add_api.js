@@ -15,7 +15,6 @@ function buildActualFullUrl(protocol, host, projectId, version, urlPath, pathPar
     })
     .join('/');
 
-    
   let fullUrl = `${protocol}://${host}/p/${projectId}/${version}/${resolvedPath}`;
   if (queryParams?.length) {
     const qs = queryParams
