@@ -1,8 +1,4 @@
-// ================================================================
-// Full MainContent.jsx with duplicate key prevention, FIXED AI toggle,
-// proper empty‑key handling, and LIVE cURL command generator
-// ================================================================
-import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
+/*import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useTheme } from "../context/ThemeContext";
 import { useProject } from "../context/ProjectContext";
 import { useApiVersion } from "../context/ApiVersionContext";
@@ -1095,11 +1091,25 @@ const generateCurlCommand = useCallback(() => {
 }
 
 export default MainContent;
+*/
 
-/*
+
+
+
+
+
+
+
+
+
+
+
+
 
 // ================================================================
-// MainContent.jsx – HTTPS always, correct URL with /p/{projectId}/{version}/{path}
+// Full MainContent.jsx with duplicate key prevention, FIXED AI toggle,
+// proper empty‑key handling, LIVE cURL command generator,
+// and STRICT dynamic URL generation (e.g. /p/user_project/v1/path)
 // ================================================================
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useTheme } from "../context/ThemeContext";
@@ -1117,8 +1127,8 @@ const ADD_API_URL = import.meta.env.VITE_API_URL_ADD_API;
 const ASK_AI_URL = import.meta.env.VITE_API_URL_ASK_AI;
 const REVERSE_AI_URL = import.meta.env.VITE_API_URL_REVERSE_AI;
 const OTP_TIMER = import.meta.env.VITE_OTP_TIMER;
-const MOCK_API_BASE_URL = import.meta.env.VITE_MOCK_API_BASE_URL; // e.g., "api.mockapi.info"
-const BACKEND_PROTOCOL = "http"; // protocol sent to the backend when saving
+const MOCK_API_BASE_URL = import.meta.env.VITE_MOCK_API_BASE_URL;
+const DOMAIN = import.meta.env.VITE_DOMAIN || 'api.mockapi.info'; // Used for clean final URL
 
 function MainContent() {
   const { theme } = useTheme();
@@ -1128,7 +1138,7 @@ function MainContent() {
   const [reverseTimer, setReverseTimer] = useState(0);
   const timerRef = useRef(null);
 
-  // State (no protocol)
+  const [protocol, setProtocol] = useState('http');
   const [method, setMethod] = useState('GET');
   const [urlPath, setUrlPath] = useState('');
   const [pathParams, setPathParams] = useState([]);
@@ -1198,9 +1208,9 @@ function MainContent() {
     return items.some((item, idx) => idx !== excludeIndex && item.key && item.key.trim().toLowerCase() === normalizedKey);
   };
 
-  // Populate UI when version data changes
   useEffect(() => {
     if (!currentVersionData) return;
+    setProtocol(currentVersionData.protocol || 'https');
     setMethod(currentVersionData.method || 'GET');
     setUrlPath(currentVersionData.urlPath || '');
     setIncludeAIResponse(currentVersionData.airesponse === true || currentVersionData.includeAiresponse === true);
@@ -1220,7 +1230,6 @@ function MainContent() {
     setExpectedApiKey(currentVersionData.expectedApiKey || '');
   }, [currentVersionData]);
 
-  // Path params extraction
   const extractPathParams = useCallback((path) => {
     const regex = /:([a-zA-Z_][a-zA-Z0-9_]*)/g;
     const matches = [...path.matchAll(regex)];
@@ -1325,19 +1334,51 @@ function MainContent() {
     setCookies(prev => prev.map((item, i) => i === idx ? { ...item, options: { ...item.options, [option]: val } } : item));
   };
 
-  // ---- Build final URL (HTTPS, with project ID and version) ----
-  const buildFinalUrl = useCallback(() => {
-    const projectId = currentProject?.id;
-    const version = currentVersionData?.version || 'v1';
-    if (!projectId) return '';
+  // ✅ FIXED: Build clean Final URL (Strictly enforces chosen protocol and builds full structured URL)
+  const buildFinalUrl = () => {
+    // Prefer DOMAIN env var, strip out dev ports like :0000 for clean preview
+    let domain = DOMAIN || MOCK_API_BASE_URL?.replace(/^https?:\/\//, '') || 'api.mockapi.info';
+    domain = domain.replace(/:\d+$/, ''); 
 
-    let cleanPath = (urlPath || '').replace(/^\/+|\/+$/g, '');
-    if (!cleanPath) cleanPath = '';
+    let finalUrl = `${protocol}://${domain}`;
 
-    return `https://${MOCK_API_BASE_URL}/p/${projectId}/${version}/${cleanPath}`;
-  }, [currentProject?.id, currentVersionData?.version, urlPath]);
+    // Automatically append /p/username_projectname/version format
+    if (user?.username && currentProject?.name) {
+       const version = currentVersionData?.version || 'v1';
+       finalUrl += `/p/${user.username}_${currentProject.name}/${version}`;
+    }
 
-  const finalUrl = useMemo(() => buildFinalUrl(), [buildFinalUrl]);
+    let path = urlPath || '';
+    path = path.replace(/[^a-zA-Z0-9/:_-]/g, '');
+    path = path.replace(/\/+/g, '/');
+    if (path.startsWith('/')) path = path.substring(1);
+    if (path.endsWith('/')) path = path.slice(0, -1);
+
+    pathParams.forEach(param => {
+      const placeholder = `:${param.key}`;
+      let value = param.value || `{${param.key}}`;
+      value = value.replace(/[^a-zA-Z0-9_-]/g, '');
+      path = path.replace(new RegExp(placeholder, 'g'), value);
+    });
+
+    if (path) finalUrl += '/' + path;
+
+    const activeParams = queryParams.filter(q => q.key && q.value);
+    if (activeParams.length > 0) {
+      const queryStrings = activeParams
+        .map(q => {
+          const key = q.key.replace(/[^a-zA-Z0-9_]/g, '');
+          const value = q.value.replace(/[^a-zA-Z0-9_\-.]/g, '');
+          if (key && value) return `${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+          return null;
+        })
+        .filter(Boolean);
+      if (queryStrings.length > 0) finalUrl += '?' + queryStrings.join('&');
+    }
+    return finalUrl;
+  };
+
+  const finalUrl = useMemo(() => buildFinalUrl(), [protocol, user, currentProject, currentVersionData, urlPath, pathParams, queryParams]);
 
   const copyToClipboard = async () => {
     if (!finalUrl) return;
@@ -1349,7 +1390,6 @@ function MainContent() {
 
   const resetStatus = (setter) => setter("idle");
 
-  // ---- Update API (sends BACKEND_PROTOCOL) ----
   const updateAPI = async () => {
     if (updateStatus === "loading" || updateStatus === "success") return;
     setUpdateStatus("loading");
@@ -1373,22 +1413,10 @@ function MainContent() {
     }
 
     const apihistorydata = {
-      protocol: BACKEND_PROTOCOL,
-      method,
-      pathParams,
-      queryParams,
-      headers,
-      responseHeaders,
-      cookies,
-      isAuthEnabled,
-      authScheme,
-      latency,
-      rateLimit,
-      statusCode,
-      requestBody: parsedRequestBody,
-      responseBody: parsedResponseBody,
-      expectedToken,
-      expectedApiKey
+      protocol, method, pathParams, queryParams, headers, responseHeaders, cookies,
+      isAuthEnabled, authScheme, latency, rateLimit, statusCode,
+      requestBody: parsedRequestBody, responseBody: parsedResponseBody,
+      expectedToken, expectedApiKey
     };
 
     try {
@@ -1415,7 +1443,6 @@ function MainContent() {
     }
   };
 
-  // ---- New API (sends BACKEND_PROTOCOL) ----
   const handleNewAPI = async () => {
     if (newApiStatus === "loading" || newApiStatus === "success" || newApiStatus === "exists") return;
     setNewApiStatus("loading");
@@ -1439,22 +1466,10 @@ function MainContent() {
     }
 
     const apihistorydata = {
-      protocol: BACKEND_PROTOCOL,
-      method,
-      pathParams,
-      queryParams,
-      headers,
-      responseHeaders,
-      cookies,
-      isAuthEnabled,
-      authScheme,
-      latency,
-      rateLimit,
-      statusCode,
-      requestBody: parsedRequestBody,
-      responseBody: parsedResponseBody,
-      expectedToken,
-      expectedApiKey
+      protocol, method, pathParams, queryParams, headers, responseHeaders, cookies,
+      isAuthEnabled, authScheme, latency, rateLimit, statusCode,
+      requestBody: parsedRequestBody, responseBody: parsedResponseBody,
+      expectedToken, expectedApiKey
     };
 
     try {
@@ -1492,23 +1507,10 @@ function MainContent() {
     const parsedRequestBody = safeParseJSON(requestBody);
     const parsedResponseBody = safeParseJSON(responseBody);
     const payload = {
-      protocol: BACKEND_PROTOCOL,
-      method,
-      urlPath,
-      pathParams,
-      queryParams,
-      requestBody: parsedRequestBody,
-      responseBody: parsedResponseBody,
-      isAuthEnabled,
-      authScheme,
-      latency,
-      rateLimit,
-      headers,
-      responseHeaders,
-      cookies,
-      includeAIResponse,
-      statusCode,
-      geminiInput
+      protocol, method, urlPath, pathParams, queryParams,
+      requestBody: parsedRequestBody, responseBody: parsedResponseBody,
+      isAuthEnabled, authScheme, latency, rateLimit, headers, responseHeaders, cookies,
+      includeAIResponse, statusCode, geminiInput
     };
     setGeminiInput('');
     setOriginalPayload(payload);
@@ -1522,6 +1524,7 @@ function MainContent() {
       });
       if (!response.ok) throw new Error('AI request failed');
       const result = await response.json();
+      setProtocol(result.protocol || 'https');
       setMethod(result.method || 'GET');
       setUrlPath(result.urlPath || '');
       setPathParams(result.pathParams || []);
@@ -1548,7 +1551,7 @@ function MainContent() {
           return prev - 1;
         });
       }, 1000);
-    } catch {
+    } catch (error) {
       // silent fail
     } finally {
       setIsAiLoading(false);
@@ -1573,6 +1576,7 @@ function MainContent() {
       const result = await response.json();
       if (result.previousData) {
         const prev = result.previousData;
+        setProtocol(prev.protocol || 'https');
         setMethod(prev.method || 'GET');
         setUrlPath(prev.urlPath || '');
         setPathParams(prev.pathParams || []);
@@ -1618,10 +1622,12 @@ function MainContent() {
     setStatusCode(num);
   };
 
+  // ✅ FIXED: Now safely uses `finalUrl` which dynamically updates live and correctly handles HTTP vs HTTPS
   const generateCurlCommand = useCallback(() => {
-    if (!finalUrl) return '';
+    const targetUrl = finalUrl; 
+    if (!targetUrl) return '';
 
-    let curl = `curl -X ${method} "${finalUrl}"`;
+    let curl = `curl -X ${method} "${targetUrl}"`;
 
     const allHeaders = [...headers];
 
@@ -1677,7 +1683,7 @@ function MainContent() {
         setCopiedCurl(true);
         if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
         copyTimeoutRef.current = setTimeout(() => setCopiedCurl(false), 2000);
-      } catch {
+      } catch (err) {
         console.error('Copy failed:', err);
         alert('Failed to copy cURL command. Please copy manually.');
       } finally {
@@ -1685,20 +1691,21 @@ function MainContent() {
       }
     };
 
-    if (navigator.clipboard?.writeText) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(curl)
         .then(() => {
           setCopiedCurl(true);
           if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
           copyTimeoutRef.current = setTimeout(() => setCopiedCurl(false), 2000);
         })
-        .catch(() => copyToClipboardFallback(curl));
+        .catch(() => {
+          copyToClipboardFallback(curl);
+        });
     } else {
       copyToClipboardFallback(curl);
     }
   }, [generateCurlCommand]);
 
-  // ---- Style helpers ----
   const border = w ? "border border-gray-200" : "border border-zinc-700/50";
   const panel = w ? `bg-white ${border}` : `bg-[#1e1e24] ${border}`;
   const panelHdr = w ? "bg-gray-50 border-b border-gray-200 text-gray-500" : "bg-[#2b2d31] border-b border-zinc-700/50 text-gray-400";
@@ -1739,14 +1746,14 @@ function MainContent() {
         }`}
       >
         <UrlBuilder
-          protocol="https"
-          setProtocol={() => {}}
+          protocol={protocol}
+          setProtocol={setProtocol}
           method={method}
           setMethod={setMethod}
           urlPath={urlPath}
           setUrlPath={handleUrlPathChange}
-          finalUrl={finalUrl}
-          actualFullUrl={finalUrl}
+          finalUrl={finalUrl} // Clean URL mapped directly to UI input component
+          actualFullUrl={finalUrl} // Passing this mapped URL so we have consistent behavior
           copied={copied}
           copyToClipboard={copyToClipboard}
           mutedTxt={mutedTxt}
@@ -1847,6 +1854,7 @@ function MainContent() {
         </div>
 
         <div className={`flex flex-col md:grid md:grid-cols-2 gap-0 border-b shrink-0 ${w ? "border-gray-200" : "border-zinc-700/50"}`}>
+          {/* Request Headers */}
           <div className={`p-3 flex flex-col gap-2 border-b md:border-b-0 md:border-r ${w ? "border-gray-200" : "border-zinc-700/50"}`}>
             <div className="flex items-center justify-between">
               <span className={`text-xs font-semibold ${labelTxt}`}>Request Headers ({headers.length})</span>
@@ -1883,6 +1891,7 @@ function MainContent() {
             </div>
           </div>
 
+          {/* Response Headers */}
           <div className="p-3 flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <span className={`text-xs font-semibold ${labelTxt}`}>Response Headers ({responseHeaders.length})</span>
@@ -1921,6 +1930,7 @@ function MainContent() {
         </div>
 
         <div className={`flex flex-col md:grid md:grid-cols-2 gap-0 border-b shrink-0 ${w ? "border-gray-200" : "border-zinc-700/50"}`}>
+          {/* Cookies */}
           <div className={`p-3 flex flex-col gap-2 border-b md:border-b-0 md:border-r ${w ? "border-gray-200" : "border-zinc-700/50"}`}>
             <div className="flex items-center justify-between">
               <span className={`text-xs font-semibold ${labelTxt}`}>Stateful Cookies ({cookies.length})</span>
@@ -1975,6 +1985,7 @@ function MainContent() {
             </div>
           </div>
 
+          {/* 🧪 test-with-curl section */}
           <div className="p-3 flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <span className={`text-xs font-semibold ${labelTxt}`}>🧪 test-with-curl</span>
@@ -1992,7 +2003,9 @@ function MainContent() {
             </div>
             <div className="relative">
               <pre className={`text-xs font-mono p-2 rounded overflow-x-auto max-h-48 whitespace-pre-wrap break-all ${w ? "bg-gray-50 border border-gray-200 text-gray-800" : "bg-[#0d0d0f] border border-zinc-700/50 text-gray-300"}`}>
-                {finalUrl ? generateCurlCommand() : (
+                {finalUrl ? (
+                  generateCurlCommand()
+                ) : (
                   <span className="text-amber-400 italic">💡 Fill in the API details to generate a test curl command.</span>
                 )}
               </pre>
@@ -2013,6 +2026,7 @@ function MainContent() {
         </div>
       </div>
 
+      {/* AI footer section */}
       <div className={`shrink-0 border-t z-20 flex flex-col relative block ${w ? "border-gray-200 bg-white" : "border-zinc-700/50 bg-[#1e1f22]"}`}>
         <div className={`flex items-center justify-between px-3 py-2 border-b text-xs shrink-0 h-12 ${w ? "border-gray-200 bg-gray-50" : "border-zinc-700/50 bg-[#1a1b1e]"}`}>
           <span className="text-blue-400 font-medium flex items-center gap-1.5 select-none"><span>✦</span> Ask MockAPI Ai</span>
@@ -2081,7 +2095,7 @@ function MainContent() {
           >
             {isAiLoading ? (
               <div className="flex items-center gap-1">
-                <svg className="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <svg className="animate-spin h-3 w-3 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
@@ -2097,4 +2111,4 @@ function MainContent() {
   );
 }
 
-export default MainContent;*/
+export default MainContent;
