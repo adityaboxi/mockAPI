@@ -29,7 +29,6 @@ module.exports = { sendotp };*/
 
 
 
-
 const { redisClient } = require('../config/redis');
 const { emailQueue } = require('../queues/emailQueue');
 
@@ -39,9 +38,17 @@ async function sendotp(username, email, password, name) {
     throw new Error('Username and email are required');
   }
 
+  const key = `${username}_${email}`;
+
+  // 🔥 Check if OTP already exists and still valid
+  const existingOtp = await redisClient.get(key);
+  if (existingOtp) {
+    // OTP already sent recently – skip sending another email
+    return { success: true, message: 'OTP already sent, please check your email' };
+  }
+
   // Generate OTP
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  const key = `${username}_${email}`;
   const otpTime = parseInt(process.env.OTP_VALIDATION_TIME, 10) || 120;
   const retryAttempts = parseInt(process.env.EMAIL_RETRY_ATTEMPTS, 10) || 3;
   const backoffDelay = parseInt(process.env.EMAIL_RETRY_BACKOFF_DELAY, 10) || 5000;

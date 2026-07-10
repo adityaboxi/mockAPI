@@ -1,4 +1,4 @@
-/*const SystemEventLog = require('../models/SystemEventLog');
+const SystemEventLog = require('../models/SystemEventLog');
 
 async function logs(req, res) {
   try {
@@ -25,9 +25,9 @@ async function logs(req, res) {
   }
 }
 
-module.exports = logs;*/
+module.exports = logs;
 
-
+/*
 const SystemEventLog = require('../models/SystemEventLog');
 
 async function logs(req, res) {
@@ -61,4 +61,4 @@ async function logs(req, res) {
   }
 }
 
-module.exports = logs;
+module.exports = logs;*/

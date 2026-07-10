@@ -1,4 +1,4 @@
-/*async function logout(req, res) {
+async function logout(req, res) {
   res.clearCookie('token', {
     httpOnly: true,
     sameSite: process.env.COOKIE_SAMESITE,
@@ -12,9 +12,9 @@
   res.json({ success: true, message: 'Logged out successfully' });
 }
 
-module.exports = logout;*/
+module.exports = logout;
 
-
+/*
 function logout(req, res) {
   try {
     res.clearCookie('token', {
@@ -36,4 +36,4 @@ function logout(req, res) {
   }
 }
 
-module.exports = logout;
+module.exports = logout;*/

@@ -1,4 +1,4 @@
-/*const Project = require('../models/Project');
+const Project = require('../models/Project');
 const ProjectApiHistory = require('../models/ProjectApiHistory');
 const { redisClient } = require('../config/redis');
 
@@ -64,10 +64,10 @@ async function verify_invitationcode_otp(req, res) {
   }
 }
 
-module.exports = verify_invitationcode_otp;*/
+module.exports = verify_invitationcode_otp;
 
 
-
+/*
 const Project = require('../models/Project');
 const ProjectApiHistory = require('../models/ProjectApiHistory');
 const { internalRedis } = require('../config/redis');
@@ -142,4 +142,4 @@ async function verify_invitationcode_otp(req, res) {
   }
 }
 
-module.exports = verify_invitationcode_otp;
+module.exports = verify_invitationcode_otp;*/

@@ -191,6 +191,12 @@ function Signup() {
 export default Signup;*/
 
 
+
+
+
+
+
+
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
@@ -206,6 +212,7 @@ function Signup() {
   const [isEmailValid, setIsEmailValid] = useState(null);
   const [isUsernameValid, setIsUsernameValid] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [signupError, setSignupError] = useState(""); // ✅ NEW: error state
 
   const isWhiteTheme = theme === "white";
 
@@ -242,21 +249,43 @@ function Signup() {
   };
 
   const handleSignup = async () => {
-    if (password !== confirmPassword) return;
-    if (isEmailValid === false || isUsernameValid === false) return;
-    if (!name || !email || !username || !password) return;
+    // Reset previous error
+    setSignupError("");
+
+    // Validation checks
+    if (password !== confirmPassword) {
+      setSignupError("Passwords do not match");
+      return;
+    }
+    if (isEmailValid === false || isUsernameValid === false) {
+      setSignupError("Email or username is already taken");
+      return;
+    }
+    if (!name || !email || !username || !password) {
+      setSignupError("All fields are required");
+      return;
+    }
+
     setIsLoading(true);
+
     try {
       const response = await fetch(SIGNUP_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, email, username, password }),
       });
+
       if (response.ok) {
         navigate("/otp", { state: { username, email, password, name } });
+        return;
       }
+
+      // ✅ Parse error from server and show it
+      const errorData = await response.json().catch(() => ({}));
+      const errorMessage = errorData.message || errorData.error || "Signup failed. Please try again.";
+      setSignupError(errorMessage);
     } catch {
-      // Silent – network errors are not shown to the user
+      setSignupError("Network error. Please check your connection.");
     } finally {
       setIsLoading(false);
     }
@@ -350,6 +379,11 @@ function Signup() {
             <p className="text-[11px] text-red-400 mt-1">passwords do not match</p>
           )}
         </div>
+
+        {/* ✅ Display signup errors */}
+        {signupError && (
+          <p className="text-[11px] text-red-400 mt-2 text-center">{signupError}</p>
+        )}
 
         <div className="mt-6 flex flex-col gap-1">
           <button

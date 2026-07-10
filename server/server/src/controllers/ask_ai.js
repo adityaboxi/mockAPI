@@ -1,4 +1,4 @@
-/*const { redisClient } = require('../config/redis');
+const { redisClient } = require('../config/redis');
 const crypto = require('crypto');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const User = require('../models/User');
@@ -147,8 +147,10 @@ async function ask_ai(req, res) {
 
 module.exports = {
   ask_ai
-};*/
+};
 
+
+/*
 
 
 const { redisClient } = require('../config/redis');
@@ -281,4 +283,4 @@ async function ask_ai(req, res) {
 
 module.exports = {
   ask_ai
-};
+};*/

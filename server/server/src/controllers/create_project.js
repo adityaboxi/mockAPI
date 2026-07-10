@@ -1,4 +1,4 @@
-/*const Project = require('../models/Project');
+const Project = require('../models/Project');
 const ProjectApiHistory = require('../models/ProjectApiHistory');
 const { redisClient } = require('../config/redis');
 const projectQueue = require('../queues/projectQueue');
@@ -89,10 +89,10 @@ return res.status(409).json({ error: "Conflict detected. Please try again." });
 return res.status(500).json({ error: "Failed to create project" });
   }
 }
-module.exports = create_project;*/
+module.exports = create_project;
 
 
-
+/*
 const Project = require('../models/Project');
 const ProjectApiHistory = require('../models/ProjectApiHistory');
 const { redisClient } = require('../config/redis');
@@ -209,4 +209,4 @@ async function create_project(req, res) {
   }
 }
 
-module.exports = create_project;
+module.exports = create_project;*/

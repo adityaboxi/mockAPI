@@ -1,4 +1,4 @@
-/*const Project = require('../models/Project');
+const Project = require('../models/Project');
 const ProjectApiHistory = require('../models/ProjectApiHistory');
 const SystemEventLog = require('../models/SystemEventLog');
 const { deleteMockDefinition } = require('../utils/redisMock');
@@ -96,10 +96,10 @@ async function delete_api_version(req, res) {
   }
 }
 
-module.exports = delete_api_version;*/
+module.exports = delete_api_version;
 
 
-
+/*
 const Project = require('../models/Project');
 const ProjectApiHistory = require('../models/ProjectApiHistory');
 const SystemEventLog = require('../models/SystemEventLog');
@@ -211,4 +211,4 @@ async function delete_api_version(req, res) {
   }
 }
 
-module.exports = delete_api_version;
+module.exports = delete_api_version;*/

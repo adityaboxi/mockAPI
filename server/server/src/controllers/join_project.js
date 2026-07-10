@@ -1,4 +1,4 @@
-/*const Project = require('../models/Project');
+const Project = require('../models/Project');
 const RequestJoinProject = require('../models/RequestJoinProject');
 
 async function join_project(req, res) {
@@ -66,10 +66,10 @@ async function join_project(req, res) {
   }
 }
 
-module.exports = join_project;*/
+module.exports = join_project;
 
 
-
+/*
 const Project = require('../models/Project');
 const RequestJoinProject = require('../models/RequestJoinProject');
 const { internalRedis } = require('../config/redis');
@@ -152,4 +152,4 @@ async function join_project(req, res) {
   }
 }
 
-module.exports = join_project;
+module.exports = join_project;*/

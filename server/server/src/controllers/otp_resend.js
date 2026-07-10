@@ -1,4 +1,4 @@
-/*const { redisClient } = require('../config/redis');
+const { redisClient } = require('../config/redis');
 const { emailQueue } = require('../queues/emailQueue');
 async function otp_resend(req, res) {
 const { email, username } = req.body;
@@ -27,9 +27,9 @@ await emailQueue.add('sendOTP', {
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 }
-module.exports = otp_resend;*/
+module.exports = otp_resend;
 
-
+/*
 const { redisClient } = require('../config/redis');
 const { emailQueue } = require('../queues/emailQueue');
 
@@ -66,4 +66,4 @@ async function otp_resend(req, res) {
   }
 }
 
-module.exports = otp_resend;
+module.exports = otp_resend;*/

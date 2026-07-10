@@ -1,4 +1,4 @@
-/*const User = require('../models/User');
+const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 
 async function login(req, res) {
@@ -61,13 +61,13 @@ async function login(req, res) {
   }
 }
 
-module.exports = login;*/
+module.exports = login;
 
 
 
 
 
-
+/*
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 
@@ -130,4 +130,4 @@ async function login(req, res) {
   }
 }
 
-module.exports = login;
+module.exports = login;*/

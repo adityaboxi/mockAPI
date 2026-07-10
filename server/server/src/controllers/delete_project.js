@@ -1,4 +1,4 @@
-/*const Project = require('../models/Project');
+const Project = require('../models/Project');
 const ProjectApiHistory = require('../models/ProjectApiHistory');
 const SystemEventLog = require('../models/SystemEventLog');
 const { redisClient } = require('../config/redis');
@@ -82,19 +82,18 @@ return res.status(200).json({
 return res.status(500).json({ error: 'Internal server error' });
   }
 }
-module.exports = delete_project;*/
+module.exports = delete_project;
 
 
+
+/*
 const Project = require('../models/Project');
 const ProjectApiHistory = require('../models/ProjectApiHistory');
 const SystemEventLog = require('../models/SystemEventLog');
 const { redisClient } = require('../config/redis');
 const projectQueue = require('../queues/projectQueue');
 
-/**
- * Delete all mock definitions for a project from Redis.
- * Uses SCAN to avoid blocking.
- */
+
 async function deleteMockDefinitionsForProject(projectId) {
   const pattern = `mockapi:def:${projectId}:*`;
   let deletedCount = 0;
@@ -107,10 +106,7 @@ async function deleteMockDefinitionsForProject(projectId) {
   return deletedCount;
 }
 
-/**
- * DELETE /api/deleteproject
- * Body: { invitationCode: "ABC123" }
- */
+
 async function delete_project(req, res) {
   const { invitationCode } = req.body;
   const username = req.user.username;
@@ -182,4 +178,4 @@ async function delete_project(req, res) {
   }
 }
 
-module.exports = delete_project;
+module.exports = delete_project;*/

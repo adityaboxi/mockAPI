@@ -1,4 +1,4 @@
-/*const jwt = require('jsonwebtoken');
+const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 
 async function sync_auth(req, res) {
@@ -32,12 +32,12 @@ async function sync_auth(req, res) {
   }
 }
 
-module.exports = sync_auth;*/
+module.exports = sync_auth;
 
 
 
 
-
+/*
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { internalRedis } = require('../config/redis');
@@ -107,4 +107,4 @@ async function sync_auth(req, res) {
   }
 }
 
-module.exports = sync_auth;
+module.exports = sync_auth;*/

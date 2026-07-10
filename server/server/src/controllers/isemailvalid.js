@@ -1,4 +1,4 @@
-/*const User = require('../models/User');
+const User = require('../models/User');
 const { redisClient } = require('../config/redis');
 
 const CACHE_TTL = parseInt(process.env.EMAIL_REDIS_TTL);
@@ -35,9 +35,9 @@ async function isemailvalid(req, res) {
   }
 }
 
-module.exports = isemailvalid;*/
+module.exports = isemailvalid;
 
-
+/*
 const User = require('../models/User');
 const { redisClient } = require('../config/redis');
 
@@ -80,4 +80,4 @@ async function isemailvalid(req, res) {
   }
 }
 
-module.exports = isemailvalid;
+module.exports = isemailvalid;*/

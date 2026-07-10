@@ -1,4 +1,4 @@
-/*const RequestJoinProject = require('../models/RequestJoinProject');
+const RequestJoinProject = require('../models/RequestJoinProject');
 
 async function revoke_request(req, res) {
   const { requestId } = req.params;
@@ -35,10 +35,10 @@ async function revoke_request(req, res) {
   }
 }
 
-module.exports = revoke_request;*/
+module.exports = revoke_request;
 
 
-
+/*
 const RequestJoinProject = require('../models/RequestJoinProject');
 const { internalRedis } = require('../config/redis');
 
@@ -91,4 +91,4 @@ async function revoke_request(req, res) {
   }
 }
 
-module.exports = revoke_request;
+module.exports = revoke_request;*/

@@ -1,4 +1,4 @@
-/*const User = require('../models/User');
+const User = require('../models/User');
 
 async function subscribe(req, res) {
   const username = req.user?.username;
@@ -40,9 +40,9 @@ async function subscribe(req, res) {
   }
 }
 
-module.exports = subscribe;*/
+module.exports = subscribe;
 
-
+/*
 const User = require('../models/User');
 const { internalRedis } = require('../config/redis');
 
@@ -97,4 +97,4 @@ async function subscribe(req, res) {
   }
 }
 
-module.exports = subscribe;
+module.exports = subscribe;*/

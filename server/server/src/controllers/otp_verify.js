@@ -1,4 +1,4 @@
-/*const User = require('../models/User');
+const User = require('../models/User');
 const { redisClient } = require('../config/redis');
 const jwt = require('jsonwebtoken');
 async function otp_verify(req, res) {
@@ -53,10 +53,10 @@ await redisClient.del(key);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 }
-module.exports = otp_verify;*/
+module.exports = otp_verify;
 
 
-
+/*
 const User = require('../models/User');
 const { redisClient } = require('../config/redis');
 const jwt = require('jsonwebtoken');
@@ -124,4 +124,4 @@ async function otp_verify(req, res) {
   }
 }
 
-module.exports = otp_verify;
+module.exports = otp_verify;*/

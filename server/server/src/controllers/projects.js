@@ -1,4 +1,4 @@
-/*const Project = require('../models/Project');
+const Project = require('../models/Project');
 
 async function projects(req, res) {
   const username = req.user?.username;
@@ -45,9 +45,9 @@ async function projects(req, res) {
   }
 }
 
-module.exports = projects;*/
+module.exports = projects;
 
-
+/*
 const Project = require('../models/Project');
 const { internalRedis } = require('../config/redis');
 
@@ -109,4 +109,4 @@ async function projects(req, res) {
   }
 }
 
-module.exports = projects;
+module.exports = projects;*/

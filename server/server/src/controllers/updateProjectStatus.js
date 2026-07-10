@@ -1,4 +1,4 @@
-/*const Project = require('../models/Project');
+const Project = require('../models/Project');
 const { redisClient } = require('../config/redis');
 const projectQueue = require('../queues/projectQueue');
 async function updateProjectStatus(req, res) {
@@ -44,9 +44,9 @@ return res.json({ success: true, project });
 return res.status(500).json({ error: "Failed to update status" });
   }
 }
-module.exports = updateProjectStatus;*/
+module.exports = updateProjectStatus;
 
-
+/*
 const Project = require('../models/Project');
 const { internalRedis } = require('../config/redis');
 const projectQueue = require('../queues/projectQueue');
@@ -107,4 +107,4 @@ async function updateProjectStatus(req, res) {
   }
 }
 
-module.exports = updateProjectStatus;
+module.exports = updateProjectStatus;*/

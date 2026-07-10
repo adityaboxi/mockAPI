@@ -1,4 +1,4 @@
-/*const { Queue } = require('bullmq');
+const { Queue } = require('bullmq');
 
 const mockSyncQueue = new Queue('mockSyncQueue', {
   connection: {
@@ -26,10 +26,10 @@ async function addMockSyncJob(action, data) {
   }
 }
 
-module.exports = { mockSyncQueue, addMockSyncJob };*/
+module.exports = { mockSyncQueue, addMockSyncJob };
 
 
-
+/*
 const { Queue } = require('bullmq');
 
 const mockSyncQueue = new Queue('mockSyncQueue', {
@@ -53,4 +53,6 @@ async function addMockSyncJob(action, data) {
   return job;
 }
 
-module.exports = { mockSyncQueue, addMockSyncJob };
+module.exports = { mockSyncQueue, addMockSyncJob };*/
+
+

@@ -1,4 +1,4 @@
-/*const RequestJoinProject = require('../models/RequestJoinProject');
+const RequestJoinProject = require('../models/RequestJoinProject');
 const Project = require('../models/Project');
 
 async function get_sent_requests(req, res) {
@@ -34,10 +34,10 @@ async function get_sent_requests(req, res) {
   }
 }
 
-module.exports = get_sent_requests;*/
+module.exports = get_sent_requests;
 
 
-
+/*
 const RequestJoinProject = require('../models/RequestJoinProject');
 const Project = require('../models/Project');
 const { internalRedis } = require('../config/redis');
@@ -92,4 +92,4 @@ async function get_sent_requests(req, res) {
   }
 }
 
-module.exports = get_sent_requests;
+module.exports = get_sent_requests;*/

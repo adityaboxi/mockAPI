@@ -1,4 +1,4 @@
-/*const jwt = require('jsonwebtoken');
+const jwt = require('jsonwebtoken');
 
 async function guestSession(req, res) {
   try {
@@ -37,11 +37,11 @@ async function guestSession(req, res) {
   }
 }
 
-module.exports = guestSession;*/
+module.exports = guestSession;
 
 
 
-
+/*
 const jwt = require('jsonwebtoken');
 
 function guestSession(req, res) {
@@ -82,4 +82,4 @@ function guestSession(req, res) {
   }
 }
 
-module.exports = guestSession;
+module.exports = guestSession;*/

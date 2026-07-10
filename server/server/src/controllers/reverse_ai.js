@@ -1,4 +1,4 @@
-/*const { redisClient } = require('../config/redis');
+const { redisClient } = require('../config/redis');
 const crypto = require('crypto');
 
 function sortObjectKeys(obj) {
@@ -44,10 +44,10 @@ async function reverse_ai(req, res) {
   }
 }
 
-module.exports = reverse_ai;*/
+module.exports = reverse_ai;
 
 
-
+/*
 const { redisClient } = require('../config/redis');
 const crypto = require('crypto');
 
@@ -95,4 +95,4 @@ async function reverse_ai(req, res) {
   }
 }
 
-module.exports = reverse_ai;
+module.exports = reverse_ai;*/

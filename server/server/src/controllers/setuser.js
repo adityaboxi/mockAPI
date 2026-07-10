@@ -1,4 +1,4 @@
-/*const User = require('../models/User');
+const User = require('../models/User');
 const { redisClient } = require('../config/redis');
 const { sendotp } = require('./sendotp');
 const CACHE_TTL_USERNAME = parseInt(process.env.USERNAME_REDIS_TTL, 10);
@@ -36,11 +36,11 @@ await sendotp(username, email, password, name);
     res.status(500).json({ message: 'Server error', error: error.message });
   }
 }
-module.exports = setuser;*/
+module.exports = setuser;
 
 
 
-
+/*
 const User = require('../models/User');
 const { redisClient } = require('../config/redis');
 const { sendotp } = require('./sendotp');
@@ -92,4 +92,4 @@ async function setuser(req, res) {
   }
 }
 
-module.exports = setuser;
+module.exports = setuser;*/

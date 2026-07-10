@@ -1,4 +1,4 @@
-/*const User = require('../models/User');
+const User = require('../models/User');
 
 async function unsubscribe(req, res) {
   const username = req.user?.username;
@@ -29,10 +29,10 @@ async function unsubscribe(req, res) {
   }
 }
 
-module.exports = unsubscribe;*/
+module.exports = unsubscribe;
 
 
-
+/*
 const User = require('../models/User');
 const { internalRedis } = require('../config/redis');
 
@@ -75,4 +75,4 @@ async function unsubscribe(req, res) {
   }
 }
 
-module.exports = unsubscribe;
+module.exports = unsubscribe;*/

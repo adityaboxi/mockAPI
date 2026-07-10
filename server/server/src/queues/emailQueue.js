@@ -1,4 +1,4 @@
-/*const { Queue, Worker } = require('bullmq');
+const { Queue, Worker } = require('bullmq');
 const { sendOTPEmail } = require('../services/emailService');
 
 // Use local Redis – no TLS, no Upstash-specific options
@@ -33,11 +33,11 @@ const emailWorker = new Worker(
 emailWorker.on('completed', (job) => console.log(`[Worker] 🎉 Job ${job.id} finished.`));
 emailWorker.on('failed', (job, err) => console.error(`[Worker] 💥 Job ${job.id} failed: ${err.message}`));
 
-module.exports = { emailQueue };*/
+module.exports = { emailQueue };
 
 
 
-
+/*
 const { Queue, Worker } = require('bullmq');
 const { sendOTPEmail } = require('../services/emailService');
 
@@ -69,4 +69,4 @@ const emailWorker = new Worker(
   redisConnectionOptions
 );
 
-module.exports = { emailQueue };
+module.exports = { emailQueue };*/

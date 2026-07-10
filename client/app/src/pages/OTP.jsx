@@ -213,6 +213,8 @@ function OTP() {
 export default OTP;*/
 
 
+
+
 import { useState, useRef, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -235,7 +237,6 @@ function OTP() {
   const isWhiteTheme = theme === "white";
 
   const intervalRef = useRef(null);
-  const hasSent = useRef(false);
   const OTP_TIMER = parseInt(import.meta.env.VITE_OTP_TIMER) || 120;
 
   const OTP_RESEND_URL = import.meta.env.VITE_API_URL_OTPRESEND;
@@ -282,15 +283,14 @@ function OTP() {
     }
   };
 
+  // ─── ON MOUNT: Start timer immediately (OTP was already sent during signup) ───
   useEffect(() => {
-    if (email && username && !hasSent.current) {
-      hasSent.current = true;
-      sendOtp();
+    if (email && username) {
+      startTimer(OTP_TIMER);
     }
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const verifyOtp = async () => {
@@ -420,6 +420,3 @@ function OTP() {
 }
 
 export default OTP;
-
-
-

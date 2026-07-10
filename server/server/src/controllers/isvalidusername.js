@@ -1,4 +1,4 @@
-/*const User = require('../models/User');
+const User = require('../models/User');
 const { redisClient } = require('../config/redis');
 
 const CACHE_TTL = parseInt(process.env.USERNAME_REDIS_TTL);
@@ -35,10 +35,10 @@ async function isvalidusername(req, res) {
   }
 }
 
-module.exports = isvalidusername;*/
+module.exports = isvalidusername;
 
 
-
+/*
 const User = require('../models/User');
 const { redisClient } = require('../config/redis');
 
@@ -78,4 +78,4 @@ async function isvalidusername(req, res) {
   }
 }
 
-module.exports = isvalidusername;
+module.exports = isvalidusername;*/

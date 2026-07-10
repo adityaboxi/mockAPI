@@ -1,4 +1,4 @@
-/*const Project = require('../models/Project');
+const Project = require('../models/Project');
 
 async function verify_project(req, res) {
     const { projectId } = req.body;
@@ -42,12 +42,12 @@ async function verify_project(req, res) {
     }
 }
 
-module.exports = verify_project;*/
+module.exports = verify_project;
 
 
 
 
-
+/*
 const Project = require('../models/Project');
 const { internalRedis } = require('../config/redis');
 
@@ -112,4 +112,4 @@ async function verify_project(req, res) {
   }
 }
 
-module.exports = verify_project;
+module.exports = verify_project;*/
