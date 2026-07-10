@@ -13,7 +13,7 @@ const [socket, setSocket] = useState(null);
   useEffect(() => {
 const socketInstance = io(import.meta.env.VITE_API_BASE_URL, {
   withCredentials: true,
-  transports: ["websocket"], // websocket-only, skips the polling handshake
+  transports: ["websocket"],
 });
     setSocket(socketInstance);
 return () => {
