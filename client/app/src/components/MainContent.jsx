@@ -19,9 +19,9 @@ const ASK_AI_URL = import.meta.env.VITE_API_URL_ASK_AI;
 const REVERSE_AI_URL = import.meta.env.VITE_API_URL_REVERSE_AI;
 const DOMAIN = import.meta.env.VITE_DOMAIN;
 const OTP_TIMER = import.meta.env.VITE_OTP_TIMER;
-const MOCK_API_URL = import.meta.env.VITE_MOCK_API_URL || 'http://13.48.78.221:8080';
+const MOCK_API_URL = import.meta.env.VITE_MOCK_API_URL ;
 
-
+const MOCK_API_BASE_URL = import.meta.env.VITE_MOCK_API_BASE_URL;
 
 function MainContent() {
   const { theme } = useTheme();
@@ -257,7 +257,7 @@ function MainContent() {
 
   // Build final URL
   const buildFinalUrl = () => {
-    let finalUrl = `${protocol}://${DOMAIN}`;
+ let finalUrl = MOCK_API_BASE_URL; // ✅ 
     let path = urlPath || '';
     path = path.replace(/[^a-zA-Z0-9/:_-]/g, '');
     path = path.replace(/\/+/g, '/');
