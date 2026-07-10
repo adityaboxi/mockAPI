@@ -1105,7 +1105,7 @@ export default MainContent;
 
 
 // ================================================================
-// Full MainContent.jsx – fixed URL builder with protocol support
+// MainContent.jsx – HTTPS for display, HTTP for backend
 // ================================================================
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useTheme } from "../context/ThemeContext";
@@ -1125,6 +1125,11 @@ const REVERSE_AI_URL = import.meta.env.VITE_API_URL_REVERSE_AI;
 const OTP_TIMER = import.meta.env.VITE_OTP_TIMER;
 const MOCK_API_BASE_URL = import.meta.env.VITE_MOCK_API_BASE_URL; // e.g., "api.mockapi.info"
 
+// Protocol for display (user-facing URL & curl)
+const DISPLAY_PROTOCOL = "https";
+// Protocol sent to the backend (internal HTTP)
+const BACKEND_PROTOCOL = "http";
+
 function MainContent() {
   const { theme } = useTheme();
   const { currentProject } = useProject();
@@ -1133,7 +1138,7 @@ function MainContent() {
   const [reverseTimer, setReverseTimer] = useState(0);
   const timerRef = useRef(null);
 
-  const [protocol, setProtocol] = useState('http');
+  // No protocol state – it's fixed
   const [method, setMethod] = useState('GET');
   const [urlPath, setUrlPath] = useState('');
   const [pathParams, setPathParams] = useState([]);
@@ -1205,7 +1210,6 @@ function MainContent() {
 
   useEffect(() => {
     if (!currentVersionData) return;
-    setProtocol(currentVersionData.protocol || 'https');
     setMethod(currentVersionData.method || 'GET');
     setUrlPath(currentVersionData.urlPath || '');
     setIncludeAIResponse(currentVersionData.airesponse === true || currentVersionData.includeAiresponse === true);
@@ -1329,9 +1333,9 @@ function MainContent() {
     setCookies(prev => prev.map((item, i) => i === idx ? { ...item, options: { ...item.options, [option]: val } } : item));
   };
 
-  // ---- Build final URL with protocol ----
+  // ---- Build final URL (for display & curl) using HTTPS ----
   const buildFinalUrl = useCallback(() => {
-    let finalUrl = `${protocol}://${MOCK_API_BASE_URL}`;
+    let finalUrl = `${DISPLAY_PROTOCOL}://${MOCK_API_BASE_URL}`;
     let path = urlPath || '';
     path = path.replace(/[^a-zA-Z0-9/:_-]/g, '');
     path = path.replace(/\/+/g, '/');
@@ -1357,9 +1361,9 @@ function MainContent() {
       if (queryStrings.length > 0) finalUrl += '?' + queryStrings.join('&');
     }
     return finalUrl;
-  }, [protocol, urlPath, pathParams, queryParams]);
+  }, [urlPath, pathParams, queryParams]);
 
-  const finalUrl = useMemo(() => buildFinalUrl(), [protocol, urlPath, pathParams, queryParams]);
+  const finalUrl = useMemo(() => buildFinalUrl(), [urlPath, pathParams, queryParams]);
 
   const copyToClipboard = async () => {
     const urlToCopy = currentVersionData?.actualFullUrl || finalUrl;
@@ -1372,6 +1376,7 @@ function MainContent() {
 
   const resetStatus = (setter) => setter("idle");
 
+  // ---- Update API (sends BACKEND_PROTOCOL) ----
   const updateAPI = async () => {
     if (updateStatus === "loading" || updateStatus === "success") return;
     setUpdateStatus("loading");
@@ -1395,10 +1400,22 @@ function MainContent() {
     }
 
     const apihistorydata = {
-      protocol, method, pathParams, queryParams, headers, responseHeaders, cookies,
-      isAuthEnabled, authScheme, latency, rateLimit, statusCode,
-      requestBody: parsedRequestBody, responseBody: parsedResponseBody,
-      expectedToken, expectedApiKey
+      protocol: BACKEND_PROTOCOL,      // ✅ send HTTP to backend
+      method,
+      pathParams,
+      queryParams,
+      headers,
+      responseHeaders,
+      cookies,
+      isAuthEnabled,
+      authScheme,
+      latency,
+      rateLimit,
+      statusCode,
+      requestBody: parsedRequestBody,
+      responseBody: parsedResponseBody,
+      expectedToken,
+      expectedApiKey
     };
 
     try {
@@ -1425,6 +1442,7 @@ function MainContent() {
     }
   };
 
+  // ---- New API (sends BACKEND_PROTOCOL) ----
   const handleNewAPI = async () => {
     if (newApiStatus === "loading" || newApiStatus === "success" || newApiStatus === "exists") return;
     setNewApiStatus("loading");
@@ -1448,10 +1466,22 @@ function MainContent() {
     }
 
     const apihistorydata = {
-      protocol, method, pathParams, queryParams, headers, responseHeaders, cookies,
-      isAuthEnabled, authScheme, latency, rateLimit, statusCode,
-      requestBody: parsedRequestBody, responseBody: parsedResponseBody,
-      expectedToken, expectedApiKey
+      protocol: BACKEND_PROTOCOL,      // ✅ send HTTP to backend
+      method,
+      pathParams,
+      queryParams,
+      headers,
+      responseHeaders,
+      cookies,
+      isAuthEnabled,
+      authScheme,
+      latency,
+      rateLimit,
+      statusCode,
+      requestBody: parsedRequestBody,
+      responseBody: parsedResponseBody,
+      expectedToken,
+      expectedApiKey
     };
 
     try {
@@ -1489,10 +1519,23 @@ function MainContent() {
     const parsedRequestBody = safeParseJSON(requestBody);
     const parsedResponseBody = safeParseJSON(responseBody);
     const payload = {
-      protocol, method, urlPath, pathParams, queryParams,
-      requestBody: parsedRequestBody, responseBody: parsedResponseBody,
-      isAuthEnabled, authScheme, latency, rateLimit, headers, responseHeaders, cookies,
-      includeAIResponse, statusCode, geminiInput
+      protocol: BACKEND_PROTOCOL,      // ✅ send HTTP to backend
+      method,
+      urlPath,
+      pathParams,
+      queryParams,
+      requestBody: parsedRequestBody,
+      responseBody: parsedResponseBody,
+      isAuthEnabled,
+      authScheme,
+      latency,
+      rateLimit,
+      headers,
+      responseHeaders,
+      cookies,
+      includeAIResponse,
+      statusCode,
+      geminiInput
     };
     setGeminiInput('');
     setOriginalPayload(payload);
@@ -1506,7 +1549,6 @@ function MainContent() {
       });
       if (!response.ok) throw new Error('AI request failed');
       const result = await response.json();
-      setProtocol(result.protocol || 'https');
       setMethod(result.method || 'GET');
       setUrlPath(result.urlPath || '');
       setPathParams(result.pathParams || []);
@@ -1558,7 +1600,6 @@ function MainContent() {
       const result = await response.json();
       if (result.previousData) {
         const prev = result.previousData;
-        setProtocol(prev.protocol || 'https');
         setMethod(prev.method || 'GET');
         setUrlPath(prev.urlPath || '');
         setPathParams(prev.pathParams || []);
@@ -1687,6 +1728,7 @@ function MainContent() {
     }
   }, [generateCurlCommand]);
 
+  // ---- Style helpers ----
   const border = w ? "border border-gray-200" : "border border-zinc-700/50";
   const panel = w ? `bg-white ${border}` : `bg-[#1e1e24] ${border}`;
   const panelHdr = w ? "bg-gray-50 border-b border-gray-200 text-gray-500" : "bg-[#2b2d31] border-b border-zinc-700/50 text-gray-400";
@@ -1726,9 +1768,10 @@ function MainContent() {
           : "[&::-webkit-scrollbar-track]:bg-[#1e1e24] [&::-webkit-scrollbar-thumb]:bg-zinc-700/40 hover:[&::-webkit-scrollbar-thumb]:bg-zinc-600/60"
         }`}
       >
+        {/* ---- Header with fixed HTTPS ---- */}
         <UrlBuilder
-          protocol={protocol}
-          setProtocol={setProtocol}
+          protocol={DISPLAY_PROTOCOL}
+          setProtocol={() => {}} // no-op
           method={method}
           setMethod={setMethod}
           urlPath={urlPath}
