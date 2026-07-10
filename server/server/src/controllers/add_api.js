@@ -166,7 +166,6 @@ async function add_api(req, res) {
       urlpath,
       apihistorydata: newVersionObj,
     };
-
     
     await storeMockDefinition(customId, version, method, urlpath, definitionData);
 
