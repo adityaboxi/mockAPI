@@ -16,6 +16,8 @@ const existingUser = await User.findOne({ $or: [{ username }, { email }] });
 if (existingUser) {
 return res.status(400).json({ message: 'User already exists' });
     }
+
+    
 const newUser = await User.create({
       username,
       email,
