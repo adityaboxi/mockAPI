@@ -1643,49 +1643,53 @@ function MainContent() {
     setStatusCode(num);
   };
 
-  const generateCurlCommand = useCallback(() => {
-    const targetUrl = currentVersionData?.actualFullUrl || finalUrl;
-    if (!targetUrl) return '';
+ const generateCurlCommand = useCallback(() => {
+  // Always use the live preview URL (built from current env)
+  if (!finalUrl) return '';
 
-    let curl = `curl -X ${method} "${targetUrl}"`;
+  let curl = `curl -X ${method} "${finalUrl}"`;
 
-    const allHeaders = [...headers];
+  const allHeaders = [...headers];
 
-    if (isAuthEnabled) {
-      if (authScheme === 'BearerAuth' && expectedToken) {
-        allHeaders.push({ key: 'Authorization', value: `Bearer ${expectedToken}` });
-      } else if (authScheme === 'ApiKeyAuth' && expectedApiKey) {
-        allHeaders.push({ key: 'X-API-Key', value: expectedApiKey });
-      }
+  if (isAuthEnabled) {
+    if (authScheme === 'BearerAuth' && expectedToken) {
+      allHeaders.push({ key: 'Authorization', value: `Bearer ${expectedToken}` });
+    } else if (authScheme === 'ApiKeyAuth' && expectedApiKey) {
+      allHeaders.push({ key: 'X-API-Key', value: expectedApiKey });
     }
+  }
 
-    if (requestBody && requestBody.trim()) {
-      const hasContentType = allHeaders.some(h => h.key.toLowerCase() === 'content-type');
-      if (!hasContentType) {
-        allHeaders.push({ key: 'Content-Type', value: 'application/json' });
-      }
+  if (requestBody && requestBody.trim()) {
+    const hasContentType = allHeaders.some(h => h.key.toLowerCase() === 'content-type');
+    if (!hasContentType) {
+      allHeaders.push({ key: 'Content-Type', value: 'application/json' });
     }
-    allHeaders.forEach(({ key, value }) => {
-      if (key && value) {
-        const safeValue = value.replace(/"/g, '\\"');
-        curl += ` -H "${key}: ${safeValue}"`;
-      }
-    });
-
-    const cookiePairs = cookies
-      .filter(c => c.key && c.value)
-      .map(c => `${c.key}=${c.value}`);
-    if (cookiePairs.length > 0) {
-      curl += ` -H "Cookie: ${cookiePairs.join('; ')}"`;
+  }
+  allHeaders.forEach(({ key, value }) => {
+    if (key && value) {
+      const safeValue = value.replace(/"/g, '\\"');
+      curl += ` -H "${key}: ${safeValue}"`;
     }
+  });
 
-    if (requestBody && requestBody.trim()) {
-      const escapedBody = requestBody.replace(/'/g, "'\\''");
-      curl += ` -d '${escapedBody}'`;
-    }
+  const cookiePairs = cookies
+    .filter(c => c.key && c.value)
+    .map(c => `${c.key}=${c.value}`);
+  if (cookiePairs.length > 0) {
+    curl += ` -H "Cookie: ${cookiePairs.join('; ')}"`;
+  }
 
-    return curl;
-  }, [method, currentVersionData?.actualFullUrl, finalUrl, headers, cookies, isAuthEnabled, authScheme, expectedToken, expectedApiKey, requestBody]);
+  if (requestBody && requestBody.trim()) {
+    const escapedBody = requestBody.replace(/'/g, "'\\''");
+    curl += ` -d '${escapedBody}'`;
+  }
+
+  return curl;
+}, [method, finalUrl, headers, cookies, isAuthEnabled, authScheme, expectedToken, expectedApiKey, requestBody]);
+
+
+
+
 
   const handleCopyCurl = useCallback(() => {
     const curl = generateCurlCommand();
