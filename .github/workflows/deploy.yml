@@ -38,8 +38,9 @@ jobs:
             echo "${{ secrets.CLIENT_ENV }}" > client/.env
             echo "${{ secrets.MOCK_SERVER_ENV }}" > mock-server/.env
 
-            # Pull latest changes
-            git pull origin main
+            # ---- Force a clean state (restore deleted files, discard local changes) ----
+            git fetch origin main
+            git reset --hard origin/main
 
             # ---------- Determine what to deploy ----------
             DEPLOY_SERVER=false
@@ -143,6 +144,3 @@ jobs:
             fi
 
             echo "✅ Deployment complete!"
-
-
-            
