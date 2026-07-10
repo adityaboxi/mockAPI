@@ -56,9 +56,7 @@ export const ApiVersionProvider = ({ children }) => {
   );
 };*/
 
-
-
-
+// src/context/ApiVersionContext.jsx
 import React, { createContext, useContext, useState, useCallback, useMemo } from 'react';
 
 const ApiVersionContext = createContext();
@@ -71,6 +69,7 @@ export const useApiVersion = () => {
 
 export const ApiVersionProvider = ({ children }) => {
   const [currentVersionData, setCurrentVersionData] = useState(null);
+  const [versionProjectId, setVersionProjectId] = useState(null); // ✅ NEW: store which project this version belongs to
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
@@ -89,6 +88,7 @@ export const ApiVersionProvider = ({ children }) => {
       if (response.ok) {
         const result = await response.json();
         setCurrentVersionData({ ...result.data });
+        setVersionProjectId(projectId); // ✅ remember which project this version belongs to
         return result.data;
       } else {
         const errorData = await response.json();
@@ -106,16 +106,18 @@ export const ApiVersionProvider = ({ children }) => {
 
   const clearVersion = useCallback(() => {
     setCurrentVersionData(null);
+    setVersionProjectId(null); // ✅ clear the project ID as well
     setError(null);
   }, []);
 
   const value = useMemo(() => ({
     currentVersionData,
+    versionProjectId, // ✅ expose it
     loadVersion,
     clearVersion,
     loading,
     error
-  }), [currentVersionData, loadVersion, clearVersion, loading, error]);
+  }), [currentVersionData, versionProjectId, loadVersion, clearVersion, loading, error]);
 
   return (
     <ApiVersionContext.Provider value={value}>
@@ -123,7 +125,3 @@ export const ApiVersionProvider = ({ children }) => {
     </ApiVersionContext.Provider>
   );
 };
-
-
-
-

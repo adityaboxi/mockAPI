@@ -1098,10 +1098,10 @@ export default MainContent;
 
 */
 
-
-
+// src/components/MainContent.jsx
 // ================================================================
 // MainContent.jsx – HTTPS for display/curl, HTTP for backend
+// with project-click guard
 // ================================================================
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useTheme } from "../context/ThemeContext";
@@ -1128,12 +1128,12 @@ const BACKEND_PROTOCOL = "http";
 function MainContent() {
   const { theme } = useTheme();
   const { currentProject } = useProject();
-  const { currentVersionData, loadVersion } = useApiVersion();
+  const { currentVersionData, versionProjectId, loadVersion } = useApiVersion();
   const { user } = useAuth();
   const [reverseTimer, setReverseTimer] = useState(0);
   const timerRef = useRef(null);
 
-  // No protocol state – it's fixed
+  // No protocol state – fixed
   const [method, setMethod] = useState('GET');
   const [urlPath, setUrlPath] = useState('');
   const [pathParams, setPathParams] = useState([]);
@@ -1203,8 +1203,17 @@ function MainContent() {
     return items.some((item, idx) => idx !== excludeIndex && item.key && item.key.trim().toLowerCase() === normalizedKey);
   };
 
+  // ---- Populate UI when version data changes – but ONLY if it belongs to the current project ----
   useEffect(() => {
     if (!currentVersionData) return;
+
+    // ✅ Guard: Only apply if the version belongs to the currently selected project
+    if (versionProjectId !== currentProject?.id) {
+      // This version is for a different project – do NOT overwrite the UI
+      return;
+    }
+
+    // Otherwise, populate all fields
     setMethod(currentVersionData.method || 'GET');
     setUrlPath(currentVersionData.urlPath || '');
     setIncludeAIResponse(currentVersionData.airesponse === true || currentVersionData.includeAiresponse === true);
@@ -1222,8 +1231,9 @@ function MainContent() {
     setCookies(currentVersionData.cookies || []);
     setExpectedToken(currentVersionData.expectedToken || '');
     setExpectedApiKey(currentVersionData.expectedApiKey || '');
-  }, [currentVersionData]);
+  }, [currentVersionData, versionProjectId, currentProject?.id]);
 
+  // ---- Path params extraction ----
   const extractPathParams = useCallback((path) => {
     const regex = /:([a-zA-Z_][a-zA-Z0-9_]*)/g;
     const matches = [...path.matchAll(regex)];
@@ -1352,7 +1362,7 @@ function MainContent() {
 
   const resetStatus = (setter) => setter("idle");
 
-  // ---- Update API (sends BACKEND_PROTOCOL) ----
+  // ---- Update API ----
   const updateAPI = async () => {
     if (updateStatus === "loading" || updateStatus === "success") return;
     setUpdateStatus("loading");
@@ -1418,7 +1428,7 @@ function MainContent() {
     }
   };
 
-  // ---- New API (sends BACKEND_PROTOCOL) ----
+  // ---- New API ----
   const handleNewAPI = async () => {
     if (newApiStatus === "loading" || newApiStatus === "success" || newApiStatus === "exists") return;
     setNewApiStatus("loading");
@@ -1741,16 +1751,15 @@ function MainContent() {
           : "[&::-webkit-scrollbar-track]:bg-[#1e1e24] [&::-webkit-scrollbar-thumb]:bg-zinc-700/40 hover:[&::-webkit-scrollbar-thumb]:bg-zinc-600/60"
         }`}
       >
-        {/* ---- Header with fixed HTTPS ---- */}
         <UrlBuilder
           protocol={DISPLAY_PROTOCOL}
-          setProtocol={() => {}} // no-op – protocol is fixed
+          setProtocol={() => {}}
           method={method}
           setMethod={setMethod}
           urlPath={urlPath}
           setUrlPath={handleUrlPathChange}
           finalUrl={finalUrl}
-          actualFullUrl={finalUrl} // use finalUrl for display
+          actualFullUrl={finalUrl}
           copied={copied}
           copyToClipboard={copyToClipboard}
           mutedTxt={mutedTxt}
@@ -1759,6 +1768,7 @@ function MainContent() {
           w={w}
         />
 
+        {/* Rest of the UI – unchanged */}
         <div className={`px-4 py-2 border-b flex items-center gap-6 flex-wrap shrink-0 ${w ? "bg-gray-50/40" : "bg-[#1a1b1e]/30"}`}>
           <Authtokenetc
             isAuthEnabled={isAuthEnabled}
@@ -2102,4 +2112,3 @@ function MainContent() {
 }
 
 export default MainContent;
-
