@@ -1703,9 +1703,10 @@ function MainContent() {
   };
 
   // ---------- Generate cURL command ----------
-  const generateCurlCommand = useCallback(() => {
-    // Use the actual deployed URL if available, otherwise use the preview URL
-    const targetUrl = currentVersionData?.actualFullUrl || finalUrl;
+  // ---------- Generate cURL command (LIVE) ----------
+const generateCurlCommand = useCallback(() => {
+    // ✅ Use the live preview URL (built from current env) instead of stored old URL
+    const targetUrl = finalUrl || currentVersionData?.actualFullUrl;
     if (!targetUrl) return '';
 
     let curl = `curl -X ${method} "${targetUrl}"`;
@@ -1751,7 +1752,11 @@ function MainContent() {
     }
 
     return curl;
-  }, [method, currentVersionData?.actualFullUrl, finalUrl, headers, cookies, isAuthEnabled, authScheme, expectedToken, expectedApiKey, requestBody]);
+  }, [method, finalUrl, headers, cookies, isAuthEnabled, authScheme, expectedToken, expectedApiKey, requestBody]);
+
+
+
+
 
   const handleCopyCurl = useCallback(() => {
     const curl = generateCurlCommand();
