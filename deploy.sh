@@ -1,8 +1,8 @@
 #!/bin/bash
 set -e
 
-# If no flags are set, do nothing
-if [ -z "$DEPLOY_SERVER" ] && [ -z "$DEPLOY_MOCK" ] && [ -z "$DEPLOY_CLIENT" ]; then
+# Check if any deployment flag is set (including DOMAIN)
+if [ -z "$DEPLOY_SERVER" ] && [ -z "$DEPLOY_MOCK" ] && [ -z "$DEPLOY_CLIENT" ] && [ -z "$DEPLOY_DOMAIN" ]; then
   echo "No deployment flags set - skipping."
   exit 0
 fi
@@ -35,7 +35,7 @@ if [ "$DEPLOY_MOCK" = "true" ]; then
   )
 fi
 
-# ---- 3. CLIENT (deploys last) ----
+# ---- 3. CLIENT (deploys third) ----
 if [ "$DEPLOY_CLIENT" = "true" ]; then
   echo "🚀 Deploying client..."
   (
@@ -44,6 +44,32 @@ if [ "$DEPLOY_CLIENT" = "true" ]; then
     docker rmi mockapi-react:latest 2>/dev/null || true
     docker-compose up -d --build
   )
+fi
+
+# ---- 4. DOMAIN SERVICE (Standalone Nginx) ----
+if [ "$DEPLOY_DOMAIN" = "true" ]; then
+  echo "🔄 Deploying Domain Service (Nginx reverse proxy)..."
+
+  # Stop and remove the old container (if it exists)
+  docker stop domain-proxy 2>/dev/null || true
+  docker rm domain-proxy 2>/dev/null || true
+
+  # Build the new image from the domainservice folder
+  cd domainservice
+  docker build -t domainservice:latest .
+
+  # Run the new container (ports 80 & 443, mount SSL certs)
+  docker run -d \
+    --name domain-proxy \
+    -p 80:80 \
+    -p 443:443 \
+    -v /etc/letsencrypt:/etc/letsencrypt:ro \
+    --add-host host.docker.internal:host-gateway \
+    --restart unless-stopped \
+    domainservice:latest
+
+  cd ..  # Go back to root
+  echo "✅ Domain Service container started"
 fi
 
 echo "✅ Deployment complete for selected services."

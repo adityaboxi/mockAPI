@@ -45,6 +45,7 @@ jobs:
             DEPLOY_SERVER=false
             DEPLOY_MOCK=false
             DEPLOY_CLIENT=false
+            DEPLOY_DOMAIN=false   # ⭐ NEW: Domain service flag
 
             # If manual trigger or fresh clone – deploy ALL services
             if [ "${{ github.event_name }}" == "workflow_dispatch" ] || [ "$CLONED" == "true" ]; then
@@ -52,6 +53,7 @@ jobs:
               DEPLOY_SERVER=true
               DEPLOY_MOCK=true
               DEPLOY_CLIENT=true
+              DEPLOY_DOMAIN=true   # ⭐ Deploy domain service as well
             else
               # Detect changed folders (for normal push)
               if [ -z "$(git rev-parse HEAD^)" ]; then
@@ -71,21 +73,26 @@ jobs:
               if echo "$CHANGED_FILES" | grep -q "^client/"; then
                 DEPLOY_CLIENT=true
               fi
+              # ⭐ NEW: Detect changes in the domainservice folder
+              if echo "$CHANGED_FILES" | grep -q "^domainservice/"; then
+                DEPLOY_DOMAIN=true
+              fi
 
               # If no service folder changed, skip deployment
-              if [ "$DEPLOY_SERVER" = false ] && [ "$DEPLOY_MOCK" = false ] && [ "$DEPLOY_CLIENT" = false ]; then
+              if [ "$DEPLOY_SERVER" = false ] && [ "$DEPLOY_MOCK" = false ] && [ "$DEPLOY_CLIENT" = false ] && [ "$DEPLOY_DOMAIN" = false ]; then
                 echo "ℹ️ No service folder changed – skipping deployment."
                 exit 0
               fi
             fi
 
-            export DEPLOY_SERVER DEPLOY_MOCK DEPLOY_CLIENT
+            # ⭐ NEW: Export the domain flag
+            export DEPLOY_SERVER DEPLOY_MOCK DEPLOY_CLIENT DEPLOY_DOMAIN
 
             # Make deploy.sh executable and run it
             chmod +x deploy.sh
             ./deploy.sh
 
-            # Health checks (only for deployed services)
+            # ---------- Health Checks ----------
             echo "⏳ Verifying deployed services..."
             if [ "$DEPLOY_SERVER" = "true" ] || [ "$DEPLOY_MOCK" = "true" ]; then
               for i in {1..30}; do
@@ -107,6 +114,16 @@ jobs:
               for i in {1..30}; do
                 if curl -s -f http://localhost:8082/ > /dev/null; then
                   echo "✅ Client healthy"
+                  break
+                fi
+                sleep 1
+              done
+            fi
+            # ⭐ NEW: Health check for Domain Service (Nginx on port 80)
+            if [ "$DEPLOY_DOMAIN" = "true" ]; then
+              for i in {1..30}; do
+                if curl -s -f http://localhost/ > /dev/null; then
+                  echo "✅ Domain service (Nginx) healthy"
                   break
                 fi
                 sleep 1
