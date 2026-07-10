@@ -1,4 +1,4 @@
-const { redisClient } = require('../config/redis');
+/*const { redisClient } = require('../config/redis');
 const TTL = parseInt(process.env.TTL, 10) ; 
 function getDefinitionKey(projectId, version, method, urlpath) {
 return `mockapi:def:${projectId}:${version}:${method.toUpperCase()}:${urlpath}`;
@@ -23,4 +23,27 @@ await redisClient.del(key);
 throw err;
   }
 }
-module.exports = {storeMockDefinition, deleteMockDefinition, getDefinitionKey };
+module.exports = {storeMockDefinition, deleteMockDefinition, getDefinitionKey };*/
+
+
+
+
+const { redisClient } = require('../config/redis');
+
+const TTL = parseInt(process.env.TTL, 10);
+
+function getDefinitionKey(projectId, version, method, urlpath) {
+  return `mockapi:def:${projectId}:${version}:${method.toUpperCase()}:${urlpath}`;
+}
+
+async function storeMockDefinition(projectId, version, method, urlpath, definition) {
+  const key = getDefinitionKey(projectId, version, method, urlpath);
+  await redisClient.setEx(key, TTL, JSON.stringify(definition));
+}
+
+async function deleteMockDefinition(projectId, version, method, urlpath) {
+  const key = getDefinitionKey(projectId, version, method, urlpath);
+  await redisClient.del(key);
+}
+
+module.exports = { storeMockDefinition, deleteMockDefinition, getDefinitionKey };

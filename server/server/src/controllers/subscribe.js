@@ -1,4 +1,4 @@
-const User = require('../models/User');
+/*const User = require('../models/User');
 
 async function subscribe(req, res) {
   const username = req.user?.username;
@@ -36,6 +36,63 @@ async function subscribe(req, res) {
     });
   } catch (error) {
     console.error('Subscription error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+module.exports = subscribe;*/
+
+
+const User = require('../models/User');
+const { internalRedis } = require('../config/redis');
+
+async function subscribe(req, res) {
+  const { username } = req.user; // guaranteed by auth middleware
+
+  try {
+    // Check if user is already subscribed
+    const existingUser = await User.findOne({ username }).select('subscribe');
+    if (!existingUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    if (existingUser.subscribe) {
+      return res.status(200).json({
+        success: true,
+        message: 'Already subscribed',
+        subscribe: true
+      });
+    }
+
+    // Activate subscription
+    const updatedUser = await User.findOneAndUpdate(
+      { username },
+      { $set: { subscribe: true, subscriptionUpdatedAt: new Date() } },
+      { new: true, projection: { password: 0, __v: 0 } }
+    );
+
+    // Invalidate user cache (so any cached data that depends on subscription status is refreshed)
+    const cachePattern = `cache:${username}:*`;
+    try {
+      const keys = await internalRedis.keys(cachePattern);
+      if (keys.length) {
+        await internalRedis.del(keys);
+      }
+    } catch (err) {
+      // Redis error – ignore
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Subscription activated',
+      subscribe: true,
+      user: {
+        id: updatedUser._id,
+        username: updatedUser.username,
+        subscribe: updatedUser.subscribe
+      }
+    });
+  } catch (error) {
+    console.error('[subscribe] Error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 }

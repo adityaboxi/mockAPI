@@ -1,4 +1,4 @@
-const { Queue, Worker } = require('bullmq');
+/*const { Queue, Worker } = require('bullmq');
 const { sendOTPEmail } = require('../services/emailService');
 
 // Use local Redis – no TLS, no Upstash-specific options
@@ -32,5 +32,39 @@ const emailWorker = new Worker(
 
 emailWorker.on('completed', (job) => console.log(`[Worker] 🎉 Job ${job.id} finished.`));
 emailWorker.on('failed', (job, err) => console.error(`[Worker] 💥 Job ${job.id} failed: ${err.message}`));
+
+module.exports = { emailQueue };*/
+
+
+
+
+const { Queue, Worker } = require('bullmq');
+const { sendOTPEmail } = require('../services/emailService');
+
+const REDIS_URL = process.env.REDIS_URL;
+
+const redisConnectionOptions = {
+  connection: {
+    url: REDIS_URL,
+    maxRetriesPerRequest: null,
+    enableReadyCheck: false,
+  }
+};
+
+const emailQueue = new Queue('emailQueue', redisConnectionOptions);
+
+const emailWorker = new Worker(
+  'emailQueue',
+  async (job) => {
+    if (job.name === 'sendOTP') {
+      const { email, otp, username } = job.data;
+      const emailResult = await sendOTPEmail(email, otp, username);
+      if (!emailResult.success) {
+        throw new Error(emailResult.error);
+      }
+    }
+  },
+  redisConnectionOptions
+);
 
 module.exports = { emailQueue };

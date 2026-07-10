@@ -1,4 +1,4 @@
-const Project = require('../models/Project');
+/*const Project = require('../models/Project');
 const ProjectApiHistory = require('../models/ProjectApiHistory');
 const SystemEventLog = require('../models/SystemEventLog');
 const { redisClient } = require('../config/redis');
@@ -22,10 +22,8 @@ await redisClient.del(key);
   }
 return deletedCount;
 }
-/**
- * DELETE /api/deleteproject
- * Body: { invitationCode: "ABC123" }
- */
+
+
 async function delete_project(req, res) {
 const { invitationCode } = req.body;
 const username = req.user?.username;
@@ -84,4 +82,104 @@ return res.status(200).json({
 return res.status(500).json({ error: 'Internal server error' });
   }
 }
+module.exports = delete_project;*/
+
+
+const Project = require('../models/Project');
+const ProjectApiHistory = require('../models/ProjectApiHistory');
+const SystemEventLog = require('../models/SystemEventLog');
+const { redisClient } = require('../config/redis');
+const projectQueue = require('../queues/projectQueue');
+
+/**
+ * Delete all mock definitions for a project from Redis.
+ * Uses SCAN to avoid blocking.
+ */
+async function deleteMockDefinitionsForProject(projectId) {
+  const pattern = `mockapi:def:${projectId}:*`;
+  let deletedCount = 0;
+  for await (const key of redisClient.scanIterator({ MATCH: pattern, COUNT: 100 })) {
+    if (typeof key === 'string' && key.trim()) {
+      await redisClient.del(key);
+      deletedCount++;
+    }
+  }
+  return deletedCount;
+}
+
+/**
+ * DELETE /api/deleteproject
+ * Body: { invitationCode: "ABC123" }
+ */
+async function delete_project(req, res) {
+  const { invitationCode } = req.body;
+  const username = req.user.username;
+  const role = req.user.role;
+
+  if (!invitationCode) {
+    return res.status(400).json({ error: 'invitationCode is required' });
+  }
+
+  try {
+    const project = await Project.findOne({ invitationCode });
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+
+    const isCreator = project.username === username;
+    const isAdmin = role === 'admin';
+    if (!isCreator && !isAdmin) {
+      return res.status(403).json({ error: 'Only project creators or admins can delete this project' });
+    }
+
+    // Delete associated data
+    await ProjectApiHistory.deleteOne({ projectCode: invitationCode });
+    await SystemEventLog.deleteMany({ projectId: project.id });
+
+    // Delete all mock definitions from Redis
+    await deleteMockDefinitionsForProject(project.id);
+
+    // Delete invitation key from Redis
+    await redisClient.del(`invitation:${invitationCode}`);
+
+    // Invalidate all user caches for project members
+    const members = [project.username, ...project.members];
+    for (const member of members) {
+      const pattern = `cache:${member}:*`;
+      try {
+        const keys = await redisClient.keys(pattern);
+        if (keys.length) {
+          await redisClient.del(keys);
+        }
+      } catch (err) {
+        // Redis error – ignore, cache will expire via TTL
+      }
+    }
+
+    // Delete the project document
+    await Project.deleteOne({ id: project.id });
+
+    // Enqueue a job for the worker (delete container + internal route)
+    await projectQueue.add('delete', {
+      action: 'delete',
+      projectId: project.id,
+    }, {
+      jobId: `delete_${project.id}_${Date.now()}`,
+    });
+
+    // Emit socket event if available
+    if (req.io) {
+      req.io.to(project.id).emit('project_deleted', { projectId: project.id });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Project '${project.id}' deleted successfully`,
+    });
+  } catch (error) {
+    console.error('[delete-project] Error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
 module.exports = delete_project;
