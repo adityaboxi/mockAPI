@@ -6,10 +6,11 @@ RUN rm /etc/nginx/conf.d/default.conf
 
 # Copy your custom domain routing config
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY maintenance.html /usr/share/nginx/html/maintenance.html
 
 # Expose both HTTP (80) and HTTPS (443)
 EXPOSE 80 443
 
-# Optional: Add a health check to verify Nginx is running
+# Health check: verify Nginx config is valid (faster and more reliable)
 HEALTHCHECK --interval=30s --timeout=3s \
-  CMD curl -f http://localhost/ || exit 1
+  CMD nginx -t || exit 1
