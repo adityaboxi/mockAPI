@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API Under Maintenance</title>
+    <style>
+        /* Base Reset and Typography */
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #0f172a; /* Sleek dark blue/slate background */
+            color: #e2e8f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            text-align: center;
+        }
+
+        /* Card Container */
+        .container {
+            max-width: 550px;
+            padding: 48px 40px;
+            background: #1e293b;
+            border-radius: 16px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            border: 1px solid #334155;
+            margin: 20px;
+        }
+
+        /* Animated Icon */
+        .icon {
+            margin-bottom: 24px;
+        }
+        .icon svg {
+            width: 72px;
+            height: 72px;
+            color: #38bdf8; /* Soft API-blue accent */
+            animation: pulse 2s infinite ease-in-out;
+        }
+
+        /* Text Elements */
+        h1 {
+            margin: 0 0 16px;
+            font-size: 28px;
+            font-weight: 600;
+            color: #f8fafc;
+            letter-spacing: -0.5px;
+        }
+        p {
+            margin: 0 0 32px;
+            font-size: 16px;
+            line-height: 1.6;
+            color: #94a3b8;
+        }
+
+        /* Developer-friendly Status Code Badge */
+        .status-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            background: #0f172a;
+            border-radius: 9999px;
+            border: 1px solid #334155;
+            font-size: 14px;
+            font-family: 'Fira Code', 'Courier New', Courier, monospace;
+            color: #cbd5e1;
+        }
+
+        /* Gentle Pulse Animation */
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.05); opacity: 0.7; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="icon">
+            <svg fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M21.75 17.25v-.228a4.5 4.5 4.5 0 00-.12-1.03l-2.268-.964a3.375 3.375 3.375 0 01-1.904-1.904l-.964-2.268a4.5 4.5 4.5 0 00-1.03-.12H12.75m-3 0h-.228a4.5 4.5 4.5 0 00-1.03.12l-2.268.964a3.375 3.375 3.375 0 01-1.904 1.904l-.964 2.268a4.5 4.5 4.5 0 00-.12 1.03v.228m19.5 0a3 3 0 01-3 3H5.25a3 3 0 01-3-3m19.5 0a3 3 0 00-3-3H5.25a3 3 0 00-3 3m16.5 0h.008v.008h-.008v-.008zm-3 0h.008v.008h-.008v-.008z"></path>
+            </svg>
+        </div>
+        
+        <h1>API System Maintenance</h1>
+        <p>Our API infrastructure is currently undergoing scheduled maintenance to improve system stability and performance. Services will be restored shortly.</p>
+        
+        <div class="status-badge">
+            HTTP 503 : Service Unavailable
+        </div>
+    </div>
+
+</body>
+</html>
