@@ -10,7 +10,7 @@ const app = express();
 // 🔒 SECURITY: Trustt the first   proxy (OpenResty) to get real client IP
 app.set('trust proxy', true);
 
-// ✅ Compression – reduces bandwidth
+// ✅ Comprsssion – reduces bandwidth
 app.use(express.json());
 app.use(cookieParser());
 app.use(compression({
