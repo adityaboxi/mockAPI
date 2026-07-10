@@ -51,6 +51,8 @@ const redisConnectionOptions = {
   }
 };
 
+
+
 const emailQueue = new Queue('emailQueue', redisConnectionOptions);
 
 const emailWorker = new Worker(
