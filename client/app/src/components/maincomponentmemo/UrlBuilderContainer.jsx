@@ -1,4 +1,4 @@
-/*import React, { useState, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import UrlBuilder from "./UrlBuilder";
 import PathParamsSection from "./PathParamsSection";
 
@@ -118,115 +118,7 @@ const UrlBuilderContainer = React.memo(({ protocol, setProtocol, method, setMeth
   );
 });
 
-export default UrlBuilderContainer;*/
-
-
-
-
-
-
-import React from "react";
-import UrlBuilder from "./UrlBuilder";
-import PathParamsSection from "./PathParamsSection";
-import QueryParamsSection from "./QueryParamsSection";
-
-const UrlBuilderContainer = React.memo(({
-  // UrlBuilder props
-  protocol,
-  setProtocol,
-  method,
-  setMethod,
-  urlPath,
-  setUrlPath,
-  finalUrl,
-  copied,
-  copyToClipboard,
-  // PathParamsSection props
-  pathParams,
-  updatePathParam,
-  removePathParam,
-  showPathParamInput,
-  setShowPathParamInput,
-  newPathKey,
-  setNewPathKey,
-  newPathValue,
-  setNewPathValue,
-  addPathParam,
-  // QueryParamsSection props
-  queryParams,
-  updateQueryParam,
-  removeQueryParam,
-  showQueryParamInput,
-  setShowQueryParamInput,
-  newQueryKey,
-  setNewQueryKey,
-  newQueryValue,
-  setNewQueryValue,
-  addQueryParam,
-  // Styling
-  labelTxt,
-  miniBtn,
-  inp,
-  mutedTxt,
-  w
-}) => {
-  return (
-    <>
-      <UrlBuilder
-        protocol={protocol}
-        setProtocol={setProtocol}
-        method={method}
-        setMethod={setMethod}
-        urlPath={urlPath}
-        setUrlPath={setUrlPath}
-        finalUrl={finalUrl}
-        copied={copied}
-        copyToClipboard={copyToClipboard}
-        mutedTxt={mutedTxt}
-        inp={inp}
-        miniBtn={miniBtn}
-        w={w}
-      />
-
-      <div className={`grid grid-cols-2 gap-0 border-b ${w ? "border-gray-200" : "border-zinc-700/50"}`}>
-        <PathParamsSection
-          pathParams={pathParams}
-          updatePathParam={updatePathParam}
-          removePathParam={removePathParam}
-          showPathParamInput={showPathParamInput}
-          setShowPathParamInput={setShowPathParamInput}
-          newPathKey={newPathKey}
-          setNewPathKey={setNewPathKey}
-          newPathValue={newPathValue}
-          setNewPathValue={setNewPathValue}
-          addPathParam={addPathParam}
-          labelTxt={labelTxt}
-          miniBtn={miniBtn}
-          inp={inp}
-          mutedTxt={mutedTxt}
-          w={w}
-        />
-
-        <QueryParamsSection
-          queryParams={queryParams}
-          updateQueryParam={updateQueryParam}
-          removeQueryParam={removeQueryParam}
-          showQueryParamInput={showQueryParamInput}
-          setShowQueryParamInput={setShowQueryParamInput}
-          newQueryKey={newQueryKey}
-          setNewQueryKey={setNewQueryKey}
-          newQueryValue={newQueryValue}
-          setNewQueryValue={setNewQueryValue}
-          addQueryParam={addQueryParam}
-          labelTxt={labelTxt}
-          miniBtn={miniBtn}
-          inp={inp}
-          mutedTxt={mutedTxt}
-          w={w}
-        />
-      </div>
-    </>
-  );
-});
-
 export default UrlBuilderContainer;
+
+
+
