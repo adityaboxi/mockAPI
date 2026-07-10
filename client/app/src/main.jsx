@@ -9,14 +9,19 @@ import { ThemeProvider } from './context/ThemeContext'
 import { ApiVersionProvider } from './context/ApiVersionContext'
 import { SocketProvider } from "./context/SocketContext";
 
-function RootContainer() {
+// ===== GLOBAL FETCH OVERRIDE =====
+// Ensures every fetch request sends credentials (cookies) by default.
+const originalFetch = window.fetch;
+window.fetch = function(url, options) {
+  options = options || {};
+  options.credentials = 'include';
+  return originalFetch.call(this, url, options);
+};
 
+function RootContainer() {
   useEffect(() => {
-   
     document.documentElement.style.backgroundColor = '#1e1e24';
     document.body.style.backgroundColor = '#1e1e24';
-
-    // 2. Eradicate elastic rubber-band scroll bounce animations entirely
     document.documentElement.style.overscrollBehavior = 'none';
     document.body.style.overscrollBehavior = 'none';
   }, []);
@@ -43,4 +48,3 @@ createRoot(document.getElementById('root')).render(
     </BrowserRouter>
   </StrictMode>,
 );
-
