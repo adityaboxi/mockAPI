@@ -1102,10 +1102,8 @@ export default MainContent;
 
 
 
-
-
 // ================================================================
-// MainContent.jsx – HTTPS for display, HTTP for backend
+// MainContent.jsx – HTTPS for display/curl, HTTP for backend
 // ================================================================
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useTheme } from "../context/ThemeContext";
@@ -1125,10 +1123,9 @@ const REVERSE_AI_URL = import.meta.env.VITE_API_URL_REVERSE_AI;
 const OTP_TIMER = import.meta.env.VITE_OTP_TIMER;
 const MOCK_API_BASE_URL = import.meta.env.VITE_MOCK_API_BASE_URL; // e.g., "api.mockapi.info"
 
-// Protocol for display (user-facing URL & curl)
-const DISPLAY_PROTOCOL = "https";
-// Protocol sent to the backend (internal HTTP)
-const BACKEND_PROTOCOL = "http";
+// Fixed protocols
+const DISPLAY_PROTOCOL = "https";   // for UI & curl
+const BACKEND_PROTOCOL = "http";    // for internal API definitions
 
 function MainContent() {
   const { theme } = useTheme();
@@ -1138,7 +1135,6 @@ function MainContent() {
   const [reverseTimer, setReverseTimer] = useState(0);
   const timerRef = useRef(null);
 
-  // No protocol state – it's fixed
   const [method, setMethod] = useState('GET');
   const [urlPath, setUrlPath] = useState('');
   const [pathParams, setPathParams] = useState([]);
@@ -1208,6 +1204,7 @@ function MainContent() {
     return items.some((item, idx) => idx !== excludeIndex && item.key && item.key.trim().toLowerCase() === normalizedKey);
   };
 
+  // Populate UI from loaded version
   useEffect(() => {
     if (!currentVersionData) return;
     setMethod(currentVersionData.method || 'GET');
@@ -1229,6 +1226,7 @@ function MainContent() {
     setExpectedApiKey(currentVersionData.expectedApiKey || '');
   }, [currentVersionData]);
 
+  // Path params extraction
   const extractPathParams = useCallback((path) => {
     const regex = /:([a-zA-Z_][a-zA-Z0-9_]*)/g;
     const matches = [...path.matchAll(regex)];
@@ -1400,7 +1398,7 @@ function MainContent() {
     }
 
     const apihistorydata = {
-      protocol: BACKEND_PROTOCOL,      // ✅ send HTTP to backend
+      protocol: BACKEND_PROTOCOL,
       method,
       pathParams,
       queryParams,
@@ -1466,7 +1464,7 @@ function MainContent() {
     }
 
     const apihistorydata = {
-      protocol: BACKEND_PROTOCOL,      // ✅ send HTTP to backend
+      protocol: BACKEND_PROTOCOL,
       method,
       pathParams,
       queryParams,
@@ -1519,7 +1517,7 @@ function MainContent() {
     const parsedRequestBody = safeParseJSON(requestBody);
     const parsedResponseBody = safeParseJSON(responseBody);
     const payload = {
-      protocol: BACKEND_PROTOCOL,      // ✅ send HTTP to backend
+      protocol: BACKEND_PROTOCOL,
       method,
       urlPath,
       pathParams,
@@ -1575,7 +1573,7 @@ function MainContent() {
           return prev - 1;
         });
       }, 1000);
-    } catch (error) {
+    } catch {
       // silent fail
     } finally {
       setIsAiLoading(false);
@@ -1705,7 +1703,7 @@ function MainContent() {
         setCopiedCurl(true);
         if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
         copyTimeoutRef.current = setTimeout(() => setCopiedCurl(false), 2000);
-      } catch (err) {
+      } catch {
         console.error('Copy failed:', err);
         alert('Failed to copy cURL command. Please copy manually.');
       } finally {
@@ -1713,16 +1711,14 @@ function MainContent() {
       }
     };
 
-    if (navigator.clipboard && navigator.clipboard.writeText) {
+    if (navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(curl)
         .then(() => {
           setCopiedCurl(true);
           if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
           copyTimeoutRef.current = setTimeout(() => setCopiedCurl(false), 2000);
         })
-        .catch(() => {
-          copyToClipboardFallback(curl);
-        });
+        .catch(() => copyToClipboardFallback(curl));
     } else {
       copyToClipboardFallback(curl);
     }
@@ -1771,7 +1767,7 @@ function MainContent() {
         {/* ---- Header with fixed HTTPS ---- */}
         <UrlBuilder
           protocol={DISPLAY_PROTOCOL}
-          setProtocol={() => {}} // no-op
+          setProtocol={() => {}} // no-op – protocol is fixed
           method={method}
           setMethod={setMethod}
           urlPath={urlPath}
