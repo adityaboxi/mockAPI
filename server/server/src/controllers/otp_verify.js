@@ -30,6 +30,7 @@ const token = jwt.sign(
     );
     res.cookie('token', token, {
       httpOnly: true,
+      secure: true,
       sameSite: process.env.COOKIE_SAMESITE,
       maxAge: parseInt(process.env.COOKIE_MAX_AGE, 10)
     });
@@ -37,6 +38,7 @@ await redisClient.del(key);
     res.clearCookie('guest_token', { 
       path: '/', 
       httpOnly: true, 
+      secure: true,
       sameSite: process.env.COOKIE_SAMESITE 
     });
     res.json({
