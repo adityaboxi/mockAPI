@@ -154,6 +154,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   
+  
   const logout = async () => {
     try {
       await fetch(LOGOUT_URL, {

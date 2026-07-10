@@ -18,6 +18,9 @@ const connection = {
   enableReadyCheck: false,
 };
 
+
+
+
 const externalRedis = new IORedis({ host: REDIS_HOST, port: REDIS_PORT });
 
 // Internal Redis (routes, locks)
