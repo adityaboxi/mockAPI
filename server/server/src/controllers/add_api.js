@@ -164,13 +164,12 @@ async function add_api(req, res) {
       apihistorydata: newVersionObj,
     };
 
-
     
     await storeMockDefinition(customId, version, method, urlpath, definitionData);
 
     await addMockSyncJob('set', definitionData);
 
-    // ---- Create system event log ----
+    // ---- Creaystem event log ----
     const newLog = await SystemEventLog.create({
       projectId: project_id,
       method: method.toUpperCase(),

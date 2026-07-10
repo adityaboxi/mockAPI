@@ -80,7 +80,7 @@ function Login() {
 
         <div className="mb-6">
           <span className={`text-xs inline-block mr-2 ${isWhiteTheme ? "text-gray-500" : "text-gray-500"}`}>
-            not logged in?
+            not loggeed in?
           </span>
           <button
             onClick={handleSignup}

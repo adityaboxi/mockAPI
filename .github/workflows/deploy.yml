@@ -3,7 +3,7 @@ name: Deploy Changed Services
 on:
   push:
     branches: [ main ]
-  workflow_dispatch:   # 👈 manual trigger to deploy everything
+  workflow_dispatch:
 
 jobs:
   deploy:
@@ -45,15 +45,20 @@ jobs:
             DEPLOY_SERVER=false
             DEPLOY_MOCK=false
             DEPLOY_CLIENT=false
-            DEPLOY_DOMAIN=false   # ⭐ NEW: Domain service flag
+            DEPLOY_DOMAIN=false
 
-            # If manual trigger or fresh clone – deploy ALL services
+            # Helper function to check if folder exists and has content
+            folder_exists() {
+              [ -d "$1" ] && [ -n "$(ls -A "$1" 2>/dev/null)" ]
+            }
+
+            # If manual trigger or fresh clone – deploy ALL services (if folders exist)
             if [ "${{ github.event_name }}" == "workflow_dispatch" ] || [ "$CLONED" == "true" ]; then
-              echo "🔄 Manual trigger or fresh clone – deploying ALL services"
-              DEPLOY_SERVER=true
-              DEPLOY_MOCK=true
-              DEPLOY_CLIENT=true
-              DEPLOY_DOMAIN=true   # ⭐ Deploy domain service as well
+              echo "🔄 Manual trigger or fresh clone – deploying existing services"
+              folder_exists "server" && DEPLOY_SERVER=true
+              folder_exists "mock-server" && DEPLOY_MOCK=true
+              folder_exists "client" && DEPLOY_CLIENT=true
+              folder_exists "domainservice" && DEPLOY_DOMAIN=true
             else
               # Detect changed folders (for normal push)
               if [ -z "$(git rev-parse HEAD^)" ]; then
@@ -64,17 +69,17 @@ jobs:
 
               echo "Changed files: $CHANGED_FILES"
 
-              if echo "$CHANGED_FILES" | grep -q "^server/"; then
+              # Only set deploy flags if folder exists and files changed inside it
+              if folder_exists "server" && echo "$CHANGED_FILES" | grep -q "^server/"; then
                 DEPLOY_SERVER=true
               fi
-              if echo "$CHANGED_FILES" | grep -q "^mock-server/"; then
+              if folder_exists "mock-server" && echo "$CHANGED_FILES" | grep -q "^mock-server/"; then
                 DEPLOY_MOCK=true
               fi
-              if echo "$CHANGED_FILES" | grep -q "^client/"; then
+              if folder_exists "client" && echo "$CHANGED_FILES" | grep -q "^client/"; then
                 DEPLOY_CLIENT=true
               fi
-              # ⭐ NEW: Detect changes in the domainservice folder
-              if echo "$CHANGED_FILES" | grep -q "^domainservice/"; then
+              if folder_exists "domainservice" && echo "$CHANGED_FILES" | grep -q "^domainservice/"; then
                 DEPLOY_DOMAIN=true
               fi
 
@@ -85,31 +90,38 @@ jobs:
               fi
             fi
 
-            # ⭐ NEW: Export the domain flag
             export DEPLOY_SERVER DEPLOY_MOCK DEPLOY_CLIENT DEPLOY_DOMAIN
 
             # Make deploy.sh executable and run it
             chmod +x deploy.sh
             ./deploy.sh
 
-            # ---------- Health Checks ----------
+            # ---------- Health Checks (only for deployed services) ----------
             echo "⏳ Verifying deployed services..."
+
             if [ "$DEPLOY_SERVER" = "true" ] || [ "$DEPLOY_MOCK" = "true" ]; then
-              for i in {1..30}; do
-                if curl -s -f http://localhost:8081/ > /dev/null; then
-                  echo "✅ Server healthy"
-                  break
-                fi
-                sleep 1
-              done
-              for i in {1..30}; do
-                if curl -s -f http://localhost:8080/healthz > /dev/null; then
-                  echo "✅ Mock-server healthy"
-                  break
-                fi
-                sleep 1
-              done
+              # Health check for server (port 8081)
+              if [ "$DEPLOY_SERVER" = "true" ]; then
+                for i in {1..30}; do
+                  if curl -s -f http://localhost:8081/ > /dev/null; then
+                    echo "✅ Server healthy"
+                    break
+                  fi
+                  sleep 1
+                done
+              fi
+              # Health check for mock-server (port 8080)
+              if [ "$DEPLOY_MOCK" = "true" ]; then
+                for i in {1..30}; do
+                  if curl -s -f http://localhost:8080/healthz > /dev/null; then
+                    echo "✅ Mock-server healthy"
+                    break
+                  fi
+                  sleep 1
+                done
+              fi
             fi
+
             if [ "$DEPLOY_CLIENT" = "true" ]; then
               for i in {1..30}; do
                 if curl -s -f http://localhost:8082/ > /dev/null; then
@@ -119,7 +131,7 @@ jobs:
                 sleep 1
               done
             fi
-            # ⭐ NEW: Health check for Domain Service (Nginx on port 80)
+
             if [ "$DEPLOY_DOMAIN" = "true" ]; then
               for i in {1..30}; do
                 if curl -s -f http://localhost/ > /dev/null; then

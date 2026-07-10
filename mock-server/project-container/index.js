@@ -7,7 +7,7 @@ const Router = require('find-my-way');
 
 const app = express();
 
-// 🔒 SECURITY: Trust the first   proxy (OpenResty) to get real client IP
+// 🔒 SECURITY: Trustt the first   proxy (OpenResty) to get real client IP
 app.set('trust proxy', true);
 
 // ✅ Compression – reduces bandwidth
