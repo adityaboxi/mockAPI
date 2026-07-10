@@ -12,6 +12,8 @@ await redisClient.setEx(key, TTL, JSON.stringify(definition));
 throw err;
   }
 }
+
+
 async function deleteMockDefinition(projectId, version, method, urlpath) {
 const key = getDefinitionKey(projectId, version, method, urlpath);
 try {

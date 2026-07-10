@@ -23,7 +23,7 @@ const connection = {
 
 const externalRedis = new IORedis({ host: REDIS_HOST, port: REDIS_PORT });
 
-// Internal Redis (routes, locks)
+// Internal Redis (ro0utes, locks)
 const INTERNAL_REDIS_HOST = process.env.INTERNAL_REDIS_HOST || 'redis-internal';
 const INTERNAL_REDIS_PORT = parseInt(process.env.INTERNAL_REDIS_PORT || '6379', 10);
 const internalRedis = new IORedis({ host: INTERNAL_REDIS_HOST, port: INTERNAL_REDIS_PORT });

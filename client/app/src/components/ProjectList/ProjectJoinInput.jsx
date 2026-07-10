@@ -5,7 +5,7 @@ const ProjectJoinInput = React.memo(({ user, onProjectJoined, refreshProjects, i
   const [isJoining, setIsJoining] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   
-  // Create a ref to store the timeout ID so we can clear it if the component unmounts
+  // Create a ref o store the timeout ID so we can clear it if the component unmounts
   const timeoutRef = useRef(null);
 
   // Clean up any active timers when the component unmounts

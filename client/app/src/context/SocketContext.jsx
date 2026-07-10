@@ -16,10 +16,10 @@ export const SocketProvider = ({ children }) => {
 
   useEffect(() => {
     // Force WebSocket transport to bypass Render proxy issues
-    const socketInstance = io(import.meta.env.VITE_API_BASE_URL, {
-      withCredentials: true,
-      transports: ["websocket"], // 👈 This is critical for Render
-    });
+  const socketInstance = io(import.meta.env.VITE_API_BASE_URL, {
+  withCredentials: true,
+  transports: ["polling", "websocket"], // ✅ ORDER MATTERS
+});
 
     // Log success
     socketInstance.on("connect", () => {
