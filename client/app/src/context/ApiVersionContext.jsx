@@ -19,7 +19,6 @@ export const ApiVersionProvider = ({ children }) => {
   const loadVersion = async (projectId, username, baseurlpath, version) => {
     setLoading(true);
     setError(null);
-    console.log(`[ApiVersionContext] Loading: projectId=${projectId}, user=${username}, path=${baseurlpath}, version=${version}`);
     try {
       const response = await fetch(API_VERSION_DATA_URL, {
         method: 'POST',

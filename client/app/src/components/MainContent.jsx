@@ -1,4 +1,4 @@
-/*// ================================================================
+// ================================================================
 // Full MainContent.jsx with duplicate key prevention, FIXED AI toggle,
 // proper empty‑key handling, and LIVE cURL command generator
 // ================================================================
@@ -1095,8 +1095,8 @@ const generateCurlCommand = useCallback(() => {
 }
 
 export default MainContent;
-*/
 
+/*
 
 // ================================================================
 // MainContent.jsx – HTTPS always, correct URL with /p/{projectId}/{version}/{path}
@@ -2097,4 +2097,4 @@ function MainContent() {
   );
 }
 
-export default MainContent;
+export default MainContent;*/
