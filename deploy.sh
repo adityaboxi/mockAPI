@@ -7,7 +7,7 @@ if [ -z "$DEPLOY_SERVER" ] && [ -z "$DEPLOY_MOCK" ] && [ -z "$DEPLOY_CLIENT" ] &
   exit 0
 fi
 
-# Create networks if they don't exist (idempotent)
+# Create networks if   they don't exist (idempotent)
 docker network create orch-net 2>/dev/null || true
 docker network create shared-net 2>/dev/null || true
 
