@@ -24,4 +24,3 @@ const CreateJoinSection = React.memo(({ user, onProjectCreated, onProjectJoined,
 });
 
 export default CreateJoinSection;
-
