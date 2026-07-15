@@ -253,7 +253,7 @@ function ManageAccount() {
       </div>
 
       <div className="flex-1 w-full max-w-5xl mx-auto p-6 space-y-8">
-       
+
         <div className="flex flex-col md:grid md:grid-cols-2 gap-6 min-h-0">
           <div className="space-y-3 flex flex-col">
             <div className="flex flex-col select-none">

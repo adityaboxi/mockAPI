@@ -5,28 +5,38 @@ services:
     container_name: redis-internal
     volumes:
       - redis_data:/data
-    networks: [orch-net]
+    networks:
+      - orch-net
     restart: unless-stopped
 
   # ======================== PROJECT CONTAINER BUILDER ========================
   project-container-builder:
     build: ./project-container
     image: project-container:latest
-    profiles: ["build-only"]
+    profiles:
+      - build-only
     command: echo "Image built"
 
-  # ======================== WORKER SERVER ========================
+  # ======================== WORKER SERVER (Project containers) ========================
   worker-server:
     build: ./worker-server
     container_name: worker-server
     env_file: .env
-    environment:
-      # These are intentionally left empty – they will be loaded from .env
-      - REDIS_URL=${REDIS_URL}
-      - INTERNAL_REDIS_URL=${INTERNAL_REDIS_URL}
-      - DOCKER_NETWORK=${DOCKER_NETWORK}
-      - PROJECT_IMAGE=${PROJECT_IMAGE}
-      - MONGO_URI=${MONGO_URI}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - orch-net
+      - shared-net
+    depends_on:
+      - redis-internal
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  worker-server-2:
+    build: ./worker-server
+    container_name: worker-server-2
+    env_file: .env
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
@@ -48,7 +58,25 @@ services:
     environment:
       - INTERNAL_REDIS_HOST=${INTERNAL_REDIS_HOST}
       - INTERNAL_REDIS_PORT=${INTERNAL_REDIS_PORT}
-    networks: [orch-net]
+      - EXTERNAL_REDIS_HOST=${EXTERNAL_REDIS_HOST}
+      - EXTERNAL_REDIS_PORT=${EXTERNAL_REDIS_PORT}
+    networks:
+      - orch-net
+      - shared-net   # required to reach redis-external
+    depends_on:
+      - redis-internal
+    restart: unless-stopped
+
+  # ======================== WORKER LOGS (BullMQ consumers) ========================
+  worker-logs:
+    build: ./worker-logs
+    container_name: worker-logs
+    env_file: .env
+    networks:
+      - orch-net
+      - shared-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - redis-internal
     restart: unless-stopped

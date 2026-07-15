@@ -1,14 +1,17 @@
 {
   "name": "worker-server",
   "version": "1.0.0",
+  "description": "BullMQ worker for project containers, sync, and OpenAPI import",
   "main": "index.js",
-  "scripts": {
-    "start": "node index.js"
-  },
   "dependencies": {
-    "bullmq": "^5.79.2",
-    "dockerode": "^5.0.1",
-    "ioredis": "^5.11.1",
-    "mongoose": "^8.0.0"
+    "bullmq": "^5.0.0",
+    "dockerode": "^4.0.0",
+    "dotenv": "^16.4.5",
+    "ioredis": "^5.0.0",
+    "mongoose": "^8.0.0",
+    "uuid": "^9.0.0"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

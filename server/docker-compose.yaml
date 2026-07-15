@@ -1,10 +1,8 @@
 version: '3.8'
 
-# ======================== VOLUMES ========================
 volumes:
   redis_data:
 
-# ======================== NETWORKS (external, created beforehand) ========================
 networks:
   backend:
     driver: bridge
@@ -13,9 +11,7 @@ networks:
   shared-net:
     external: true
 
-# ======================== SERVICES ========================
 services:
-  # ---------- Redis (external – used by BullMQ & Socket.IO) ----------
   redis-external:
     image: redis:7-alpine
     container_name: redis-external
@@ -25,12 +21,11 @@ services:
       - shared-net
     restart: unless-stopped
 
-  # ---------- App instances (3 replicas) ----------
   app: &app-base
     build: ./server
     image: mockapi-server:latest
     container_name: mockapi-app
-    env_file: .env        
+    env_file: .env
     networks:
       - backend
       - orch-net
@@ -38,16 +33,35 @@ services:
     depends_on:
       - redis-external
     restart: unless-stopped
+    # ---------- ADD THIS BLOCK ----------
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   app-2:
     <<: *app-base
     container_name: mockapi-app-2
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   app-3:
     <<: *app-base
     container_name: mockapi-app-3
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
-  # ---------- Nginx load balancer ----------
+  bullmq-worker:
+    build:
+      context: ./bullmq-worker
+      dockerfile: Dockerfile
+    container_name: bullmq-worker
+    env_file:
+      - ./.env   # loads from the root directory (mockAPI/.env)
+    networks:
+      - shared-net   # or orch-net – same as Redis
+    depends_on:
+      - redis-external
+    restart: unless-stopped
+
   nginx:
     build:
       context: ./nginx

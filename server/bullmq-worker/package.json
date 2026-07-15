@@ -1,0 +1,21 @@
+{
+  "name": "bullmq-worker",
+  "version": "1.0.0",
+  "description": "BullMQ worker for AI and background tasks",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "bullmq": "^5.0.0",
+    "dotenv": "^16.0.0",
+    "groq-sdk": "^0.5.0",
+    "redis": "^6.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

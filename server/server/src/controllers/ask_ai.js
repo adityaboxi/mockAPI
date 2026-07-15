@@ -1,20 +1,23 @@
+// controllers/ask_ai.js
 const { redisClient } = require('../config/redis');
 const crypto = require('crypto');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const aiQueue = require('../queues/aiQueue');
 const User = require('../models/User');
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const MODEL_NAME = "gemini-2.0-flash";
+// ---------- Helper Functions ----------
 
-const AI_TIMEOUT_MS = 70000; // 70 seconds
-
+/**
+ * Recursively sort object keys to ensure consistent cache key generation.
+ */
 function sortObjectKeys(obj) {
   if (obj === null || typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) return obj.map(sortObjectKeys);
-  return Object.keys(obj).sort().reduce((sorted, key) => {
-    sorted[key] = sortObjectKeys(obj[key]);
-    return sorted;
-  }, {});
+  return Object.keys(obj)
+    .sort()
+    .reduce((sorted, key) => {
+      sorted[key] = sortObjectKeys(obj[key]);
+      return sorted;
+    }, {});
 }
 
 
@@ -22,20 +25,44 @@ function getCacheKey(payload) {
   const sortedPayload = sortObjectKeys(payload);
   const jsonStr = JSON.stringify(sortedPayload);
   const hash = crypto.createHash('md5').update(jsonStr).digest('hex');
+  return `ai:response:${hash}`;
+}
+
+
+function getOriginalKey(payload) {
+  const sortedPayload = sortObjectKeys(payload);
+  const jsonStr = JSON.stringify(sortedPayload);
+  const hash = crypto.createHash('md5').update(jsonStr).digest('hex');
   return `ai:original:${hash}`;
 }
 
+
 function generateSampleResponse(userInput) {
   return {
-    protocol: 'https', method: 'POST', urlPath: '/api/v2/sample',
-    pathParams: [], queryParams: [], requestBody: { message: "AI service busy, using sample response" },
-    responseBody: { status: "success", data: "sample" }, isAuthEnabled: false,
-    authScheme: 'BearerAuth', latency: 100, rateLimit: 10, headers: [],
-    responseHeaders: [], cookies: [], expectedToken: '', expectedApiKey: '',
-    includeAIResponse: false, statusCode: 200
+    protocol: 'https',
+    method: 'POST',
+    urlPath: '/api/v2/sample',
+    pathParams: [],
+    queryParams: [],
+    requestBody: { message: 'AI service busy, using sample response' },
+    responseBody: { status: 'success', data: 'sample' },
+    isAuthEnabled: false,
+    authScheme: 'BearerAuth',
+    latency: 100,
+    rateLimit: 10,
+    headers: [],
+    responseHeaders: [],
+    cookies: [],
+    expectedToken: '',
+    expectedApiKey: '',
+    includeAIResponse: false,
+    statusCode: 200,
   };
 }
 
+/**
+ * Merge the AI suggestion with the original user input (fallback).
+ */
 function buildFinalResponse(aiResponse, userInput) {
   return {
     protocol: aiResponse.protocol ?? userInput.protocol ?? 'https',
@@ -55,40 +82,14 @@ function buildFinalResponse(aiResponse, userInput) {
     expectedToken: aiResponse.expectedToken ?? userInput.expectedToken ?? '',
     expectedApiKey: aiResponse.expectedApiKey ?? userInput.expectedApiKey ?? '',
     includeAIResponse: aiResponse.includeAIResponse ?? userInput.includeAIResponse ?? false,
-    statusCode: aiResponse.statusCode ?? userInput.statusCode ?? 200
+    statusCode: aiResponse.statusCode ?? userInput.statusCode ?? 200,
   };
 }
 
-function withTimeout(promise, ms) {
-  let timeoutHandle;
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutHandle = setTimeout(() => reject(new Error('AI_TIMEOUT')), ms);
-  });
-  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutHandle));
-}
-
-async function callGemini(userInput) {
-  const { geminiInput, ...apiDefinition } = userInput;
-
-  let prompt = `You are an expert API designer. Given the following API definition, suggest improvements and return a complete, enhanced API definition in valid JSON. The JSON must have exactly the same top-level fields as the input. You can modify any field: protocol, method, urlPath, pathParams, queryParams, requestBody, responseBody, isAuthEnabled, authScheme, latency, rateLimit, headers, responseHeaders, cookies, expectedToken, expectedApiKey, includeAIResponse, statusCode. Use your best judgement to improve the API. Return ONLY valid JSON, no explanation.\n\n`;
-
-  if (geminiInput && typeof geminiInput === 'string' && geminiInput.trim()) {
-    prompt += `Additional instruction from the user: ${geminiInput}\n\n`;
-  }
-  prompt += `Input API definition:\n${JSON.stringify(apiDefinition, null, 2)}\n\nOutput (valid JSON only):`;
-
-  const model = genAI.getGenerativeModel({
-    model: MODEL_NAME,
-    generationConfig: { responseMimeType: "application/json" }
-  });
-
-  const result = await model.generateContent(prompt);
-  const responseText = result.response.text();
-  return JSON.parse(responseText);
-}
-
+// ---------- Controllers ----------
 async function ask_ai(req, res) {
   try {
+    // 1. Authentication and user validation
     if (!req.user) {
       console.warn('[ask-ai] No user object – missing authentication middleware');
       return res.status(401).json({ error: 'Authentication required' });
@@ -112,175 +113,83 @@ async function ask_ai(req, res) {
       isSubscribed = userDoc.subscribe === true;
     }
 
+    // 2. Validate input
     const userInput = req.body;
     if (!userInput || typeof userInput !== 'object') {
       return res.status(400).json({ error: 'Invalid input' });
     }
 
+    // 3. Check Redis cache for the AI response
     const cacheKey = getCacheKey(userInput);
-    const ttl = parseInt(process.env.TTL_REVERSE_AI_RESPONSE, 10) || 120;
-    await redisClient.setEx(cacheKey, ttl, JSON.stringify(userInput));
-
-    const userType = isSubscribed ? 'subscribed user' : (isGuest ? 'guest' : 'unsubscribed user');
-
-    let aiResponse;
-    try {
-      aiResponse = await withTimeout(callGemini(userInput), AI_TIMEOUT_MS);
-    } catch (err) {
-      if (err.message === 'AI_TIMEOUT') {
-        console.warn('[ask-ai] Gemini call exceeded 70s timeout, returning default response.');
-      } else if (err.status === 429) {
-        console.warn('[ask-ai] Gemini quota exceeded, returning default response.');
-      } else {
-        console.error('[ask-ai] Gemini error:', err.status, err.message);
-      }
-      aiResponse = generateSampleResponse(userInput);
-    }
-
-    const finalResponse = buildFinalResponse(aiResponse, userInput);
-    res.status(200).json(finalResponse);
-  } catch (error) {
-    console.error('[ask-ai] Unexpected error:', error);
-    res.status(200).json(req.body);
-  }
-}
-
-module.exports = {
-  ask_ai
-};
-
-
-/*
-
-
-const { redisClient } = require('../config/redis');
-const crypto = require('crypto');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
-const User = require('../models/User');
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const MODEL_NAME = "gemini-2.0-flash";
-
-const AI_TIMEOUT_MS = 70000; // 70 seconds
-const CACHE_TTL = 60; // seconds for AI response cache
-
-function sortObjectKeys(obj) {
-  if (obj === null || typeof obj !== 'object') return obj;
-  if (Array.isArray(obj)) return obj.map(sortObjectKeys);
-  return Object.keys(obj).sort().reduce((sorted, key) => {
-    sorted[key] = sortObjectKeys(obj[key]);
-    return sorted;
-  }, {});
-}
-
-function getPayloadHash(payload) {
-  const sortedPayload = sortObjectKeys(payload);
-  const jsonStr = JSON.stringify(sortedPayload);
-  return crypto.createHash('md5').update(jsonStr).digest('hex');
-}
-
-function withTimeout(promise, ms) {
-  let timeoutHandle;
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutHandle = setTimeout(() => reject(new Error('AI_TIMEOUT')), ms);
-  });
-  return Promise.race([promise, timeoutPromise]).finally(() => clearTimeout(timeoutHandle));
-}
-
-async function callGemini(userInput) {
-  const { geminiInput, ...apiDefinition } = userInput;
-
-  let prompt = `You are an expert API designer. Given the following API definition, suggest improvements and return a complete, enhanced API definition in valid JSON. The JSON must have exactly the same top-level fields as the input. You can modify any field: protocol, method, urlPath, pathParams, queryParams, requestBody, responseBody, isAuthEnabled, authScheme, latency, rateLimit, headers, responseHeaders, cookies, expectedToken, expectedApiKey, includeAIResponse, statusCode. Use your best judgement to improve the API. Return ONLY valid JSON, no explanation.\n\n`;
-
-  if (geminiInput && typeof geminiInput === 'string' && geminiInput.trim()) {
-    prompt += `Additional instruction from the user: ${geminiInput}\n\n`;
-  }
-  prompt += `Input API definition:\n${JSON.stringify(apiDefinition, null, 2)}\n\nOutput (valid JSON only):`;
-
-  const model = genAI.getGenerativeModel({
-    model: MODEL_NAME,
-    generationConfig: { responseMimeType: "application/json" }
-  });
-
-  const result = await model.generateContent(prompt);
-  const responseText = result.response.text();
-  return JSON.parse(responseText);
-}
-
-async function ask_ai(req, res) {
-  const userInput = req.body;
-  if (!userInput || typeof userInput !== 'object') {
-    return res.status(400).json({ error: 'Invalid input' });
-  }
-
-  const payloadHash = getPayloadHash(userInput);
-  const cacheKey = `ai:response:${payloadHash}`;
-
-  // 1. Check Redis cache for AI response (60s TTL)
-  try {
     const cached = await redisClient.get(cacheKey);
     if (cached) {
-      const parsed = JSON.parse(cached);
-      return res.status(200).json(parsed);
+      const result = JSON.parse(cached);
+      console.log(`[ask-ai] ✅ Cache hit for user ${username || 'guest'}`);
+      return res.status(200).json(result);
     }
-  } catch (err) {
-    // Redis error – fall through to AI call
+
+    // 4. Store the original payload for reverse_ai (with same TTL)
+    const ttl = parseInt(process.env.TTL_REVERSE_AI_RESPONSE, 10) || 120;
+    const originalKey = getOriginalKey(userInput);
+    await redisClient.setEx(originalKey, ttl, JSON.stringify(userInput));
+    console.log(`[ask-ai] Stored original payload under: ${originalKey}`);
+
+    // 5. Enqueue the AI job
+    const job = await aiQueue.add('generate-ai', {
+      userInput,
+      userId: username,
+      isGuest,
+      isSubscribed,
+      cacheKey, // passes the key where the worker should store the AI response
+    });
+
+    console.log(`[ask-ai] 🔥 Job enqueued: ${job.id} for user ${username || 'guest'}`);
+    console.log(`[ask-ai] CacheKey: ${cacheKey}`);
+    console.log(`[ask-ai] Payload snippet:`, {
+      protocol: userInput.protocol,
+      method: userInput.method,
+      urlPath: userInput.urlPath,
+      geminiInput: userInput.geminiInput?.substring(0, 50) + '...',
+    });
+
+    // 6. Return 202 Accepted with jobId
+    return res.status(202).json({
+      jobId: job.id,
+      status: 'queued',
+    });
+  } catch (error) {
+    console.error('[ask-ai] ❌ Error:', error);
+    return res.status(500).json({ error: 'Failed to enqueue AI request' });
   }
-
-  // 2. Determine user subscription status (for rate limiting or logging)
-  let isSubscribed = false;
-  const isGuest = req.user.role === 'guest';
-  if (!isGuest) {
-    const username = req.user.username;
-    if (!username) {
-      return res.status(401).json({ error: 'Invalid user token' });
-    }
-    const userDoc = await User.findOne({ username });
-    if (!userDoc) {
-      return res.status(404).json({ error: 'User not found' });
-    }
-    isSubscribed = userDoc.subscribe === true;
-  }
-
-  // 3. Store original payload for reversal (unchanged)
-  const originalKey = `ai:original:${payloadHash}`;
-  const ttl = parseInt(process.env.TTL_REVERSE_AI_RESPONSE, 10) || 120;
-  await redisClient.setEx(originalKey, ttl, JSON.stringify(userInput));
-
-  // 4. Call Gemini with timeout
-  let aiResponse;
-  try {
-    aiResponse = await withTimeout(callGemini(userInput), AI_TIMEOUT_MS);
-  } catch (err) {
-    if (err.message === 'AI_TIMEOUT') {
-      console.warn('[ask-ai] Gemini call timed out, returning original input.');
-    } else if (err.status === 429) {
-      console.warn('[ask-ai] Gemini quota exceeded, returning original input.');
-    } else {
-      console.error('[ask-ai] Gemini error:', err.message);
-    }
-    // Fallback: return the original user input (instead of a hardcoded sample)
-    aiResponse = userInput; // This is a fallback, but it's the user's own data – minimal fallback.
-  }
-
-  // 5. Merge AI response with user input – only override fields that exist in AI response
-  const finalResponse = {
-    ...userInput,                // start with original
-    ...aiResponse,               // override with AI fields
-    // Ensure fields that may be undefined are kept from user input
-    // but do not add hardcoded defaults
-  };
-
-  // 6. Cache the final response (60s TTL)
-  try {
-    await redisClient.setEx(cacheKey, CACHE_TTL, JSON.stringify(finalResponse));
-  } catch (err) {
-    // Cache set failed – no problem
-  }
-
-  return res.status(200).json(finalResponse);
 }
 
-module.exports = {
-  ask_ai
-};*/
+
+async function getAiResult(req, res) {
+  try {
+    const { jobId } = req.params;
+    const job = await aiQueue.getJob(jobId);
+    if (!job) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    const state = await job.getState();
+    const result = job.returnvalue;
+
+    console.log(`[getAiResult] Job ${jobId} state: ${state}`);
+    if (state === 'completed') {
+      console.log(`[getAiResult] Result:`, result);
+      return res.json({ status: 'completed', result });
+    } else if (state === 'failed') {
+      console.log(`[getAiResult] Failed reason:`, job.failedReason);
+      return res.json({ status: 'failed', error: job.failedReason });
+    } else {
+      // 'waiting', 'active', 'delayed', etc.
+      return res.json({ status: 'pending' });
+    }
+  } catch (error) {
+    console.error('[getAiResult] ❌ Error:', error);
+    return res.status(500).json({ error: 'Failed to fetch job status' });
+  }
+}
+
+module.exports = { ask_ai, getAiResult };
