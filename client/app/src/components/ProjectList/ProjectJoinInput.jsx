@@ -5,10 +5,8 @@ const ProjectJoinInput = React.memo(({ user, onProjectJoined, refreshProjects, i
   const [isJoining, setIsJoining] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   
-  // Create a ref o store the timeout ID so we can clear it if the component unmounts
   const timeoutRef = useRef(null);
 
-  // Clean up any active timers when the component unmounts
   useEffect(() => {
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -34,10 +32,7 @@ const ProjectJoinInput = React.memo(({ user, onProjectJoined, refreshProjects, i
       setJoinCodeInput("");
       setSuccessMessage("Join request sent to manager!");
 
-      // Clear any previous active timeout before starting a new one
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
-
-      // Set a timer to clear the success message after 5000ms (5 seconds)
       timeoutRef.current = setTimeout(() => {
         setSuccessMessage("");
       }, 3000);
@@ -45,7 +40,7 @@ const ProjectJoinInput = React.memo(({ user, onProjectJoined, refreshProjects, i
       if (refreshProjects) await refreshProjects();
       if (onProjectJoined) onProjectJoined(joinedProject);
     } catch (error) {
-   
+      // silent
     } finally {
       setIsJoining(false);
     }
@@ -60,11 +55,7 @@ const ProjectJoinInput = React.memo(({ user, onProjectJoined, refreshProjects, i
         <button
           onClick={handleJoinProject}
           disabled={isJoining}
-          className={`border px-2 py-1 text-xs rounded transition-colors ${
-            isWhiteTheme
-              ? `bg-gray-100 hover:bg-gray-200 border-gray-300 text-gray-700`
-              : `bg-[#1e1f22] hover:bg-zinc-700 border-zinc-700/50 text-gray-300`
-          }`}
+          className="bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 text-xs rounded transition-colors disabled:opacity-50"
         >
           {isJoining ? "Joining..." : "Join"}
         </button>
@@ -105,4 +96,3 @@ const ProjectJoinInput = React.memo(({ user, onProjectJoined, refreshProjects, i
 });
 
 export default ProjectJoinInput;
-

@@ -1,20 +1,19 @@
 import React from "react";
 
 const Authtokenetc = ({
-  isAuthEnabled = false, 
+  isAuthEnabled = false,
   setIsAuthEnabled,
-  latency = 0, 
+  latency = 0,
   setLatency,
-  rateLimit = 0, 
+  rateLimit = 0,
   setRateLimit,
   authScheme = "BearerAuth",
   setAuthScheme,
   w = false,
-  mutedTxt = "text-zinc-500", 
+  mutedTxt = "text-zinc-500",
   inp = "bg-zinc-800 text-zinc-200 border-zinc-700",
   labelTxt = "text-zinc-400"
 }) => {
-  
   const handleNumericChange = (value, setter) => {
     const parsed = parseInt(value, 10);
     setter(isNaN(parsed) || parsed < 0 ? 0 : parsed);
@@ -25,13 +24,7 @@ const Authtokenetc = ({
       <button
         type="button"
         onClick={() => setIsAuthEnabled?.(!isAuthEnabled)}
-        className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors border ${
-          isAuthEnabled
-            ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
-            : w 
-              ? "bg-gray-100 text-gray-500 border-gray-200 hover:bg-gray-200"
-              : "bg-zinc-800/60 text-zinc-400 border-zinc-700/60 hover:bg-zinc-700/50"
-        }`}
+        className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors border bg-blue-600 text-white border-blue-600 hover:bg-blue-500"
       >
         {isAuthEnabled ? (
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -93,6 +86,3 @@ const Authtokenetc = ({
 };
 
 export default Authtokenetc;
-
-
-

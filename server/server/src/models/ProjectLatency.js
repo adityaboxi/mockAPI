@@ -15,10 +15,9 @@ const projectLatencySchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-  updatedAt: {
-    type: Date,
-    default: Date.now
-  }
+  // Remove manual `updatedAt` – Mongoose will manage it via timestamps
+}, { 
+  timestamps: true // auto‑adds createdAt & updatedAt
 });
 
 module.exports = mongoose.model('ProjectLatency', projectLatencySchema);

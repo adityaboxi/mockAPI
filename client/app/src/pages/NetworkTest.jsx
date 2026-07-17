@@ -87,10 +87,6 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
           break;
         }
         // Network or server error – we still continue to the next attempt
-        // but we push a sentinel value to indicate failure? We'll just skip.
-        // For simplicity, we won't push anything; we'll track failures separately.
-        // Actually we want to record attempts even if they fail? We'll just ignore failed attempts.
-        // But we need to update progress.
       }
 
       // Update progress (including failed attempts)
@@ -183,12 +179,12 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
     if (individualResults.length === 0) return null;
     return (
       <div className="mt-4">
-        <p className="text-xs text-gray-500 mb-1">Individual ping times (ms):</p>
+        <p className="text-xs text-zinc-400 mb-1">Individual ping times (ms):</p>
         <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
           {individualResults.map((time, idx) => (
             <span
               key={idx}
-              className="px-2 py-0.5 bg-[#1e1e24] border border-[#3f4147] rounded text-xs text-gray-400"
+              className="px-2 py-0.5 bg-zinc-900 border border-zinc-700 rounded text-xs text-zinc-400"
             >
               {Math.round(time)}
             </span>
@@ -198,11 +194,15 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
     );
   };
 
+  // Unified blue button styles
+  const primaryBtn = "bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-medium transition disabled:opacity-50";
+  const secondaryBtn = "bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm transition";
+
   // ---- Render ----
   return (
     <div className="p-6 max-w-3xl mx-auto">
       <h1 className="text-2xl font-semibold text-white mb-2">🌐 Network Latency</h1>
-      <p className="text-gray-400 mb-6">
+      <p className="text-zinc-400 mb-6">
         Measures your round‑trip time to the server via {sampleCount} ping‑pong requests.
         {projectId && ' Results will be saved to the current project.'}
       </p>
@@ -211,7 +211,7 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
         <button
           onClick={() => runTest(false)}
           disabled={status === 'running'}
-          className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-xl text-white font-medium transition"
+          className={`flex-1 py-3 ${primaryBtn}`}
           aria-label="Run network latency test"
         >
           {status === 'running' ? '⏳ Measuring...' : '▶ Run Test'}
@@ -219,7 +219,7 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
         {cacheRef.current && (
           <button
             onClick={clearCache}
-            className="px-4 py-3 bg-[#2b2d31] hover:bg-[#3f4147] rounded-xl text-gray-300 text-sm transition"
+            className={`px-4 py-3 ${secondaryBtn}`}
             aria-label="Clear cached test results"
           >
             🗑️ Clear Cache
@@ -229,24 +229,24 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
 
       {/* Progress bar */}
       {status === 'running' && (
-        <div className="mt-4 w-full bg-[#2b2d31] rounded-full h-2.5">
+        <div className="mt-4 w-full bg-zinc-800 rounded-full h-2.5">
           <div
-            className="bg-indigo-500 h-2.5 rounded-full transition-all duration-300"
+            className="bg-blue-500 h-2.5 rounded-full transition-all duration-300"
             style={{ width: `${progress}%` }}
           />
         </div>
       )}
 
       {/* Status message */}
-      <div className="mt-4 text-sm text-gray-300">{renderStatusMessage()}</div>
+      <div className="mt-4 text-sm text-zinc-300">{renderStatusMessage()}</div>
 
       {/* Results */}
       {status === 'done' && average !== null && (
-        <div className="mt-4 bg-[#2b2d31] border border-[#3f4147] rounded-xl p-6 text-center">
+        <div className="mt-4 bg-zinc-900 border border-zinc-800 rounded-xl p-6 text-center">
           <div className="text-5xl font-bold text-emerald-400">{average} ms</div>
-          <div className="text-gray-400 mt-1">average round‑trip</div>
+          <div className="text-zinc-400 mt-1">average round‑trip</div>
           {stats.samples > 0 && (
-            <div className="flex justify-center gap-6 mt-4 text-sm text-gray-500">
+            <div className="flex justify-center gap-6 mt-4 text-sm text-zinc-500">
               <span>Min: {Math.round(stats.min)} ms</span>
               <span>Max: {Math.round(stats.max)} ms</span>
               <span>Samples: {stats.samples}</span>
@@ -268,11 +268,11 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
 
       {/* Error state */}
       {status === 'error' && (
-        <div className="mt-4 bg-red-900/20 border border-red-500/30 rounded-xl p-4 text-red-400 text-sm">
+        <div className="mt-4 bg-red-500/10 border border-red-500/20 rounded-xl p-4 text-red-400 text-sm">
           {error}
           <button
             onClick={() => runTest(true)}
-            className="block mt-2 text-indigo-400 hover:text-indigo-300 underline"
+            className="block mt-2 text-blue-400 hover:text-blue-300 underline"
           >
             Retry
           </button>

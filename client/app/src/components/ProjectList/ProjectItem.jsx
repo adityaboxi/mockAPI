@@ -38,7 +38,7 @@ function ProjectItem({ project, isSelected, onClick, onStatusChange, onProjectUp
                 e.stopPropagation();
                 setShowModal(true);
               }}
-              className="text-xs font-bold px-1 text-zinc-500 hover:text-white"
+              className="bg-blue-600 hover:bg-blue-500 text-white px-1.5 py-0.5 rounded text-xs font-bold transition-colors"
             >
               ⋮
             </button>
@@ -67,4 +67,3 @@ function ProjectItem({ project, isSelected, onClick, onStatusChange, onProjectUp
 }
 
 export default ProjectItem;
-

@@ -1,5 +1,4 @@
-// worker-server/index.js
-require('dotenv').config();  
+require('dotenv').config();
 const { Worker, Queue } = require('bullmq');
 const Docker = require('dockerode');
 const IORedis = require('ioredis');
@@ -7,7 +6,7 @@ const http = require('http');
 const { v4: uuidv4 } = require('uuid');
 const mongoose = require('mongoose');
 
-// ---------- MODELS (self‑contained) ----------
+// ---------- MODELS ----------
 const Project = require('./models/Project');
 const ProjectApiHistory = require('./models/ProjectApiHistory');
 
@@ -19,7 +18,7 @@ const IMAGE = process.env.PROJECT_IMAGE || 'project-container:latest';
 // External Redis (BullMQ)
 const REDIS_HOST = process.env.REDIS_HOST || 'redis-external';
 const REDIS_PORT = parseInt(process.env.REDIS_PORT || '6379', 10);
-const connection = {
+const connectionOpts = {
   host: REDIS_HOST,
   port: REDIS_PORT,
   maxRetriesPerRequest: null,
@@ -59,10 +58,6 @@ async function lockProject(projectId) {
 }
 async function unlockProject(projectId) {
   await internalRedis.del(`lock:project:${projectId}`);
-}
-async function isProjectLocked(projectId) {
-  const val = await internalRedis.get(`lock:project:${projectId}`);
-  return val !== null;
 }
 
 // ---------- Container Management ----------
@@ -190,11 +185,10 @@ async function syncProjectContainer(containerName, timeout = 30000) {
     await syncRes.json();
     return true;
   } catch (_) {
-    return true;
+    return true; // sync is optional; container is already healthy
   }
 }
 
-// ---------- Container info helper ----------
 async function getContainerInfo(containerName) {
   try {
     const containers = await docker.listContainers({ all: true, filters: { name: [containerName] } });
@@ -286,7 +280,7 @@ async function replenishPool() {
 // ================================================================
 // WORKER 1: PROJECT QUEUE
 // ================================================================
-new Worker(
+const projectWorker = new Worker(
   'projectQueue',
   async (job) => {
     const { action, projectId, isActive } = job.data;
@@ -376,7 +370,7 @@ new Worker(
     throw new Error(`unknown projectQueue action: ${action}`);
   },
   {
-    connection,
+    connection: connectionOpts,
     concurrency: WORKER_CONCURRENCY,
     attempts: 5,
     backoff: { type: 'exponential', delay: 1000 },
@@ -391,40 +385,51 @@ new Worker(
 // ================================================================
 // WORKER 2: MOCK SYNC QUEUE
 // ================================================================
-new Worker(
+const mockSyncWorker = new Worker(
   'mockSyncQueue',
   async (job) => {
     const { action, projectId, versionData } = job.data;
     if (!projectId) throw new Error('projectId required');
 
-    const route = await getRoute(projectId);
-    if (!route || route.status !== 'running') {
-      throw new Error(`Project ${projectId} container not ready`);
+    let route = await getRoute(projectId);
+
+    // 1. If project exists but is sleeping, WAKE IT UP automatically
+    if (route && route.status !== 'running') {
+      console.log(`[mockSyncQueue] Waking up sleeping container for project ${projectId}...`);
+      const started = await ensureProjectContainerRunning(projectId);
+      if (!started) throw new Error(`Failed to wake up container for ${projectId}`);
+      route = await getRoute(projectId);
     }
 
+    // 2. If route is still null, it means projectQueue is still building it. Throw to let BullMQ retry.
+    if (!route || route.status !== 'running') {
+      console.log(`[mockSyncQueue] Container for ${projectId} not ready yet. Retrying...`);
+      throw new Error(`Project ${projectId} container not ready. BullMQ will retry.`);
+    }
+
+    // 3. Normalize Payload (Fixes the urlPath vs urlpath case mismatch)
+    const body = versionData ? {
+      ...versionData,
+      urlpath: versionData.urlPath || versionData.urlpath // Ensure 'urlpath' always exists
+    } : {
+      version: job.data.version,
+      method: job.data.method,
+      urlpath: job.data.urlpath || job.data.urlPath,
+      definition: job.data.apihistorydata,
+    };
+
     if (action === 'set') {
-      const body = versionData || {
-        version: job.data.version,
-        method: job.data.method,
-        urlpath: job.data.urlpath,
-        definition: job.data.apihistorydata,
-      };
       return callProjectContainer(projectId, 'POST', '/internal/apis', body);
     }
     if (action === 'delete') {
-      const body = versionData || {
-        version: job.data.version,
-        method: job.data.method,
-        urlpath: job.data.urlpath,
-      };
       return callProjectContainer(projectId, 'DELETE', '/internal/apis', body);
     }
     throw new Error(`unknown mockSyncQueue action: ${action}`);
   },
   {
-    connection,
-    attempts: 10,
-    backoff: { type: 'exponential', delay: 1000 },
+    connection: connectionOpts,
+    attempts: 15,
+    backoff: { type: 'exponential', delay: 2000 },
     removeOnComplete: true,
     removeOnFail: true,
     lockDuration: 60000,
@@ -436,7 +441,7 @@ new Worker(
 // ================================================================
 // WORKER 3: LATENCY STORE (Internal Redis)
 // ================================================================
-new Worker(
+const latencyWorker = new Worker(
   'latency-store',
   async (job) => {
     const { project_id, username, rtt } = job.data;
@@ -445,7 +450,7 @@ new Worker(
     console.log(`[latency-store] Saved ${username} RTT: ${rtt}ms for project ${project_id}`);
   },
   {
-    connection,
+    connection: connectionOpts,
     removeOnComplete: true,
     removeOnFail: true,
   }
@@ -454,7 +459,7 @@ new Worker(
 // ================================================================
 // WORKER 4: OPENAPI IMPORT
 // ================================================================
-new Worker(
+const importWorker = new Worker(
   'openapi-import',
   async (job) => {
     const { projectName, spec, username } = job.data;
@@ -549,7 +554,7 @@ new Worker(
 
     job.updateProgress(70);
 
-    const projectQueue = new Queue('projectQueue', { connection });
+    const projectQueue = new Queue('projectQueue', { connection: connectionOpts });
     await projectQueue.add('create-project', { 
       action: isNewProject ? 'create' : 'update',
       projectId,
@@ -558,9 +563,9 @@ new Worker(
 
     job.updateProgress(85);
 
-    const mockSyncQueue = new Queue('mockSyncQueue', { connection });
-    const syncDelay = 5000;
+    const mockSyncQueue = new Queue('mockSyncQueue', { connection: connectionOpts });
     
+    // Push API additions to the queue (mockSyncQueue will naturally wait for projectQueue due to the retries added above)
     for (const endpoint of endpointsArray) {
       for (const ver of endpoint.versions) {
         await mockSyncQueue.add('sync-api', {
@@ -575,7 +580,7 @@ new Worker(
             responseBody: ver.responseBody,
             statusCode: ver.statusCode,
           }
-        }, { delay: syncDelay });
+        });
       }
     }
 
@@ -592,16 +597,19 @@ new Worker(
     return result;
   },
   {
-    connection,
+    connection: connectionOpts,
     concurrency: 1,
     attempts: 3,
     backoff: { type: 'exponential', delay: 5000 },
     removeOnComplete: { age: 3600 },
     removeOnFail: { age: 86400 },
   }
-).on('completed', (job) => {
+);
+
+importWorker.on('completed', (job) => {
   console.log(`[openapi-import] ✅ Job ${job.id} completed successfully`);
-}).on('failed', (job, err) => {
+});
+importWorker.on('failed', (job, err) => {
   console.error(`[openapi-import] ❌ Job ${job.id} failed:`, err.message);
 });
 
@@ -693,11 +701,12 @@ async function ensureProjectImage() {
 
 // ---------- Startup ----------
 async function startup() {
-  // Connect to MongoDB for worker models
+  // Connect to MongoDB
   const MONGO_URI = process.env.MONGO_URI || 'mongodb://host.docker.internal:27017/mockapi';
   await mongoose.connect(MONGO_URI);
   console.log('[worker-server] MongoDB connected');
 
+  // Wait for internal Redis
   let internalReady = false;
   for (let i = 0; i < 30; i++) {
     try {
@@ -710,6 +719,7 @@ async function startup() {
   }
   if (!internalReady) process.exit(1);
 
+  // Wait for external Redis
   let externalReady = false;
   for (let i = 0; i < 30; i++) {
     try {
@@ -724,11 +734,15 @@ async function startup() {
 
   await ensureProjectImage();
 
-  // Clean up stale BullMQ keys
-  try {
-    const keys = await externalRedis.keys('bull:*');
-    if (keys.length) await externalRedis.del(keys);
-  } catch (_) {}
+  // 🛑 SAFER CLEANUP – only delete keys for OUR queues (avoid affecting other services)
+  const ourQueuePrefixes = ['bull:projectQueue:', 'bull:mockSyncQueue:', 'bull:latency-store:', 'bull:openapi-import:'];
+  for (const prefix of ourQueuePrefixes) {
+    try {
+      const keys = await externalRedis.keys(prefix + '*');
+      if (keys.length) await externalRedis.del(keys);
+    } catch (_) {}
+  }
+  // Also clean internal Redis (just in case)
   try {
     const keys = await internalRedis.keys('bull:*');
     if (keys.length) await internalRedis.del(keys);
@@ -738,21 +752,35 @@ async function startup() {
 
   console.log(`[Startup] Worker server ready. Pool size: ${POOL_SIZE}, concurrency: ${WORKER_CONCURRENCY}`);
 }
-startup();
+
+startup().catch(err => {
+  console.error('[Startup] Fatal error:', err);
+  process.exit(1);
+});
 
 // ---------- Graceful Shutdown ----------
-process.on('SIGTERM', async () => {
-  console.log('[worker-server] Received SIGTERM, shutting down...');
-  await internalRedis.quit();
-  await externalRedis.quit();
-  await mongoose.disconnect();
-  process.exit(0);
-});
+async function gracefulShutdown() {
+  console.log('[worker-server] Received shutdown signal, cleaning up...');
 
-process.on('SIGINT', async () => {
-  console.log('[worker-server] Received SIGINT, shutting down...');
-  await internalRedis.quit();
-  await externalRedis.quit();
-  await mongoose.disconnect();
+  // Close workers
+  await projectWorker.close();
+  await mockSyncWorker.close();
+  await latencyWorker.close();
+  await importWorker.close();
+
+  // Close Redis clients
+  await internalRedis.quit().catch(() => {});
+  await externalRedis.quit().catch(() => {});
+
+  // Close MongoDB
+  await mongoose.disconnect().catch(() => {});
+
+  // Close internal HTTP servers
+  routeResolver.close(() => {});
+  pauseServer.close(() => {});
+
   process.exit(0);
-});
+}
+
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);

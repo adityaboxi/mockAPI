@@ -1,4 +1,3 @@
-// server/src/index.js
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -25,11 +24,24 @@ const Project = require('./models/Project');
 const ProjectLatency = require('./models/ProjectLatency');
 const ProjectApiHistory = require('./models/ProjectApiHistory');
 
-// ✅ NEW: Import routes
+// ---------- ROUTES ----------
 const importRoutes = require('./routes/importRoutes');
 
 const app = express();
 const server = http.createServer(app);
+
+// ================================================================
+// TIME WINDOW HELPER (shared by dashboard + latency-stats)
+// ================================================================
+const TIME_WINDOWS_MS = {
+  '1h': 60 * 60 * 1000,
+  '6h': 6 * 60 * 60 * 1000,
+  '24h': 24 * 60 * 60 * 1000,
+  '7d': 7 * 24 * 60 * 60 * 1000,
+};
+function resolveTimeWindow(range) {
+  return TIME_WINDOWS_MS[range] || TIME_WINDOWS_MS['6h'];
+}
 
 // ================================================================
 // 🚀 SOCKET.IO
@@ -45,15 +57,20 @@ const io = new Server(server, {
   pingTimeout: 20000,
 });
 
-let pubClient, subClient;
+let pubClient, subClient; // may remain undefined if adapter fails
 let mainRedisClient;
+let aiSubscriber, logSubscriber;
 let latencyQueue, projectQueue, mockSyncQueue;
+let heartbeatInterval, dataPollingInterval;
 
 // -----------------------------------------------------------------
 //  HELPER: aggregateAllLatencies
+//  Returns a Map of "projectId::path::method" -> avg latency (ms)
+//  over the last 24h, based on total_latency (server + team + user).
 // -----------------------------------------------------------------
 async function aggregateAllLatencies(projectIds) {
   if (!projectIds || projectIds.length === 0) return new Map();
+
   const stats = await ApiCallLog.aggregate([
     {
       $match: {
@@ -64,14 +81,15 @@ async function aggregateAllLatencies(projectIds) {
     {
       $group: {
         _id: {
-          project_id: "$project_id",
-          path: "$path",
-          method: "$method"
+          project_id: '$project_id',
+          path: '$path',
+          method: '$method'
         },
-        avgLatency: { $avg: "$latency_ms" }
+        avgLatency: { $avg: { $ifNull: ['$total_latency', '$latency_ms'] } }
       }
     }
   ]);
+
   const map = new Map();
   for (const s of stats) {
     const key = `${s._id.project_id}::${s._id.path}::${s._id.method}`;
@@ -96,24 +114,25 @@ const startServer = async () => {
   await connectDB();
   mainRedisClient = await connectRedis();
 
-  // Redis adapter for Socket.IO
+  // ---------- Redis adapter for Socket.IO (multi-instance scaling) ----------
   try {
     pubClient = createClient({ url: process.env.REDIS_URL });
     subClient = pubClient.duplicate();
     await Promise.all([pubClient.connect(), subClient.connect()]);
     io.adapter(createAdapter(pubClient, subClient));
+    console.log('[BOOT] Socket.IO Redis adapter connected');
   } catch (err) {
     console.error('[BOOT] Socket.io Redis adapter failed (non-fatal):', err.message);
+    // pubClient/subClient remain undefined – we'll handle gracefully later
   }
 
   // ---------- Redis Pub/Sub listener for AI events ----------
-  const aiSubscriber = mainRedisClient.duplicate();
+  aiSubscriber = mainRedisClient.duplicate();
   await aiSubscriber.connect();
 
   const AI_CHANNELS = ['ws:ai:chunk', 'ws:ai:response', 'ws:ai:error'];
   aiSubscriber.subscribe(AI_CHANNELS, (message, channel) => {
     try {
-      console.log(`[AI Pub/Sub] 📩 Received on ${channel}:`, message);
       const data = JSON.parse(message);
       const { userId, jobId, ...payload } = data;
       if (!userId) {
@@ -121,40 +140,38 @@ const startServer = async () => {
         return;
       }
       const eventName = channel.replace('ws:ai:', '');
-      console.log(`[AI Pub/Sub] ➡️ Emitting to room "user:${userId}" with event "ai:${eventName}"`);
       io.to(`user:${userId}`).emit(`ai:${eventName}`, { jobId, ...payload });
     } catch (err) {
-      console.error('[AI Pub/Sub] ❌ Failed to parse message:', err);
+      console.error('[AI Pub/Sub] Failed to parse message:', err);
     }
   });
   aiSubscriber.on('error', (err) => console.error('[AI Pub/Sub] Redis error:', err));
   console.log('[BOOT] Redis Pub/Sub listener for AI events started');
 
   // ---------- Redis Pub/Sub listener for new API logs (real-time dashboard) ----------
-  const logSubscriber = mainRedisClient.duplicate();
+  logSubscriber = mainRedisClient.duplicate();
   await logSubscriber.connect();
 
   logSubscriber.subscribe('ws:new_api_log', (message) => {
     try {
       const logData = JSON.parse(message);
-      console.log('[Log Pub/Sub] 📩 New API log:', logData);
       io.emit('new_api_log', logData);
     } catch (err) {
-      console.error('[Log Pub/Sub] ❌ Failed to parse log message:', err);
+      console.error('[Log Pub/Sub] Failed to parse log message:', err);
     }
   });
   logSubscriber.on('error', (err) => console.error('[Log Pub/Sub] Redis error:', err));
   console.log('[BOOT] Redis Pub/Sub listener for new API logs started');
 
-  // BullMQ queues
+  // ---------- BullMQ queues ----------
   const queueConnection = { connection: { url: process.env.REDIS_URL } };
   latencyQueue = new Queue('latency-store', queueConnection);
   projectQueue = new Queue('projectQueue', queueConnection);
   mockSyncQueue = new Queue('mockSyncQueue', queueConnection);
 
-  require('./queues/emailQueue');
+  require('./queues/emailQueue'); // loads the email worker (uses same Redis)
 
-  // --- CORS ---
+  // ---------- CORS ----------
   app.use(cors({
     origin: process.env.CLIENT_URL || 'http://localhost:8082',
     credentials: true,
@@ -166,7 +183,7 @@ const startServer = async () => {
   app.use(cookieParser());
   app.use((req, res, next) => { req.io = io; next(); });
 
-  // XSS sanitization
+  // ---------- XSS sanitization ----------
   app.use((req, res, next) => {
     const sanitize = (obj) => {
       for (const key in obj) {
@@ -183,7 +200,8 @@ const startServer = async () => {
     next();
   });
 
-  // --- CSRF Protection ---
+  // ---------- CSRF Protection ----------
+  // NOTE: All /api/* routes are exempted because they use JWT + CORS.
   const { generateToken, doubleCsrfProtection } = doubleCsrf({
     getSecret: () => process.env.CSRF_SECRET,
     cookieName: 'x-csrf-token',
@@ -203,7 +221,9 @@ const startServer = async () => {
     res.json({ csrfToken: generateToken(req, res) });
   });
 
-  // ---------- Controllers ----------
+  // ================================================================
+  // CONTROLLERS (imports are kept as is)
+  // ================================================================
   const login = require('./controllers/login');
   const setuser = require('./controllers/setuser');
   const isemailvalid = require('./controllers/isemailvalid');
@@ -237,9 +257,9 @@ const startServer = async () => {
   const { ask_ai, getAiResult } = require('./controllers/ask_ai');
   const delete_project = require('./controllers/delete_project');
 
-  // ---------- Routes ----------
-  app.post('/api/subscribe', authenticateToken, subscribe);
-  app.post('/api/unsubscribe', authenticateToken, unsubscribe);
+  // ================================================================
+  // ROUTES (no changes)
+  // ================================================================
   app.post('/api/isemailvalid', isemailvalid);
   app.post('/api/isvalidusername', isvalidusername);
   app.post('/api/setuser', setuser);
@@ -249,6 +269,10 @@ const startServer = async () => {
   app.post('/api/otp-verify', otp_verify);
   app.get('/api/sync-auth', sync_auth);
   app.post('/api/guest-session', guest_session);
+
+  app.post('/api/subscribe', authenticateToken, subscribe);
+  app.post('/api/unsubscribe', authenticateToken, unsubscribe);
+
   app.post('/api/create-project', authenticateToken, create_project);
   app.post('/api/join-project', authenticateToken, join_project);
   app.get('/api/projects', authenticateToken, projects);
@@ -256,41 +280,38 @@ const startServer = async () => {
   app.post('/api/verify-project', authenticateToken, verify_project);
   app.post('/api/reset-invitation-code', authenticateToken, reset_invitation_code);
   app.post('/api/verify-invitationcode-otp', authenticateToken, verify_invitationcode_otp);
+  app.delete('/api/deleteproject', authenticateToken, delete_project);
+
   app.get('/api/requests/received', authenticateToken, get_received_requests);
   app.get('/api/requests/sent', authenticateToken, get_sent_requests);
   app.post('/api/requests/accept/:requestId', authenticateToken, approve_project_request);
   app.delete('/api/requests/revoke/:requestId', authenticateToken, revoke_request);
+
   app.get('/api/user-apis', authenticateToken, get_user_apis);
   app.post('/api/update-api', authenticateToken, update_api);
   app.post('/api/add-api', authenticateToken, add_api);
   app.post('/api/api-version-data', authenticateToken, api_version_data);
   app.get('/api/api-history', authenticateToken, api_history);
   app.delete('/api/versions/delete/:versionId', authenticateToken, delete_api_version);
+
   app.post('/api/ask-ai', authenticateToken, ask_ai);
   app.get('/api/ai-result/:jobId', authenticateToken, getAiResult);
   app.post('/api/reverse-ai', authenticateToken, reverse_ai);
+
   app.post('/api/logs', authenticateToken, logs);
-  app.delete('/api/deleteproject', authenticateToken, delete_project);
 
   app.get('/', (req, res) => {
     res.json({ status: 'ok', message: 'Server is running' });
   });
 
-  // --------------------------------------------------------------
-  // MULTER CONFIG
-  // --------------------------------------------------------------
   const upload = multer({ storage: multer.memoryStorage() });
 
-  // --------------------------------------------------------------
-  // 1. LATENCY TEST
-  // --------------------------------------------------------------
+  // ---- LATENCY TEST ----
   app.get('/api/latency-test', (req, res) => {
     res.json({ timestamp: Date.now() });
   });
 
-  // --------------------------------------------------------------
-  // 2. PROJECT LATENCY REPORT
-  // --------------------------------------------------------------
+  // ---- LATENCY REPORT ----
   app.post('/api/latency-report', authenticateToken, async (req, res) => {
     try {
       const { project_id, rtt } = req.body;
@@ -305,7 +326,7 @@ const startServer = async () => {
       } else {
         doc.averageRtt = Math.round((doc.averageRtt + rtt) / 2);
         doc.sampleCount += 1;
-        doc.updatedAt = new Date();
+        // ✅ REMOVED: doc.updatedAt = new Date(); – Mongoose handles it
         await doc.save();
       }
 
@@ -317,9 +338,7 @@ const startServer = async () => {
     }
   });
 
-  // --------------------------------------------------------------
-  // 3. IMPORT OPENAPI
-  // --------------------------------------------------------------
+  // ---- OPENAPI IMPORT (sync) ----
   app.post('/api/import-openapi', authenticateToken, upload.single('file'), async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
@@ -347,7 +366,7 @@ const startServer = async () => {
         const fullPath = basePath + rawPath;
         const pathObj = spec.paths[rawPath];
         Object.keys(pathObj).forEach(method => {
-          if (!['get','post','put','delete','patch','options'].includes(method)) return;
+          if (!['get', 'post', 'put', 'delete', 'patch', 'options'].includes(method)) return;
           const operation = pathObj[method];
 
           if (!endpointsMap[fullPath]) {
@@ -381,7 +400,7 @@ const startServer = async () => {
         invitationCode,
         members: [req.user.username],
         isActive: true,
-        createdAt: new Date().toISOString()
+        // ✅ REMOVED: createdAt – Mongoose will add it automatically
       });
       await newProject.save();
 
@@ -427,9 +446,7 @@ const startServer = async () => {
     }
   });
 
-  // --------------------------------------------------------------
-  // 4. DASHBOARD DATA (with Redis cache)
-  // --------------------------------------------------------------
+  // ---- DASHBOARD DATA ----
   app.get('/api/dashboard-data', authenticateToken, async (req, res) => {
     try {
       const username = req.user.username;
@@ -517,91 +534,75 @@ const startServer = async () => {
     }
   });
 
-  // --------------------------------------------------------------
-  // 5. LATENCY STATS (with Redis cache)
-  // --------------------------------------------------------------
- app.get('/api/latency-stats', authenticateToken, async (req, res) => {
-  try {
-    const { project_id, path, method } = req.query;
-    const range = req.query.range || '6h'; // default to 6 hours
+  // ---- LATENCY STATS ----
+  app.get('/api/latency-stats', authenticateToken, async (req, res) => {
+    try {
+      const { project_id, path, method } = req.query;
+      const range = req.query.range || '6h';
 
-    if (!project_id || !path || !method) {
-      return res.status(400).json({ error: 'Missing project_id, path, or method' });
-    }
-
-    // Define time windows (in milliseconds)
-    const timeWindows = {
-      '1h': 60 * 60 * 1000,
-      '6h': 6 * 60 * 60 * 1000,
-      '24h': 24 * 60 * 60 * 1000,
-      '7d': 7 * 24 * 60 * 60 * 1000,
-    };
-    const timeWindow = timeWindows[range] || timeWindows['6h'];
-    const since = new Date(Date.now() - timeWindow);
-
-    // Include range in cache key so different ranges don't conflict
-    const cacheKey = `latStats:${project_id}:${path}:${method}:${range}`;
-    const cached = await mainRedisClient.get(cacheKey);
-    if (cached) {
-      return res.json(JSON.parse(cached));
-    }
-
-    // Aggregate pipeline – now uses `total_latency` (includes team + user)
-    const pipeline = [
-      {
-        $match: {
-          project_id,
-          path,
-          method: method.toUpperCase(),
-          timestamp: { $gte: since }
-        }
-      },
-      {
-        $group: {
-          _id: {
-            $toDate: {
-              $subtract: [
-                { $toLong: '$timestamp' },
-                { $mod: [{ $toLong: '$timestamp' }, 1000 * 60 * 5] } // 5‑minute buckets
-              ]
-            }
-          },
-          avgLatency: { $avg: '$total_latency' }, // ✅ now uses total latency
-          requests: { $sum: 1 }
-        }
-      },
-      { $sort: { _id: 1 } },
-      {
-        $project: {
-          _id: 0,
-          time: { $dateToString: { format: '%Y-%m-%dT%H:%M:%S.000Z', date: '$_id' } },
-          latency: { $round: ['$avgLatency', 0] },
-          requests: 1
-        }
+      if (!project_id || !path || !method) {
+        return res.status(400).json({ error: 'Missing project_id, path, or method' });
       }
-    ];
 
-    const points = await ApiCallLog.aggregate(pipeline);
-    const response = { points };
+      const since = new Date(Date.now() - resolveTimeWindow(range));
 
-    // Cache for 30 seconds
-    await mainRedisClient.setEx(cacheKey, 30, JSON.stringify(response));
-    res.json(response);
-  } catch (err) {
-    console.error('[latency-stats]', err);
-    res.status(500).json({ error: 'Failed to fetch latency stats' });
-  }
-});
+      const cacheKey = `latStats:${project_id}:${path}:${method}:${range}`;
+      const cached = await mainRedisClient.get(cacheKey);
+      if (cached) {
+        return res.json(JSON.parse(cached));
+      }
 
-  // ============================================================
-  // ✅ NEW: IMPORT ROUTES (OpenAPI async import)
-  // ================================================================
+      const pipeline = [
+        {
+          $match: {
+            project_id,
+            path,
+            method: method.toUpperCase(),
+            timestamp: { $gte: since }
+          }
+        },
+        {
+          $group: {
+            _id: {
+              $toDate: {
+                $subtract: [
+                  { $toLong: '$timestamp' },
+                  { $mod: [{ $toLong: '$timestamp' }, 1000 * 60 * 5] } // 5-minute buckets
+                ]
+              }
+            },
+            avgLatency: { $avg: { $ifNull: ['$total_latency', '$latency_ms'] } },
+            requests: { $sum: 1 }
+          }
+        },
+        { $sort: { _id: 1 } },
+        {
+          $project: {
+            _id: 0,
+            time: { $dateToString: { format: '%Y-%m-%dT%H:%M:%S.000Z', date: '$_id' } },
+            latency: { $round: ['$avgLatency', 0] },
+            requests: 1
+          }
+        }
+      ];
+
+      const points = await ApiCallLog.aggregate(pipeline);
+      const response = { points };
+
+      await mainRedisClient.setEx(cacheKey, 30, JSON.stringify(response));
+      res.json(response);
+    } catch (err) {
+      console.error('[latency-stats]', err);
+      res.status(500).json({ error: 'Failed to fetch latency stats' });
+    }
+  });
+
+  // ---- ASYNC IMPORT ROUTES ----
   app.use('/api', importRoutes);
 
   // ================================================================
   // SOCKET.IO EVENTS
   // ================================================================
-  let heartbeatInterval, dataPollingInterval;
   let lastCheckedTime = new Date();
 
   io.engine.on('connection_error', (err) => {
@@ -612,25 +613,32 @@ const startServer = async () => {
     socket.on('join_room', (roomName) => {
       if (roomName && typeof roomName === 'string') socket.join(roomName);
     });
+
     socket.on('join_project', async (projectId) => {
       if (!projectId) return;
       socket.join(projectId);
       try {
         const cacheKey = `initial_logs:${projectId}`;
-        let logs = await pubClient.get(cacheKey);
-        if (logs) {
-          logs = JSON.parse(logs);
-        } else {
+        let logs = null;
+        if (pubClient) {
+          const cached = await pubClient.get(cacheKey);
+          if (cached) logs = JSON.parse(cached);
+        }
+        if (!logs) {
           logs = await SystemEventLog.find({ projectId })
             .sort({ createdAt: -1 })
             .limit(50);
-          await pubClient.setEx(cacheKey, 30, JSON.stringify(logs));
+          if (pubClient) {
+            await pubClient.setEx(cacheKey, 30, JSON.stringify(logs));
+          }
         }
         socket.emit('initial_logs', logs);
       } catch (err) {
+        console.error('[join_project] Error fetching logs:', err);
         socket.emit('initial_logs', []);
       }
     });
+
     socket.on('leave_project', (projectId) => {
       if (projectId) socket.leave(projectId);
     });
@@ -658,23 +666,29 @@ const startServer = async () => {
         }
       }
       lastCheckedTime = now;
-    } catch (err) { /* silent */ }
+    } catch (err) {
+      console.error('[LOG_POLLING] error:', err.message);
+    }
   }, LOG_POLLING_INTERVAL);
 
   // ================================================================
   // GRACEFUL SHUTDOWN
   // ================================================================
   const gracefulShutdown = async () => {
+    console.log('[SHUTDOWN] Received signal, shutting down gracefully...');
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     if (dataPollingInterval) clearInterval(dataPollingInterval);
+
     if (latencyQueue) await latencyQueue.close().catch(() => {});
     if (projectQueue) await projectQueue.close().catch(() => {});
     if (mockSyncQueue) await mockSyncQueue.close().catch(() => {});
+
     if (pubClient) await pubClient.quit().catch(() => {});
     if (subClient) await subClient.quit().catch(() => {});
     if (mainRedisClient) await mainRedisClient.quit().catch(() => {});
     if (aiSubscriber) await aiSubscriber.quit().catch(() => {});
     if (logSubscriber) await logSubscriber.quit().catch(() => {});
+
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(1), 5000);
   };

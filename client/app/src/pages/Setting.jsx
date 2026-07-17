@@ -20,9 +20,8 @@ const Setting = () => {
       setIsProcessing(true);
       try {
         await unsubscribeUser();
-        // user state is updated via refreshUser inside unsubscribeUser
       } catch {
-        // silent – error is handled inside the context
+        // silent
       } finally {
         setIsProcessing(false);
       }
@@ -38,21 +37,29 @@ const Setting = () => {
     checkSubscription();
   }, [isAuthenticated, refreshUser]);
 
-  const borderClass = isWhiteTheme ? "border-gray-200/80" : "border-zinc-700/50";
-  const bgCardClass = isWhiteTheme ? "bg-gray-50/60 hover:bg-gray-100/60" : "bg-[#2b2d31] hover:bg-[#32353b]";
-  const textMuted = isWhiteTheme ? "text-gray-500" : "text-gray-400";
+  const borderClass = isWhiteTheme ? "border-gray-200/80" : "border-zinc-800";
+  const bgCardClass = isWhiteTheme
+    ? "bg-gray-50/60 hover:bg-gray-100/60"
+    : "bg-zinc-900 hover:bg-zinc-800";
+  const textMuted = isWhiteTheme ? "text-gray-500" : "text-zinc-400";
   const actionBtnClass = isWhiteTheme
     ? "bg-white hover:bg-gray-50 text-gray-700 border border-gray-300 shadow-sm"
-    : "bg-zinc-800 hover:bg-zinc-700 text-gray-200 border border-zinc-700/60 shadow-sm";
+    : "bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 shadow-sm";
 
   return (
-    <div className={`min-h-screen w-full flex flex-col font-sans transition-colors duration-150 ${isWhiteTheme ? "bg-white text-gray-800" : "bg-[#1e1e24] text-gray-200"}`}>
+    <div className={`min-h-screen w-full flex flex-col font-sans transition-colors duration-150 ${
+      isWhiteTheme ? "bg-white text-gray-800" : "bg-zinc-950 text-zinc-300"
+    }`}>
       {/* Header */}
-      <div className={`h-12 flex items-center px-6 border-b shrink-0 ${isWhiteTheme ? "bg-white border-gray-200" : "bg-[#2b2d31] border-zinc-700/50"}`}>
+      <div className={`h-12 flex items-center px-6 border-b shrink-0 ${
+        isWhiteTheme ? "bg-white border-gray-200" : "bg-zinc-950 border-zinc-800"
+      }`}>
         <button
           type="button"
           onClick={() => navigate("/home")}
-          className={`text-xs font-medium flex items-center gap-1 transition-colors focus:outline-none ${isWhiteTheme ? "text-gray-500 hover:text-gray-900" : "text-gray-400 hover:text-white"}`}
+          className={`text-xs font-medium flex items-center gap-1 transition-colors focus:outline-none ${
+            isWhiteTheme ? "text-gray-500 hover:text-gray-900" : "text-zinc-400 hover:text-white"
+          }`}
         >
           ← Back to Home
         </button>
@@ -65,7 +72,9 @@ const Setting = () => {
         <div className={`p-4 rounded-lg border flex justify-between items-center transition-all ${bgCardClass} ${borderClass}`}>
           <div className="space-y-0.5 select-none pr-4">
             <h3 className="text-xs font-bold tracking-wide">Workspace Theme</h3>
-            <p className={`text-[11px] leading-relaxed ${textMuted}`}>Switch between classic light and deep carbon dark interface configurations.</p>
+            <p className={`text-[11px] leading-relaxed ${textMuted}`}>
+              Switch between classic light and deep carbon dark interface configurations.
+            </p>
           </div>
           <button
             type="button"
@@ -83,35 +92,41 @@ const Setting = () => {
         >
           <div className="space-y-0.5 select-none pr-4">
             <h3 className="text-xs font-bold tracking-wide">Account Identity</h3>
-            <p className={`text-[11px] leading-relaxed ${textMuted}`}>Review deployment status vectors, active request channels, and live endpoints.</p>
+            <p className={`text-[11px] leading-relaxed ${textMuted}`}>
+              Review deployment status vectors, active request channels, and live endpoints.
+            </p>
           </div>
           <div className={`px-3 py-1 rounded text-[11px] font-semibold transition-colors h-7 flex items-center justify-center whitespace-nowrap min-w-[90px] group-hover:border-blue-500/30 ${actionBtnClass}`}>
             Manage Account
           </div>
         </div>
 
-        {/* Dashboard Card (NEW) */}
+        {/* Dashboard Card */}
         <div
           onClick={() => navigate("/dashboard")}
           className={`p-4 rounded-lg border flex justify-between items-center transition-all cursor-pointer group ${bgCardClass} ${borderClass}`}
         >
           <div className="space-y-0.5 select-none pr-4">
             <h3 className="text-xs font-bold tracking-wide">📊 Dashboard</h3>
-            <p className={`text-[11px] leading-relaxed ${textMuted}`}>Visualise real‑time API performance, latency trends, and request analytics.</p>
+            <p className={`text-[11px] leading-relaxed ${textMuted}`}>
+              Visualise real‑time API performance, latency trends, and request analytics.
+            </p>
           </div>
           <div className={`px-3 py-1 rounded text-[11px] font-semibold transition-colors h-7 flex items-center justify-center whitespace-nowrap min-w-[90px] group-hover:border-blue-500/30 ${actionBtnClass}`}>
             Open Dashboard
           </div>
         </div>
 
-        {/* Tools Card (NEW) */}
+        {/* Tools Card */}
         <div
           onClick={() => navigate("/tools")}
           className={`p-4 rounded-lg border flex justify-between items-center transition-all cursor-pointer group ${bgCardClass} ${borderClass}`}
         >
           <div className="space-y-0.5 select-none pr-4">
             <h3 className="text-xs font-bold tracking-wide">🛠️ Tools</h3>
-            <p className={`text-[11px] leading-relaxed ${textMuted}`}>Access import utilities, network diagnostics, and advanced API builder.</p>
+            <p className={`text-[11px] leading-relaxed ${textMuted}`}>
+              Access import utilities, network diagnostics, and advanced API builder.
+            </p>
           </div>
           <div className={`px-3 py-1 rounded text-[11px] font-semibold transition-colors h-7 flex items-center justify-center whitespace-nowrap min-w-[90px] group-hover:border-blue-500/30 ${actionBtnClass}`}>
             Launch Tools
@@ -122,7 +137,11 @@ const Setting = () => {
         <div className={`p-4 rounded-lg border flex justify-between items-center transition-all ${bgCardClass} ${borderClass}`}>
           <div className="space-y-0.5 select-none pr-4">
             <h3 className="text-xs font-bold tracking-wide">
-              {!isAuthenticated ? "Session Status" : !isSubscribed ? "Premium Feature Access" : "Subscription Active"}
+              {!isAuthenticated
+                ? "Session Status"
+                : !isSubscribed
+                  ? "Premium Feature Access"
+                  : "Subscription Active"}
             </h3>
             <p className={`text-[11px] leading-relaxed ${textMuted}`}>
               {!isAuthenticated
@@ -161,7 +180,7 @@ const Setting = () => {
                     className={`px-3 py-1 rounded text-[11px] font-semibold transition-colors focus:outline-none h-7 whitespace-nowrap min-w-[90px] border disabled:opacity-50 disabled:cursor-not-allowed ${
                       isWhiteTheme
                         ? "border-gray-300 text-gray-700 hover:bg-gray-100"
-                        : "border-zinc-700 text-gray-300 hover:bg-zinc-800"
+                        : "border-zinc-700 text-zinc-300 hover:bg-zinc-800"
                     }`}
                   >
                     {isProcessing ? "Processing..." : "Cancel Sub"}

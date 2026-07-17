@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -10,18 +9,10 @@ import ApiHistory from "../components/ApiHistory";
 import ApiLog from "../components/ApiLog";
 import Footer from "../components/Footer";
 
-
-
-
-
-
-
 function Home() {
   const { theme } = useTheme();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  
- 
   const { clearProject, selectProject, currentProject } = useProject();
 
   const [isProjectListOpen, setIsProjectListOpen] = useState(() => {
@@ -33,16 +24,11 @@ function Home() {
     return saved !== null ? JSON.parse(saved) : true;
   });
 
-
-
-
-  
   const currentProjectName = currentProject?.name || "No Project";
   const currentProjectId = currentProject?.id || "";
-
   const isWhiteTheme = theme === "white";
 
-   useEffect(() => {
+  useEffect(() => {
     localStorage.setItem("isProjectListOpen", JSON.stringify(isProjectListOpen));
   }, [isProjectListOpen]);
 
@@ -50,16 +36,13 @@ function Home() {
     localStorage.setItem("isApiHistoryOpen", JSON.stringify(isApiHistoryOpen));
   }, [isApiHistoryOpen]);
 
-  // Toggle functions
   const toggleProjectList = () => setIsProjectListOpen((prev) => !prev);
   const toggleApiHistory = () => setIsApiHistoryOpen((prev) => !prev);
 
-  // When a project is selected from the sidebar
   const handleProjectSelect = (project) => {
     selectProject(project.projectname, project.id, project.invitationCode);
   };
 
- 
   const handleLogout = async () => {
     localStorage.removeItem("isProjectListOpen");
     localStorage.removeItem("isApiHistoryOpen");
@@ -68,25 +51,26 @@ function Home() {
     navigate("/login");
   };
 
-
-  
   const handleNavigateToLogin = () => navigate("/login");
 
   const displayName = user?.username || "Guest";
   const userRole = user?.role || "guest";
 
-  
   const Header = () => (
     <div
       className={`h-10 shrink-0 flex items-center px-4 border-b justify-between ${
-        isWhiteTheme ? "bg-white border-gray-200" : "bg-[#2b2d31] border-zinc-700/50"
+        isWhiteTheme
+          ? "bg-white border-gray-200"
+          : "bg-zinc-950 border-zinc-800"
       }`}
     >
       <div className="flex items-center gap-6 w-1/3">
         <button
           onClick={toggleProjectList}
           className={`transition-colors text-xs flex items-center gap-2 ${
-            isWhiteTheme ? "text-gray-500 hover:text-gray-700" : "text-gray-400 hover:text-white"
+            isWhiteTheme
+              ? "text-gray-500 hover:text-gray-700"
+              : "text-zinc-400 hover:text-white"
           }`}
         >
           projects {isProjectListOpen ? "<<" : ">>"}
@@ -95,10 +79,9 @@ function Home() {
 
       <div
         className={`w-1/3 text-center text-xs font-semibold truncate ${
-          isWhiteTheme ? "text-gray-700" : "text-gray-300"
+          isWhiteTheme ? "text-gray-700" : "text-white"
         }`}
       >
-
         {currentProjectName}
       </div>
 
@@ -106,13 +89,15 @@ function Home() {
         <button
           onClick={toggleApiHistory}
           className={`transition-colors flex items-center gap-1 ${
-            isWhiteTheme ? "text-gray-500 hover:text-gray-700" : "text-gray-400 hover:text-white"
+            isWhiteTheme
+              ? "text-gray-500 hover:text-gray-700"
+              : "text-zinc-400 hover:text-white"
           }`}
         >
           API History {isApiHistoryOpen ? ">>" : "<<"}
         </button>
 
-        <span className={`font-medium ${isWhiteTheme ? "text-gray-500" : "text-gray-400"}`}>
+        <span className={`font-medium ${isWhiteTheme ? "text-gray-500" : "text-zinc-400"}`}>
           {displayName}
         </span>
 
@@ -126,11 +111,7 @@ function Home() {
         ) : (
           <button
             onClick={handleLogout}
-            className={`px-3 py-1 rounded transition-colors ${
-              isWhiteTheme
-                ? "bg-gray-200 hover:bg-gray-300 text-gray-700"
-                : "bg-zinc-700 hover:bg-zinc-600 text-white"
-            }`}
+            className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded transition-colors"
           >
             Logout
           </button>
@@ -142,7 +123,7 @@ function Home() {
   return (
     <div
       className={`h-screen w-full font-sans flex flex-col overflow-hidden text-sm selection:bg-blue-500/30 ${
-        isWhiteTheme ? "bg-white text-gray-800" : "bg-[#1e1e24] text-gray-300"
+        isWhiteTheme ? "bg-white text-gray-800" : "bg-zinc-950 text-zinc-300"
       }`}
     >
       <Header />

@@ -58,11 +58,7 @@ const ProjectCreateInput = React.memo(({ user, onProjectCreated, isWhiteTheme })
           <button
             onClick={handleCreateProject}
             disabled={isCreating}
-            className={`border px-2 py-1 text-xs rounded transition-colors ${
-              isWhiteTheme
-                ? `bg-gray-100 hover:bg-gray-200 border-gray-300 text-gray-700`
-                : `bg-[#1e1f22] hover:bg-zinc-700 border-zinc-700/50 text-gray-300`
-            }`}
+            className="bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 text-xs rounded transition-colors disabled:opacity-50"
           >
             {isCreating ? "Creating..." : "+ New"}
           </button>
@@ -98,11 +94,7 @@ const ProjectCreateInput = React.memo(({ user, onProjectCreated, isWhiteTheme })
           />
           <button
             onClick={copyInvitationCode}
-            className={`px-2 py-1 rounded text-xs transition-colors flex items-center gap-1 ${
-              isWhiteTheme
-                ? "bg-blue-500 hover:bg-blue-600 text-white"
-                : "bg-blue-600/80 hover:bg-blue-500 text-white"
-            }`}
+            className="bg-blue-600 hover:bg-blue-500 text-white px-2 py-1 rounded text-xs transition-colors flex items-center gap-1"
           >
             {copySuccess ? "✓ Copied!" : "📋 Copy"}
           </button>
@@ -113,11 +105,3 @@ const ProjectCreateInput = React.memo(({ user, onProjectCreated, isWhiteTheme })
 });
 
 export default ProjectCreateInput;
-
-
-
-
-
-
-
-

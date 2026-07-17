@@ -19,7 +19,6 @@ function ManageAccount() {
   const userProjectsRef = useRef([]);
   const joinedRooms = useRef(new Set());
 
-
   const REQUESTS_RECEIVED_URL = import.meta.env.VITE_API_URL_REQUESTS_RECEIVED;
   const REQUESTS_SENT_URL = import.meta.env.VITE_API_URL_REQUESTS_SENT;
   const USER_APIS_URL = import.meta.env.VITE_API_URL_USER_APIS;
@@ -205,33 +204,31 @@ function ManageAccount() {
   // Loading state
   if (loading && !receivedRequests.length && !userProjects.length) {
     return (
-      <div className={`w-full min-h-screen flex items-center justify-center ${w ? "bg-white" : "bg-[#1a202c]"}`}>
+      <div className={`w-full min-h-screen flex items-center justify-center ${w ? "bg-white" : "bg-zinc-950"}`}>
         <div
           className={`animate-spin h-5 w-5 border-2 rounded-full border-t-transparent ${
-            w ? "border-blue-600" : "border-[#2bd9a1]"
+            w ? "border-blue-600" : "border-blue-400"
           }`}
         ></div>
       </div>
     );
   }
 
-  // Styles (unchanged)
-  const mainWrapperBg = w ? "bg-white text-gray-800" : "bg-[#1a202c] text-[#e2e8f0]";
-  const headerBorder = w ? "border-gray-200 bg-gray-50" : "border-[#2d3748] bg-[#232b3c]/40";
-  const dividerLine = w ? "border-gray-200" : "border-[#2d3748]";
-  const cardBg = w ? "bg-gray-50/50 border border-gray-200" : "bg-[#232b3c] border border-[#2d3748]";
-  const innerCardBg = w ? "bg-white border border-gray-200/60" : "bg-[#1a202c] border border-[#2d3748]/40";
-  const headerTxt = w ? "text-gray-900" : "text-[#e2e8f0]";
-  const mutedTxt = w ? "text-gray-500" : "text-[#a0aec0]";
-  const miniMutedTxt = w ? "text-gray-400" : "text-[#718096]";
-  const highlightTxt = w ? "text-blue-600" : "text-[#2bd9a1]";
+  // Style helpers (white theme kept, dark uses zinc palette)
+  const mainWrapperBg = w ? "bg-white text-gray-800" : "bg-zinc-950 text-zinc-300";
+  const headerBorder = w ? "border-gray-200 bg-gray-50" : "border-zinc-800 bg-zinc-950";
+  const dividerLine = w ? "border-gray-200" : "border-zinc-800";
+  const cardBg = w ? "bg-gray-50/50 border border-gray-200" : "bg-zinc-900 border border-zinc-800";
+  const innerCardBg = w ? "bg-white border border-gray-200/60" : "bg-zinc-950 border border-zinc-800/40";
+  const headerTxt = w ? "text-gray-900" : "text-white";
+  const mutedTxt = w ? "text-gray-500" : "text-zinc-400";
+  const miniMutedTxt = w ? "text-gray-400" : "text-zinc-500";
+  const highlightTxt = w ? "text-blue-600" : "text-blue-400";
 
-  const successBtn = w
-    ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-semibold px-2.5 py-1.5 rounded transition-colors select-none shrink-0"
-    : "bg-[#2bd9a1]/10 hover:bg-[#2bd9a1]/20 text-[#2bd9a1] border border-[#2bd9a1]/30 text-xs font-medium px-2.5 py-1.5 rounded transition-colors select-none shrink-0";
-  const neutralBtn = w
-    ? "border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 text-xs font-medium px-2.5 py-1.5 rounded transition-colors select-none shrink-0"
-    : "border border-[#2d3748] text-[#e2e8f0] bg-[#1a202c] hover:bg-[#2d3748]/50 text-xs font-medium px-2.5 py-1.5 rounded transition-colors select-none shrink-0";
+  // Unified blue button for approve/revoke
+  const blueBtn = "bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1.5 rounded text-xs font-medium transition-colors select-none shrink-0 disabled:opacity-50";
+
+  // Red button for delete (previous style)
   const dangerBtn = w
     ? "text-rose-600 hover:bg-rose-50 border border-transparent text-xs font-semibold px-2 py-1 rounded transition-colors select-none"
     : "text-rose-400 hover:bg-rose-500/10 border border-transparent text-xs font-medium px-2 py-1 rounded transition-colors select-none";
@@ -243,7 +240,7 @@ function ManageAccount() {
           type="button"
           onClick={() => navigate("/setting")}
           className={`text-xs font-semibold flex items-center gap-1.5 transition-colors focus:outline-none ${
-            w ? "text-gray-500 hover:text-gray-900" : "text-[#a0aec0] hover:text-white"
+            w ? "text-gray-500 hover:text-gray-900" : "text-zinc-400 hover:text-white"
           }`}
         >
           <span>←</span> Back to Settings
@@ -276,7 +273,7 @@ function ManageAccount() {
                       by : <span className={`font-semibold ${highlightTxt}`}>@{req.requestedBy}</span>
                     </div>
                   </div>
-                  <button type="button" onClick={() => handleAcceptRequest(req.id)} className={successBtn}>Approve</button>
+                  <button type="button" onClick={() => handleAcceptRequest(req.id)} className={blueBtn}>Approve</button>
                 </div>
               ))}
               {receivedRequests.length === 0 && (
@@ -301,7 +298,7 @@ function ManageAccount() {
                     </span>
                     <span className="text-[11px] font-medium text-amber-500 capitalize select-none shrink-0">pending</span>
                   </div>
-                  <button type="button" onClick={() => handleRevokeRequest(req.id)} className={neutralBtn}>revoke request</button>
+                  <button type="button" onClick={() => handleRevokeRequest(req.id)} className={blueBtn}>revoke request</button>
                 </div>
               ))}
               {sentRequests.length === 0 && (
@@ -369,8 +366,3 @@ function ManageAccount() {
 }
 
 export default ManageAccount;
-
-
-
-
-

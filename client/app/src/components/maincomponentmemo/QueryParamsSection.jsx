@@ -5,9 +5,10 @@ const QueryParamsSection = React.memo(({ queryParams, updateQueryParam, removeQu
     <div>
       <div className={`flex items-center justify-between px-3 py-2 border-b text-xs ${w ? "border-gray-200 bg-gray-50" : "border-zinc-700/50 bg-[#1a1b1e]"}`}>
         <span className={`font-medium ${labelTxt}`}>Query Parameters</span>
+        {/* + Add button – now always blue, no prop needed */}
         <button
           onClick={() => setShowQueryParamInput(!showQueryParamInput)}
-          className={`px-2 py-0.5 rounded text-xs transition-colors ${miniBtn}`}
+          className="bg-blue-600 hover:bg-blue-500 text-white px-2 py-0.5 rounded text-xs font-medium transition-colors"
         >
           + Add
         </button>

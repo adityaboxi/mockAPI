@@ -1,28 +1,93 @@
-// worker-logs/models/ApiCallLog.js
 const mongoose = require('mongoose');
 
 const apiCallLogSchema = new mongoose.Schema({
-  project_id: { type: String, required: true, index: true },
-  path:       { type: String, default: '' },
-  method:     { type: String, default: '' },
-  timestamp:  { type: Date, default: Date.now, index: true },
-  cache:      { type: String, default: '' },
-  ip:         { type: String, default: '' },
-  status:     { type: Number, default: 0 },
-  latency_ms: { type: Number, default: 0 },
-  private:    { type: Boolean, default: false },
-  ttl:        { type: Number, default: 0 },
+  project_id: { 
+    type: String, 
+    required: true, 
+    index: true 
+  },
+  username: { 
+    type: String, 
+    index: true 
+  }, // extracted from project_id (e.g., "aditya" from "aditya_abc123")
 
-  // ✅ NEW fields from your worker
-  username:       { type: String, index: true },    // extracted from project_id
-  team_latency:   { type: Number, default: 0 },    // average team latency from Redis
-  user_latency:   { type: Number, default: 0 },    // individual user latency from Redis
-}, { timestamps: false });
+  path: { 
+    type: String, 
+    default: '' 
+  },
+  method: { 
+    type: String, 
+    default: 'GET',
+    uppercase: true 
+  },
 
-// Compound index for faster dashboard queries
+  timestamp: { 
+    type: Date, 
+    default: Date.now, 
+    index: true 
+  },
+
+  // Request details
+  ip: { 
+    type: String, 
+    default: '' 
+  },
+  status: { 
+    type: Number, 
+    default: 0 
+  },
+  latency_ms: { 
+    type: Number, 
+    default: 0 
+  },
+
+  // Latency breakdown (from Redis)
+  team_latency: { 
+    type: Number, 
+    default: 0 
+  },
+  user_latency: { 
+    type: Number, 
+    default: 0 
+  },
+  total_latency: { 
+    type: Number, 
+    default: 0 
+  },
+
+  // Other flags
+  private: { 
+    type: Boolean, 
+    default: false 
+  },
+  cache: { 
+    type: String, 
+    default: 'MISS' 
+  },
+  ttl: { 
+    type: Number, 
+    default: 0 
+  },
+
+}, { 
+  timestamps: false   // We already have explicit timestamp
+});
+
+// ==================== INDEXES ====================
+
+// Fast dashboard queries
+apiCallLogSchema.index({ project_id: 1, timestamp: -1 });
 apiCallLogSchema.index({ project_id: 1, path: 1, method: 1, timestamp: -1 });
 
-// TTL index: auto‑delete logs older than 30 days
-apiCallLogSchema.index({ timestamp: 1 }, { expireAfterSeconds: 30 * 24 * 3600 });
+// Username-based queries
+apiCallLogSchema.index({ username: 1, timestamp: -1 });
+
+// TTL: Auto-delete logs older than 30 days
+apiCallLogSchema.index({ timestamp: 1 }, { 
+  expireAfterSeconds: 30 * 24 * 3600 
+});
+
+// Compound index for latency analytics
+apiCallLogSchema.index({ project_id: 1, private: 1, timestamp: -1 });
 
 module.exports = mongoose.model('ApiCallLog', apiCallLogSchema);

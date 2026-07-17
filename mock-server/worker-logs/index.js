@@ -1,26 +1,31 @@
-// worker-logs/index.js
 require('dotenv').config();
 const { Worker } = require('bullmq');
 const mongoose = require('mongoose');
 const nodemailer = require('nodemailer');
+
+// Models
 const ApiCallLog = require('./models/ApiCallLog');
 const BlockedIP = require('./models/BlockedIP');
-const redisInternal = require('./config/redisInternal'); // ✅ Import Redis Internal
+const TeamLatency = require('./models/TeamLatency');
 
-// ---------- Connections ----------
-const MONGO_URI = process.env.MONGO_URI;
-const INTERNAL_REDIS_URL = process.env.INTERNAL_REDIS_URL;
+// Redis client used for caching team/user latency
+const redisInternal = require('./config/redisInternal');
 
-mongoose.connect(MONGO_URI)
-  .then(() => console.log('[worker-logs] MongoDB connected'))
+// ---------- MongoDB Connection ----------
+mongoose.connect(process.env.MONGO_URI)
+  .then(() => console.log('[worker-logs] ✅ MongoDB connected'))
   .catch(err => {
-    console.error('[worker-logs] MongoDB connection error:', err);
+    console.error('[worker-logs] ❌ MongoDB connection error:', err);
     process.exit(1);
   });
 
-const connectionOpts = { connection: { url: INTERNAL_REDIS_URL } };
+// ---------- Redis Connection Options for BullMQ ----------
+const connectionOpts = {
+  connection: { url: process.env.INTERNAL_REDIS_URL },
+  // BullMQ default retry settings can be overridden per worker
+};
 
-// ---------- Email transporter ----------
+// ---------- Email Transporter ----------
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT) || 587,
@@ -30,103 +35,96 @@ const transporter = nodemailer.createTransport({
     pass: process.env.SMTP_PASS,
   },
 });
-transporter.verify()
-  .then(() => console.log('[worker-logs] Email transporter ready'))
-  .catch(err => console.warn('[worker-logs] Email transporter not available:', err.message));
 
-// ---------- Worker 1: API call logs → MongoDB ----------
+transporter.verify()
+  .then(() => console.log('[worker-logs] ✅ Email transporter verified'))
+  .catch(err => console.warn('[worker-logs] ⚠️ Email transporter not ready:', err.message));
+
+// ==================== WORKER 1: API Logs ====================
 const apiLogsWorker = new Worker(
   'bullmq-api-logs',
   async (job) => {
-    const log = job.data;
+    const log = job.data || {};
+    console.log('[api-logs] Processing job:', JSON.stringify(log, null, 2));
 
-    // ----- DEBUG: full job payload -----
-    console.log('[DEBUG] Job payload:', JSON.stringify(log, null, 2));
-
-    // ----- Extract project_id with fallback -----
     let project_id = log.project_id;
+
+    // Fallback: extract from path if not directly provided
     if (!project_id && log.path) {
-      const match = log.path.match(/^\/p\/([^\/]+)/);
+      const match = log.path.match(/^\/p\/([^/]+)/);
       if (match) project_id = match[1];
     }
+
     if (!project_id) {
-      console.error('[api-logs] Missing project_id, skipping job');
-      return;
+      console.error('[api-logs] ❌ Missing project_id, skipping job');
+      return; // No retry – data is malformed
     }
 
-    // ----- Extract username from project_id -----
-    let username = null;
-    if (project_id && project_id.includes('_')) {
-      username = project_id.split('_')[0];
-    }
+    const username = project_id.includes('_') ? project_id.split('_')[0] : null;
 
-    // ----- Handle timestamp -----
-    let timestamp;
-    if (typeof log.timestamp === 'number' && log.timestamp > 0) {
-      timestamp = new Date(log.timestamp * 1000);
-      if (isNaN(timestamp.getTime())) timestamp = new Date();
-    } else {
-      timestamp = new Date();
-    }
+    const timestamp = log.timestamp
+      ? new Date(typeof log.timestamp === 'number' ? log.timestamp * 1000 : log.timestamp)
+      : new Date();
 
-    // ----- Build document with fallbacks -----
     const doc = {
-      project_id: project_id,
-      path:       log.path || '',
-      method:     log.method || '',
-      timestamp:  timestamp,
-      cache:      log.cache || '',
-      ip:         log.ip || '',
-      status:     log.status || 0,
-      latency_ms: log.latency_ms || 0,
-      private:    log.private || false,
-      ttl:        log.ttl || 0,
-      username:   username,
-      team_latency: log.team_latency || 0,
-      user_latency: log.user_latency || 0,
+      project_id,
+      path: log.path || '',
+      method: log.method || 'GET',
+      timestamp: isNaN(timestamp.getTime()) ? new Date() : timestamp,
+      cache: log.cache || 'MISS',
+      ip: log.ip || '',
+      status: log.status || 200,
+      latency_ms: Number(log.latency_ms) || 0,
+      team_latency: Number(log.team_latency) || 0,
+      user_latency: Number(log.user_latency) || 0,
+      total_latency: Number(log.total_latency) || Number(log.latency_ms) || 0,
+      private: !!log.private,
+      ttl: Number(log.ttl) || 0,
+      username,
     };
 
     try {
       await ApiCallLog.create(doc);
-      console.log(`[api-logs] Saved: ${project_id} ${doc.method} ${doc.path}`);
+      console.log(`[api-logs] ✅ Saved log for ${project_id} | ${doc.method} ${doc.path} | ${doc.total_latency}ms`);
     } catch (err) {
-      console.error('[api-logs] Save error:', err.message);
-      throw err;
+      console.error('[api-logs] ❌ Save failed:', err.message);
+      throw err; // Let BullMQ retry (transient DB errors)
     }
   },
   {
     ...connectionOpts,
     prefix: 'bullmq',
-    removeOnComplete: { age: 3600 },
-    removeOnFail: { age: 86400 },
+    attempts: 3, // Retry up to 3 times
+    backoff: { type: 'exponential', delay: 1000 },
+    removeOnComplete: { age: 3600 },   // 1 hour
+    removeOnFail: { age: 86400 },      // 24 hours
   }
 );
 
-// ---------- Worker 2: Email alerts + Blocked IP persistence ----------
+// ==================== WORKER 2: Email + Block IP ====================
 const emailWorker = new Worker(
   'bullmq-email-jobs',
   async (job) => {
-    const data = job.data;
-    console.log('[email] Processing DoS alert job:', data);
+    const data = job.data || {};
+    console.log('[email] Processing DoS alert:', data);
 
-    // ----- 1. Send the email -----
+    // Send email
     try {
       await transporter.sendMail({
-        from: '"mockAPI Security" <security@mockapi.info>',
+        from: '"mockAPI Security" <no-reply@mockapi.info>',
         to: data.to,
-        subject: data.subject,
+        subject: data.subject || 'Security Alert - DoS Detected',
         text: data.body,
       });
-      console.log(`[email] DoS alert sent to ${data.to}`);
+      console.log(`[email] ✅ Alert sent to ${data.to}`);
     } catch (err) {
-      console.error(`[email] Failed to send email to ${data.to}:`, err.message);
-      throw err; // let BullMQ retry
+      console.error(`[email] ❌ Failed to send email:`, err.message);
+      throw err; // Retry on email failure
     }
 
-    // ----- 2. Save block record to MongoDB (for private API blocks) -----
+    // Save Blocked IP (only for private DoS events)
     if (data.project_id && data.ip && data.is_private === true) {
       try {
-        // Check if already blocked and still active
         const existing = await BlockedIP.findOne({
           project_id: data.project_id,
           ip: data.ip,
@@ -134,103 +132,106 @@ const emailWorker = new Worker(
         });
 
         if (!existing) {
-          const expiresAt = new Date(data.timestamp * 1000 + 24 * 60 * 60 * 1000); // 24 hours
+          const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
           await BlockedIP.create({
             project_id: data.project_id,
             ip: data.ip,
-            reason: 'DoS attack – exceeded 100 private requests/sec',
-            blockedAt: new Date(data.timestamp * 1000),
-            expiresAt: expiresAt,
+            reason: 'DoS protection - exceeded rate limit',
+            blockedAt: new Date(),
+            expiresAt,
             requestPath: data.path || '',
             requestMethod: data.method || 'GET',
             isPrivate: true,
           });
-          console.log(`[email] Block record saved for ${data.ip} (project: ${data.project_id})`);
+          console.log(`[email] ✅ Block record saved for IP ${data.ip}`);
         } else {
-          console.log(`[email] Block record already exists for ${data.ip}`);
+          console.log(`[email] ℹ️ IP ${data.ip} already blocked for this project`);
         }
       } catch (err) {
-        console.error('[email] Failed to save block record:', err.message);
-        // Don't throw – email was already sent, block record is secondary
+        // Non‑critical: log but don't block the email success
+        console.error('[email] ❌ Failed to save block record:', err.message);
       }
     }
   },
   {
     ...connectionOpts,
     prefix: 'bullmq',
-    removeOnComplete: true,
-    removeOnFail: { count: 100 },
+    attempts: 3, // Retry up to 3 times for transient email failures
+    backoff: { type: 'exponential', delay: 2000 },
+    removeOnComplete: true,               // remove immediately on success
+    removeOnFail: { count: 50 },          // keep last 50 failures
   }
 );
 
-// ---------- Worker 3: Team latency updater (from latency reports) ----------
-// This worker processes latency reports from the server
+// ==================== WORKER 3: Team Latency ====================
 const latencyWorker = new Worker(
   'bullmq-latency-store',
   async (job) => {
-    const { project_id, username, rtt } = job.data;
-    console.log(`[latency] Updating latency for ${username} in project ${project_id}: ${rtt}ms`);
+    const { project_id, username, rtt } = job.data || {};
+    if (!project_id || !username || rtt == null) {
+      console.warn('[latency] Invalid job data:', job.data);
+      return; // Skip without retry – data issue
+    }
+
+    console.log(`[latency] Updating for ${username} in ${project_id}: ${rtt}ms`);
 
     try {
-      // Update TeamLatency in MongoDB
-      const TeamLatency = require('./models/TeamLatency');
+      // Update or create user's latency record
       let teamDoc = await TeamLatency.findOne({ project_id, username });
+
       if (!teamDoc) {
-        teamDoc = await TeamLatency.create({ project_id, username, averageRtt: rtt, sampleCount: 1 });
+        teamDoc = await TeamLatency.create({
+          project_id,
+          username,
+          averageRtt: rtt,
+          sampleCount: 1
+        });
       } else {
+        // Simple moving average (smoothes outliers)
         teamDoc.averageRtt = Math.round((teamDoc.averageRtt + rtt) / 2);
         teamDoc.sampleCount += 1;
         await teamDoc.save();
       }
 
-      // Calculate team average
-      const allTeamMembers = await TeamLatency.find({ project_id });
-      const teamAvg = allTeamMembers.reduce((sum, m) => sum + m.averageRtt, 0) / allTeamMembers.length;
+      // Recalculate team average from all members
+      const allMembers = await TeamLatency.find({ project_id });
+      const teamAvg = allMembers.length
+        ? Math.round(allMembers.reduce((sum, m) => sum + m.averageRtt, 0) / allMembers.length)
+        : rtt;
 
-      // Store team average in Redis Internal (for OpenResty)
-      await redisInternal.setEx(`team:latency:${project_id}`, 3600, String(Math.round(teamAvg)));
-
-      // Store individual user latency in Redis Internal
+      // Cache in Redis (for fast access by OpenResty and dashboard)
+      await redisInternal.setEx(`team:latency:${project_id}`, 3600, String(teamAvg));
       await redisInternal.setEx(`user:latency:${project_id}:${username}`, 3600, String(rtt));
 
-      console.log(`[latency] Updated team avg for ${project_id}: ${Math.round(teamAvg)}ms`);
+      console.log(`[latency] ✅ Team average updated: ${teamAvg}ms for ${project_id}`);
     } catch (err) {
-      console.error('[latency] Failed to update latency:', err.message);
+      console.error('[latency] ❌ Error:', err.message);
+      throw err; // Retry on DB/Redis errors
     }
   },
   {
     ...connectionOpts,
     prefix: 'bullmq',
+    attempts: 3, // Retry up to 3 times
+    backoff: { type: 'exponential', delay: 1000 },
     removeOnComplete: { age: 3600 },
     removeOnFail: { age: 86400 },
   }
 );
 
-// ---------- Event listeners ----------
-apiLogsWorker.on('completed', (job) => {
-  console.log(`[api-logs] Completed: ${job.data.project_id}`);
-});
-apiLogsWorker.on('failed', (job, err) => {
-  console.error(`[api-logs] Failed: ${job?.data?.project_id || 'unknown'} — ${err.message}`);
-});
+// ==================== Event Listeners ====================
+apiLogsWorker.on('completed', (job) => console.log(`[api-logs] ✅ Completed ${job.id}`));
+apiLogsWorker.on('failed', (job, err) => console.error(`[api-logs] ❌ Failed ${job?.id}:`, err.message));
 
-emailWorker.on('completed', (job) => {
-  console.log(`[email] Job ${job.id} completed`);
-});
-emailWorker.on('failed', (job, err) => {
-  console.error(`[email] Failed to send to ${job?.data?.to}: ${err.message}`);
-});
+emailWorker.on('completed', (job) => console.log(`[email] ✅ Job ${job.id} completed`));
+emailWorker.on('failed', (job, err) => console.error(`[email] ❌ Job ${job.id} failed:`, err.message));
 
-latencyWorker.on('completed', (job) => {
-  console.log(`[latency] Job ${job.id} completed`);
-});
-latencyWorker.on('failed', (job, err) => {
-  console.error(`[latency] Job ${job.id} failed:`, err.message);
-});
+latencyWorker.on('completed', (job) => console.log(`[latency] ✅ Job ${job.id} completed`));
+latencyWorker.on('failed', (job, err) => console.error(`[latency] ❌ Job ${job.id} failed:`, err.message));
 
-// ---------- Graceful shutdown ----------
+// ==================== Graceful Shutdown ====================
 async function shutdown() {
-  console.log('[worker-logs] Shutting down...');
+  console.log('[worker-logs] Shutting down workers...');
   await apiLogsWorker.close();
   await emailWorker.close();
   await latencyWorker.close();
@@ -242,7 +243,4 @@ async function shutdown() {
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
 
-console.log('[worker-logs] Workers started:');
-console.log('  - bullmq-api-logs (API logs → MongoDB)');
-console.log('  - bullmq-email-jobs (DoS alerts + Blocked IP)');
-console.log('  - bullmq-latency-store (Team latency → Redis)');
+console.log('[worker-logs] 🚀 All workers started successfully!');

@@ -1,0 +1,298 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Full-Featured MockAPI Demo",
+    "description": "Demonstrates all mockAPI features: CRUD, query params, faker placeholders, and multiple response codes.",
+    "version": "2.0.0"
+  },
+  "basePath": "/api/v2",
+  "paths": {
+    "/users": {
+      "get": {
+        "summary": "List users with pagination",
+        "operationId": "getUsers",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": { "type": "integer", "default": 10 },
+            "description": "Number of users to return"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": { "type": "integer", "default": 0 },
+            "description": "Number of users to skip"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total": { "type": "integer" },
+                    "items": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/User" }
+                    }
+                  }
+                },
+                "example": {
+                  "total": 2,
+                  "items": [
+                    {
+                      "id": 1,
+                      "name": "{{faker.name.firstName}} {{faker.name.lastName}}",
+                      "email": "{{faker.internet.email}}"
+                    },
+                    {
+                      "id": 2,
+                      "name": "{{faker.name.firstName}} {{faker.name.lastName}}",
+                      "email": "{{faker.internet.email}}"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new user",
+        "operationId": "createUser",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/NewUser" },
+              "example": {
+                "name": "Alice Johnson",
+                "email": "alice@example.com"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/User" },
+                "example": {
+                  "id": 3,
+                  "name": "Alice Johnson",
+                  "email": "alice@example.com"
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid input" }
+        }
+      }
+    },
+    "/users/{id}": {
+      "get": {
+        "summary": "Get a user by ID",
+        "operationId": "getUserById",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User found",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/User" },
+                "example": {
+                  "id": 1,
+                  "name": "John Doe",
+                  "email": "john@example.com"
+                }
+              }
+            }
+          },
+          "404": { "description": "User not found" }
+        }
+      },
+      "put": {
+        "summary": "Update a user",
+        "operationId": "updateUser",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/UpdateUser" },
+              "example": {
+                "name": "Jane Doe",
+                "email": "jane@example.com"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "User updated",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/User" },
+                "example": {
+                  "id": 1,
+                  "name": "Jane Doe",
+                  "email": "jane@example.com"
+                }
+              }
+            }
+          },
+          "404": { "description": "User not found" }
+        }
+      },
+      "delete": {
+        "summary": "Delete a user",
+        "operationId": "deleteUser",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "204": { "description": "User deleted" },
+          "404": { "description": "User not found" }
+        }
+      }
+    },
+    "/posts": {
+      "get": {
+        "summary": "List posts with dynamic faker data",
+        "operationId": "getPosts",
+        "responses": {
+          "200": {
+            "description": "List of posts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Post" }
+                },
+                "example": [
+                  {
+                    "id": 1,
+                    "title": "{{faker.lorem.sentence}}",
+                    "content": "{{faker.lorem.paragraphs}}",
+                    "authorId": "{{faker.number.int}}",
+                    "createdAt": "{{faker.date.recent}}"
+                  },
+                  {
+                    "id": 2,
+                    "title": "{{faker.lorem.sentence}}",
+                    "content": "{{faker.lorem.paragraphs}}",
+                    "authorId": "{{faker.number.int}}",
+                    "createdAt": "{{faker.date.recent}}"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create a new post",
+        "operationId": "createPost",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/NewPost" },
+              "example": {
+                "title": "My First Post",
+                "content": "This is the content of the post.",
+                "authorId": 1
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Post created",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Post" },
+                "example": {
+                  "id": 1,
+                  "title": "My First Post",
+                  "content": "This is the content of the post.",
+                  "authorId": 1,
+                  "createdAt": "2026-07-17T12:00:00Z"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "User": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string" },
+          "email": { "type": "string", "format": "email" }
+        }
+      },
+      "NewUser": {
+        "type": "object",
+        "required": ["name", "email"],
+        "properties": {
+          "name": { "type": "string" },
+          "email": { "type": "string", "format": "email" }
+        }
+      },
+      "UpdateUser": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "email": { "type": "string", "format": "email" }
+        }
+      },
+      "Post": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "title": { "type": "string" },
+          "content": { "type": "string" },
+          "authorId": { "type": "integer" },
+          "createdAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "NewPost": {
+        "type": "object",
+        "required": ["title", "content", "authorId"],
+        "properties": {
+          "title": { "type": "string" },
+          "content": { "type": "string" },
+          "authorId": { "type": "integer" }
+        }
+      }
+    }
+  }
+}

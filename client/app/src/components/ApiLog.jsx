@@ -21,7 +21,6 @@ function ApiLog() {
   const { user } = useAuth();
   const socket = useSocket();
   
-  
   const isWhiteTheme = theme === "white";
   const [logs, setLogs] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
@@ -45,7 +44,6 @@ function ApiLog() {
     }
 
     const onConnect = () => {
-    
       if (mountedRef.current) {
         setIsConnected(true);
         setSocketError(null);
@@ -54,7 +52,6 @@ function ApiLog() {
     };
 
     const onConnectError = (err) => {
-   
       if (mountedRef.current) {
         setIsConnected(false);
         setSocketError("Connection failed. Retrying...");
@@ -62,17 +59,14 @@ function ApiLog() {
     };
 
     const onDisconnect = (reason) => {
-   
       if (mountedRef.current) setIsConnected(false);
     };
 
     const onInitialLogs = (dbLogs) => {
-   
       if (mountedRef.current) setLogs(dbLogs || []);
     };
 
     const onNewApiLog = (newLog) => {
-      console.log("[ApiLog] New log received:", newLog);
       if (!newLog || !mountedRef.current) return;
       setLogs((prev) => {
         const exists = prev.some((log) => log._id === newLog._id);
@@ -124,7 +118,6 @@ function ApiLog() {
         isWhiteTheme ? "border-gray-200" : "border-zinc-700/50"
       }`}
     >
-  
       <div
         className={`text-xs font-medium border-b p-2 flex justify-between items-center shrink-0 ${
           isWhiteTheme
@@ -151,7 +144,6 @@ function ApiLog() {
         </div>
       </div>
 
-   
       <div className="p-3 text-xs flex flex-col gap-3 overflow-y-auto flex-1 min-h-0">
         {socketError && (
           <p className="text-center text-red-400 italic">{socketError}</p>
@@ -187,4 +179,3 @@ function ApiLog() {
 }
 
 export default ApiLog;
-

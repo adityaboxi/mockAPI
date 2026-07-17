@@ -27,6 +27,7 @@ async function importOpenApi(req, res) {
       return res.status(400).json({ error: 'No paths found in OpenAPI spec' });
     }
 
+    // ✅ Enqueue job – queue name must match the worker
     const job = await importQueue.add('import-openapi', {
       projectName,
       spec,

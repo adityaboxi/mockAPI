@@ -19,4 +19,3 @@ const MethodSelect = React.memo(({ method, setMethod, w }) => {
 });
 
 export default MethodSelect;
-

@@ -25,12 +25,12 @@
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: #4a4a4a;
+    background: #52525b;           /* zinc-600 */
     border-radius: 4px;
   }
 
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: #5a5a5a;
+    background: #71717a;           /* zinc-500 */
   }
 
   .animate-fadeIn {
@@ -48,5 +48,3 @@
     }
   }
 }
-
-

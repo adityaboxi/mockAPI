@@ -138,7 +138,7 @@ function NetworkTestInline({ onComplete, isWhiteTheme }) {
     if (individualResults.length === 0) return null;
     return (
       <div className="mt-3">
-        <p className={`text-xs mb-1 ${isWhiteTheme ? 'text-gray-500' : 'text-gray-500'}`}>
+        <p className={`text-xs mb-1 ${isWhiteTheme ? 'text-gray-500' : 'text-zinc-500'}`}>
           Individual ping times (ms):
         </p>
         <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
@@ -148,7 +148,7 @@ function NetworkTestInline({ onComplete, isWhiteTheme }) {
               className={`px-2 py-0.5 border rounded text-xs ${
                 isWhiteTheme
                   ? 'bg-gray-100 border-gray-300 text-gray-700'
-                  : 'bg-[#1e1e24] border-[#3f4147] text-gray-400'
+                  : 'bg-zinc-900 border-zinc-700 text-zinc-400'
               }`}
             >
               {Math.round(time)}
@@ -159,19 +159,17 @@ function NetworkTestInline({ onComplete, isWhiteTheme }) {
     );
   };
 
-  // Theme‑aware style variables
-  const cardBg = isWhiteTheme ? 'bg-white border-gray-200' : 'bg-[#25252b] border-[#3f4147]';
-  const textColor = isWhiteTheme ? 'text-gray-800' : 'text-gray-300';
-  const mutedText = isWhiteTheme ? 'text-gray-500' : 'text-gray-400';
-  const resultBg = isWhiteTheme ? 'bg-gray-50 border-gray-200' : 'bg-[#1e1e24] border-[#3f4147]';
-  const progressBg = isWhiteTheme ? 'bg-gray-200' : 'bg-[#2b2d31]';
-  const errorBg = isWhiteTheme ? 'bg-red-50 border-red-200 text-red-700' : 'bg-red-900/20 border-red-500/30 text-red-400';
-  const buttonPrimary = isWhiteTheme
-    ? 'bg-indigo-600 hover:bg-indigo-500 text-white'
-    : 'bg-indigo-600 hover:bg-indigo-500 text-white';
+  // Theme‑aware style variables (dark now uses zinc palette)
+  const cardBg = isWhiteTheme ? 'bg-white border-gray-200' : 'bg-zinc-900 border-zinc-800';
+  const textColor = isWhiteTheme ? 'text-gray-800' : 'text-zinc-300';
+  const mutedText = isWhiteTheme ? 'text-gray-500' : 'text-zinc-400';
+  const resultBg = isWhiteTheme ? 'bg-gray-50 border-gray-200' : 'bg-zinc-800 border-zinc-700';
+  const progressBg = isWhiteTheme ? 'bg-gray-200' : 'bg-zinc-700';
+  const errorBg = isWhiteTheme ? 'bg-red-50 border-red-200 text-red-700' : 'bg-red-500/10 border-red-500/20 text-red-400';
+  const buttonPrimary = 'bg-blue-600 hover:bg-blue-500 text-white';
   const buttonSecondary = isWhiteTheme
     ? 'bg-gray-200 hover:bg-gray-300 text-gray-700 border border-gray-300'
-    : 'bg-[#2b2d31] hover:bg-[#3f4147] text-gray-300';
+    : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700';
 
   return (
     <div className={`mt-6 p-4 rounded-lg border ${cardBg}`}>
@@ -200,7 +198,7 @@ function NetworkTestInline({ onComplete, isWhiteTheme }) {
       {status === 'running' && (
         <div className={`mt-3 w-full rounded-full h-2 ${progressBg}`}>
           <div
-            className="bg-indigo-500 h-2 rounded-full transition-all duration-300"
+            className="bg-blue-500 h-2 rounded-full transition-all duration-300"
             style={{ width: `${progress}%` }}
           />
         </div>
@@ -215,7 +213,7 @@ function NetworkTestInline({ onComplete, isWhiteTheme }) {
           </div>
           <div className={`text-xs ${mutedText} mt-1`}>average round‑trip</div>
           {stats.samples > 0 && (
-            <div className="flex justify-center gap-4 mt-2 text-xs text-gray-500">
+            <div className="flex justify-center gap-4 mt-2 text-xs text-zinc-500">
               <span>Min: {Math.round(stats.min)} ms</span>
               <span>Max: {Math.round(stats.max)} ms</span>
               <span>Samples: {stats.samples}</span>
@@ -228,7 +226,7 @@ function NetworkTestInline({ onComplete, isWhiteTheme }) {
       {status === 'error' && (
         <div className={`mt-3 rounded p-3 text-xs ${errorBg}`}>
           {error}
-          <button onClick={() => runTest(true)} className="block mt-1 text-indigo-400 hover:underline">
+          <button onClick={() => runTest(true)} className="block mt-1 text-blue-400 hover:underline">
             Retry
           </button>
         </div>
@@ -263,9 +261,7 @@ const GeneralQuestionPage = () => {
   const handleContinue = () => {
     if (!isFormValid) return;
     setIsSubmitting(true);
-    // Save answers (optional – you can send to backend here)
     console.log('Answers:', { useCase, heardFrom, excitedFeatures, additionalFeedback });
-    // Navigate to home page with replace so user can't go back
     navigate('/', { replace: true });
   };
 
@@ -279,7 +275,6 @@ const GeneralQuestionPage = () => {
     'API Mocking', 'Latency Simulation', 'AI‑Powered Design', 'Real‑Time Analytics', 'Team Collaboration'
   ];
 
-  // Validation: all required fields, network test done, terms accepted.
   const isFormValid = 
     useCase.trim() !== '' &&
     heardFrom.trim() !== '' &&
@@ -289,13 +284,13 @@ const GeneralQuestionPage = () => {
 
   return (
     <div className={`min-h-screen w-full flex flex-col font-sans transition-colors duration-150 ${
-      isWhiteTheme ? 'bg-white text-gray-800' : 'bg-[#1e1e24] text-gray-200'
+      isWhiteTheme ? 'bg-white text-gray-800' : 'bg-zinc-950 text-zinc-300'
     }`}>
       {/* Header */}
       <div className={`h-12 flex items-center px-6 border-b shrink-0 ${
-        isWhiteTheme ? 'bg-white border-gray-200' : 'bg-[#2b2d31] border-zinc-700/50'
+        isWhiteTheme ? 'bg-white border-gray-200' : 'bg-zinc-950 border-zinc-800'
       }`}>
-        <h1 className="flex-1 text-center text-sm font-semibold tracking-wide select-none">
+        <h1 className="flex-1 text-center text-sm font-semibold tracking-wide select-none text-white">
           🚀 Welcome, {username || 'Guest'}!
         </h1>
         <div className="w-20" />
@@ -303,17 +298,17 @@ const GeneralQuestionPage = () => {
 
       {/* Main content */}
       <div className="flex-1 p-6 max-w-3xl mx-auto w-full space-y-6">
-        <p className={`text-sm ${isWhiteTheme ? 'text-gray-600' : 'text-gray-400'}`}>
+        <p className={`text-sm ${isWhiteTheme ? 'text-gray-600' : 'text-zinc-400'}`}>
           Let’s personalise your experience. Please answer a few questions and run the network test.
         </p>
 
         {/* General Questions */}
         <div className="space-y-4">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-gray-500">General Questions</h2>
+          <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-500">General Questions</h2>
 
           {/* Use Case */}
           <div>
-            <label className={`block text-xs font-medium mb-1 ${isWhiteTheme ? 'text-gray-700' : 'text-gray-300'}`}>
+            <label className={`block text-xs font-medium mb-1 ${isWhiteTheme ? 'text-gray-700' : 'text-zinc-300'}`}>
               What is your primary use case for MockAPI? <span className="text-red-400">*</span>
             </label>
             <select
@@ -322,7 +317,7 @@ const GeneralQuestionPage = () => {
               className={`w-full rounded px-3 py-2 text-sm outline-none focus:border-blue-500 transition-colors ${
                 isWhiteTheme
                   ? 'bg-gray-50 border border-gray-300 text-gray-900'
-                  : 'bg-[#1e1f22] border border-zinc-700/50 text-gray-200'
+                  : 'bg-zinc-900 border border-zinc-800 text-zinc-300'
               }`}
             >
               <option value="">Select an option</option>
@@ -336,7 +331,7 @@ const GeneralQuestionPage = () => {
 
           {/* How did you hear? */}
           <div>
-            <label className={`block text-xs font-medium mb-1 ${isWhiteTheme ? 'text-gray-700' : 'text-gray-300'}`}>
+            <label className={`block text-xs font-medium mb-1 ${isWhiteTheme ? 'text-gray-700' : 'text-zinc-300'}`}>
               How did you hear about us? <span className="text-red-400">*</span>
             </label>
             <input
@@ -347,14 +342,14 @@ const GeneralQuestionPage = () => {
               className={`w-full rounded px-3 py-2 text-sm outline-none focus:border-blue-500 transition-colors ${
                 isWhiteTheme
                   ? 'bg-gray-50 border border-gray-300 text-gray-900 placeholder-gray-400'
-                  : 'bg-[#1e1f22] border border-zinc-700/50 text-gray-200 placeholder-zinc-600'
+                  : 'bg-zinc-900 border border-zinc-800 text-zinc-300 placeholder-zinc-500'
               }`}
             />
           </div>
 
           {/* Excited Features (multi-select) */}
           <div>
-            <label className={`block text-xs font-medium mb-1 ${isWhiteTheme ? 'text-gray-700' : 'text-gray-300'}`}>
+            <label className={`block text-xs font-medium mb-1 ${isWhiteTheme ? 'text-gray-700' : 'text-zinc-300'}`}>
               What features are you most excited about? <span className="text-red-400">*</span>
             </label>
             <div className="flex flex-wrap gap-2">
@@ -374,7 +369,7 @@ const GeneralQuestionPage = () => {
 
           {/* Additional Feedback */}
           <div>
-            <label className={`block text-xs font-medium mb-1 ${isWhiteTheme ? 'text-gray-700' : 'text-gray-300'}`}>
+            <label className={`block text-xs font-medium mb-1 ${isWhiteTheme ? 'text-gray-700' : 'text-zinc-300'}`}>
               Additional feedback (optional)
             </label>
             <textarea
@@ -385,7 +380,7 @@ const GeneralQuestionPage = () => {
               className={`w-full rounded px-3 py-2 text-sm outline-none focus:border-blue-500 transition-colors ${
                 isWhiteTheme
                   ? 'bg-gray-50 border border-gray-300 text-gray-900 placeholder-gray-400'
-                  : 'bg-[#1e1f22] border border-zinc-700/50 text-gray-200 placeholder-zinc-600'
+                  : 'bg-zinc-900 border border-zinc-800 text-zinc-300 placeholder-zinc-500'
               }`}
             />
           </div>
@@ -395,7 +390,7 @@ const GeneralQuestionPage = () => {
         <NetworkTestInline onComplete={handleTestComplete} isWhiteTheme={isWhiteTheme} />
 
         {/* Terms & Conditions + Continue button */}
-        <div className="flex flex-wrap items-center justify-between pt-4 border-t border-zinc-700/50 gap-3">
+        <div className="flex flex-wrap items-center justify-between pt-4 border-t border-zinc-800 gap-3">
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -404,7 +399,7 @@ const GeneralQuestionPage = () => {
               onChange={(e) => setTermsAccepted(e.target.checked)}
               className="accent-blue-500 w-4 h-4"
             />
-            <label htmlFor="termsCheckbox" className="text-xs text-gray-500">
+            <label htmlFor="termsCheckbox" className="text-xs text-zinc-500">
               I agree to the{' '}
               <a href="/terms" className="text-blue-400 hover:underline" target="_blank" rel="noopener noreferrer">
                 Terms & Conditions
@@ -417,7 +412,7 @@ const GeneralQuestionPage = () => {
             className={`px-6 py-2 rounded text-sm font-semibold transition flex items-center gap-2 ${
               isFormValid && !isSubmitting
                 ? 'bg-blue-600 hover:bg-blue-500 text-white'
-                : 'bg-gray-600 text-gray-300 cursor-not-allowed'
+                : 'bg-zinc-700 text-zinc-300 cursor-not-allowed'
             }`}
           >
             {isSubmitting ? (

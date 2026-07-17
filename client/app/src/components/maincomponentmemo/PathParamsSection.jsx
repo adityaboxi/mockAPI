@@ -19,9 +19,15 @@ const PathParamsSection = React.memo(({
 }) => {
   return (
     <div className={`border-r ${w ? "border-gray-200" : "border-zinc-700/50"}`}>
-      <div className={`flex items-center justify-between px-3 py-2 border-b text-xs ${w ? "border-gray-200 bg-gray-50" : "border-zinc-700/50 bg-[#1a1b1e]"}`}>
+      <div className={`flex items-center justify-between px-3 py-2 border-b text-xs ${
+        w ? "border-gray-200 bg-gray-50" : "border-zinc-700/50 bg-[#1a1b1e]"
+      }`}>
         <span className={`font-medium ${labelTxt}`}>Path Parameters</span>
-        <button onClick={() => setShowPathParamInput(!showPathParamInput)} className={`px-2 py-0.5 rounded text-xs transition-colors ${miniBtn}`}>
+        {/* + Add button – now always blue, no prop needed */}
+        <button 
+          onClick={() => setShowPathParamInput(!showPathParamInput)} 
+          className="bg-blue-600 hover:bg-blue-500 text-white px-2 py-0.5 rounded text-xs font-medium transition-colors"
+        >
           + Add
         </button>
       </div>
@@ -31,7 +37,9 @@ const PathParamsSection = React.memo(({
           <div className="flex flex-col gap-1.5 mb-2">
             {pathParams.map((param, idx) => (
               <div key={idx} className="flex items-center gap-2">
-                <span className={`text-xs font-mono px-2 py-1 rounded shrink-0 ${w ? "bg-blue-50 text-blue-600 border border-blue-200" : "bg-blue-900/20 text-blue-400 border border-blue-800/40"}`}>
+                <span className={`text-xs font-mono px-2 py-1 rounded shrink-0 ${
+                  w ? "bg-blue-50 text-blue-600 border border-blue-200" : "bg-blue-900/20 text-blue-400 border border-blue-800/40"
+                }`}>
                   :{param.key}
                 </span>
                 <input
@@ -76,6 +84,3 @@ const PathParamsSection = React.memo(({
 });
 
 export default PathParamsSection;
-
-
-

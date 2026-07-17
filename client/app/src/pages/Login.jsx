@@ -31,8 +31,7 @@ function Login() {
         alert("Invalid credentials");
       }
     } catch (error) {
-     
-     
+      // silent
     } finally {
       setIsLoading(false);
     }
@@ -40,13 +39,13 @@ function Login() {
 
   return (
     <div className={`min-h-screen flex items-center justify-center font-sans selection:bg-blue-500/30 ${
-      isWhiteTheme ? "bg-gray-100" : "bg-[#1e1e24]"
+      isWhiteTheme ? "bg-gray-100" : "bg-zinc-950"
     }`}>
       <div className={`p-8 rounded shadow-lg border w-full max-w-sm ${
-        isWhiteTheme ? "bg-white border-gray-200" : "bg-[#2b2d31] border-zinc-700/50"
+        isWhiteTheme ? "bg-white border-gray-200" : "bg-zinc-900 border-zinc-800"
       }`}>
         <div className="mb-4">
-          <h1 className={`text-xs font-medium mb-1 ${isWhiteTheme ? "text-gray-500" : "text-gray-400"}`}>
+          <h1 className={`text-xs font-medium mb-1 ${isWhiteTheme ? "text-gray-500" : "text-zinc-400"}`}>
             username
           </h1>
           <input
@@ -56,13 +55,13 @@ function Login() {
             className={`w-full rounded px-3 py-2 text-sm outline-none focus:border-blue-500 transition-colors ${
               isWhiteTheme
                 ? "bg-gray-50 border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500"
-                : "bg-[#1e1f22] border border-zinc-700/50 text-gray-200 placeholder-zinc-600 focus:border-blue-500"
+                : "bg-zinc-900 border border-zinc-800 text-zinc-300 placeholder-zinc-500 focus:border-blue-500"
             }`}
           />
         </div>
 
         <div className="mb-4">
-          <h1 className={`text-xs font-medium mb-1 ${isWhiteTheme ? "text-gray-500" : "text-gray-400"}`}>
+          <h1 className={`text-xs font-medium mb-1 ${isWhiteTheme ? "text-gray-500" : "text-zinc-400"}`}>
             password
           </h1>
           <input
@@ -73,14 +72,14 @@ function Login() {
             className={`w-full rounded px-3 py-2 text-sm outline-none focus:border-blue-500 transition-colors ${
               isWhiteTheme
                 ? "bg-gray-50 border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500"
-                : "bg-[#1e1f22] border border-zinc-700/50 text-gray-200 placeholder-zinc-600 focus:border-blue-500"
+                : "bg-zinc-900 border border-zinc-800 text-zinc-300 placeholder-zinc-500 focus:border-blue-500"
             }`}
           />
         </div>
 
         <div className="mb-6">
-          <span className={`text-xs inline-block mr-2 ${isWhiteTheme ? "text-gray-500" : "text-gray-500"}`}>
-            not loggeed in?
+          <span className={`text-xs inline-block mr-2 ${isWhiteTheme ? "text-gray-500" : "text-zinc-500"}`}>
+            not logged in?
           </span>
           <button
             onClick={handleSignup}

@@ -18,6 +18,7 @@ const apiCallLogSchema = new mongoose.Schema({
   username:     { type: String, index: true },    // extracted from project_id
   team_latency: { type: Number, default: 0 },    // average team latency from Redis
   user_latency: { type: Number, default: 0 },    // individual user latency from Redis
+  total_latency: { type: Number, default: 0 },   // sum of latency_ms + team + user
 
 }, { timestamps: false });
 

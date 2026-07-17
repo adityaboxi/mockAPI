@@ -11,7 +11,7 @@ const UrlBuilder = ({
   setMethod,
   urlPath,
   setUrlPath,
-  actualFullUrl,        // the full URL from loaded version or API response
+  actualFullUrl,
   copied,
   copyToClipboard,
   mutedTxt,
@@ -19,7 +19,6 @@ const UrlBuilder = ({
   miniBtn,
   w
 }) => {
-  // Show actualFullUrl if available, otherwise a placeholder
   const displayUrl = actualFullUrl && actualFullUrl.trim() !== "" 
     ? actualFullUrl 
     : "— No API selected —";
@@ -33,18 +32,16 @@ const UrlBuilder = ({
         <UrlPathInput urlPath={urlPath} onUrlPathChange={setUrlPath} inp={inp} />
 
         <FinalUrlDisplay
-  finalUrl={displayUrl}
-  protocol={protocol}
-  copied={copied}
-  copyToClipboard={copyToClipboard}   // uses the parent function
-  miniBtn={miniBtn}
-  w={w}
-/>
+          finalUrl={displayUrl}
+          protocol={protocol}
+          copied={copied}
+          copyToClipboard={copyToClipboard}
+          miniBtn={miniBtn}
+          w={w}
+        />
       </div>
     </div>
   );
 };
 
 export default UrlBuilder;
-
-

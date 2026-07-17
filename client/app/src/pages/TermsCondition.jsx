@@ -1,7 +1,18 @@
+import { useTheme } from "../context/ThemeContext";
 import { useNavigate } from "react-router-dom";
 
-// Badge colors adapted for the dark zinc theme
-const badgeMap = {
+const badgeMapLight = {
+  blue: "bg-blue-500/10 text-blue-600",
+  amber: "bg-amber-500/10 text-amber-600",
+  red: "bg-red-500/10 text-red-600",
+  zinc: "bg-zinc-500/10 text-zinc-600",
+  purple: "bg-purple-500/10 text-purple-600",
+  orange: "bg-orange-500/10 text-orange-600",
+  teal: "bg-teal-500/10 text-teal-600",
+  indigo: "bg-indigo-500/10 text-indigo-600",
+};
+
+const badgeMapDark = {
   blue: "bg-blue-500/10 text-blue-400 border border-blue-500/20",
   amber: "bg-amber-500/10 text-amber-400 border border-amber-500/20",
   red: "bg-red-500/10 text-red-400 border border-red-500/20",
@@ -13,24 +24,39 @@ const badgeMap = {
 };
 
 const TermsCondition = () => {
+  const { theme } = useTheme();
   const navigate = useNavigate();
+  const isWhiteTheme = theme === "white";
 
-  // Tiny Badge component – same UI, now with a border to match LogsViewer
+  const badgeMap = isWhiteTheme ? badgeMapLight : badgeMapDark;
+
   const Badge = ({ color, children }) => (
     <span
-      className={`text-[10px] font-semibold px-2 py-0.5 rounded uppercase tracking-wider whitespace-nowrap ${badgeMap[color]}`}
+      className={`text-[10px] font-semibold px-2 py-0.5 rounded uppercase tracking-wider whitespace-nowrap ${
+        badgeMap[color]
+      }`}
     >
       {children}
     </span>
   );
 
   return (
-    <div className="h-screen w-full flex flex-col overflow-hidden font-sans bg-zinc-950 text-zinc-300">
+    <div
+      className={`h-screen w-full flex flex-col overflow-hidden font-sans ${
+        isWhiteTheme ? "bg-white text-gray-800" : "bg-zinc-950 text-zinc-300"
+      }`}
+    >
       {/* HEADER */}
-      <div className="h-12 shrink-0 flex items-center px-6 border-b border-zinc-800 bg-zinc-950">
+      <div
+        className={`h-12 shrink-0 flex items-center px-6 border-b z-10 ${
+          isWhiteTheme
+            ? "bg-white border-gray-200"
+            : "bg-zinc-950 border-zinc-800"
+        }`}
+      >
         <button
           onClick={() => navigate("/home")}
-          className="text-xs font-medium flex items-center gap-2 tracking-wide uppercase transition-colors text-zinc-400 hover:text-white"
+          className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1"
         >
           ← Back to Home
         </button>
@@ -40,26 +66,32 @@ const TermsCondition = () => {
       <div className="flex-1 overflow-y-auto px-6 py-12 md:py-16">
         <div className="max-w-3xl mx-auto space-y-10">
           <div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-white mb-2">Terms of Service</h1>
-            <p className="text-xs text-zinc-500">Last updated: July 10, 2026</p>
+            <h1 className={`text-3xl font-extrabold tracking-tight mb-2 ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
+              Terms of Service
+            </h1>
+            <p className={`text-xs ${isWhiteTheme ? "text-gray-400" : "text-zinc-500"}`}>
+              Last updated: July 10, 2026
+            </p>
             <div className="h-1 w-12 bg-blue-500 rounded mt-4" />
           </div>
 
-          <p className="text-sm leading-relaxed font-medium text-zinc-300">
+          <p className="text-sm leading-relaxed font-medium">
             Please read these Terms of Service carefully before using the Mock API Manager
             ("the Service", "MockAPI"). By accessing or using the Service, you legally agree
             to be bound by these provisions in full.
           </p>
 
-          <hr className="border-zinc-800" />
+          <hr className={isWhiteTheme ? "border-gray-100" : "border-zinc-800"} />
 
           {/* Section 1 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-bold tracking-tight text-white">1. Agreement & Acceptance</h2>
+              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
+                1. Agreement & Acceptance
+              </h2>
               <Badge color="blue">TL;DR: Using this = agreeing</Badge>
             </div>
-            <p className="text-sm text-zinc-400 leading-relaxed">
+            <p className={`text-sm leading-relaxed ${isWhiteTheme ? "text-gray-700" : "text-zinc-400"}`}>
               By accessing, deploying, or interacting with the Service, you create a legally
               binding agreement between yourself and the creators of this application. If you
               represent an entity, you warrant that you have authority to bind that entity. If
@@ -71,14 +103,22 @@ const TermsCondition = () => {
           {/* Section 2 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-bold tracking-tight text-white">
+              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
                 2. Scope of Service & Non-Production Use
               </h2>
               <Badge color="amber">TL;DR: Testing only, not for real apps</Badge>
             </div>
-            <div className="text-sm leading-relaxed p-4 rounded border border-amber-500/20 bg-amber-500/10 text-amber-400">
-              <p className="font-bold text-amber-400">⚠️ Sandbox Only – Not for Production</p>
-              <p className="mt-2 text-zinc-300">
+            <div
+              className={`text-sm leading-relaxed p-4 rounded border ${
+                isWhiteTheme
+                  ? "bg-amber-50 border-amber-200 text-gray-700"
+                  : "bg-amber-500/10 border-amber-500/20 text-amber-400"
+              }`}
+            >
+              <p className={`font-bold ${isWhiteTheme ? "text-amber-600" : "text-amber-400"}`}>
+                ⚠️ Sandbox Only – Not for Production
+              </p>
+              <p className={`mt-2 ${isWhiteTheme ? "text-gray-700" : "text-zinc-300"}`}>
                 The Service functions solely as a sandbox workspace for application prototyping,
                 mock testing endpoints, and educational workflows. All server payloads and routes
                 are simulated. The architecture is explicitly{" "}
@@ -93,18 +133,26 @@ const TermsCondition = () => {
           {/* Section 3 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-bold tracking-tight text-white">
+              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
                 3. Data Constraints & Absolute Prohibitions
               </h2>
               <Badge color="red">TL;DR: No real sensitive data, ever</Badge>
             </div>
-            <div className="text-sm leading-relaxed p-4 rounded border border-red-500/20 bg-red-500/10 text-red-400">
-              <p className="font-bold text-red-400">🛑 Absolutely No Real Sensitive Data</p>
-              <p className="mt-2 text-zinc-300">
+            <div
+              className={`text-sm leading-relaxed p-4 rounded border ${
+                isWhiteTheme
+                  ? "bg-red-50 border-red-200 text-gray-700"
+                  : "bg-red-500/10 border-red-500/20 text-red-400"
+              }`}
+            >
+              <p className={`font-bold ${isWhiteTheme ? "text-red-600" : "text-red-400"}`}>
+                🛑 Absolutely No Real Sensitive Data
+              </p>
+              <p className={`mt-2 ${isWhiteTheme ? "text-gray-700" : "text-zinc-300"}`}>
                 You are entirely responsible and liable for any payloads generated or stored via
                 your account. You are subject to the following structural restrictions:
               </p>
-              <ul className="list-disc pl-5 mt-2 space-y-1 text-zinc-300">
+              <ul className={`list-disc pl-5 mt-2 space-y-1 ${isWhiteTheme ? "text-gray-700" : "text-zinc-300"}`}>
                 <li>
                   <strong>No PII or Financial Data:</strong> Never supply real passwords,
                   credit/debit card numbers, Social Security records, or any personally
@@ -128,10 +176,16 @@ const TermsCondition = () => {
           {/* Section 4 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-bold tracking-tight text-white">4. Disclaimer of Warranties</h2>
+              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
+                4. Disclaimer of Warranties
+              </h2>
               <Badge color="zinc">TL;DR: Zero promises things won't break</Badge>
             </div>
-            <p className="text-sm leading-relaxed uppercase font-mono tracking-tight text-xs bg-zinc-800/50 p-3 rounded border border-zinc-700 text-zinc-400">
+            <p className={`text-sm leading-relaxed uppercase font-mono tracking-tight text-xs p-3 rounded border ${
+              isWhiteTheme
+                ? "bg-zinc-50 border-zinc-200 text-zinc-700"
+                : "bg-zinc-800/50 border-zinc-700 text-zinc-400"
+            }`}>
               The platform is delivered "AS IS" and "AS AVAILABLE" without warranties of any
               nature — whether express, implied, statutory, or otherwise. We disclaim any
               guarantees regarding server uptime, data persistence, completeness of logs, or that
@@ -142,14 +196,20 @@ const TermsCondition = () => {
           {/* Section 5 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-bold tracking-tight text-white">
+              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
                 5. Absolute Limitation of Liability
               </h2>
               <Badge color="red">TL;DR: If you lose data, you can't sue us</Badge>
             </div>
-            <div className="text-sm leading-relaxed p-4 rounded border border-red-500/20 bg-red-500/10 text-red-400">
-              <p className="font-bold text-red-400">🚨 You Assume All Risk</p>
-              <p className="mt-2 text-zinc-300">
+            <div
+              className={`text-sm leading-relaxed p-4 rounded border ${
+                isWhiteTheme
+                  ? "bg-red-50 border-red-200 text-gray-700"
+                  : "bg-red-500/10 border-red-500/20 text-red-400"
+              }`}
+            >
+              <p className={`font-bold ${isWhiteTheme ? "text-red-600" : "text-red-400"}`}>🚨 You Assume All Risk</p>
+              <p className={`mt-2 ${isWhiteTheme ? "text-gray-700" : "text-zinc-300"}`}>
                 To the absolute maximum extent permitted under applicable law, the developers,
                 maintainers, and operators shall never be held liable for any damages
                 whatsoever — including direct financial loss, corruption of codebases, server
@@ -162,12 +222,12 @@ const TermsCondition = () => {
           {/* Section 6 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-bold tracking-tight text-white">
+              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
                 6. Intellectual Property & Account Termination
               </h2>
               <Badge color="zinc">TL;DR: Bad actors get banned</Badge>
             </div>
-            <p className="text-sm text-zinc-400 leading-relaxed">
+            <p className={`text-sm leading-relaxed ${isWhiteTheme ? "text-gray-700" : "text-zinc-400"}`}>
               We own all proprietary interface architecture, styling assets, and structural
               tooling. We reserve the unrestricted right to terminate or freeze access, remove
               project histories, and invalidate keys instantly and without warning if malicious
@@ -178,20 +238,26 @@ const TermsCondition = () => {
           {/* Section 7 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-bold tracking-tight text-white">
+              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
                 7. Authentication Priority & Request Validation
               </h2>
               <Badge color="purple">TL;DR: Query/body checked before auth</Badge>
             </div>
-            <div className="space-y-3 text-sm text-zinc-400 leading-relaxed">
+            <div className={`space-y-3 text-sm leading-relaxed ${isWhiteTheme ? "text-gray-700" : "text-zinc-400"}`}>
               <p>
                 The mock engine enforces a deterministic validation order for every incoming
                 request. This order is critical to understand — it is <strong>not</strong>{" "}
                 "auth first".
               </p>
-              <div className="border-l-4 pl-4 py-2 text-xs font-mono tracking-tight border-purple-600 bg-purple-950/20 text-zinc-300">
+              <div
+                className={`border-l-4 pl-4 py-2 text-xs font-mono tracking-tight ${
+                  isWhiteTheme
+                    ? "border-purple-400 bg-purple-50/50 text-gray-700"
+                    : "border-purple-600 bg-purple-950/20 text-zinc-300"
+                }`}
+              >
                 <p>
-                  <strong className="text-purple-400">Actual processing order:</strong>
+                  <strong className="text-purple-600 dark:text-purple-400">Actual processing order:</strong>
                 </p>
                 <ol className="list-decimal ml-4 mt-1 space-y-1">
                   <li>Rate limit check</li>
@@ -202,14 +268,14 @@ const TermsCondition = () => {
                   <li>Custom headers</li>
                   <li>Cookies</li>
                 </ol>
-                <p className="mt-2 text-amber-400">
+                <p className="mt-2 text-amber-600 dark:text-amber-400">
                   ⚠️ <strong>Effect:</strong> A request with a missing query parameter is rejected
                   with a <code>400</code> before your <code>Authorization</code> header is ever
                   checked — even if that header is invalid or missing. Unauthenticated requests
                   still consume your <code>rateLimit</code> quota and incur the full{" "}
                   <code>latency</code> delay.
                 </p>
-                <p className="mt-2 text-purple-400">
+                <p className="mt-2 text-purple-600 dark:text-purple-400">
                   🔐 <strong>When <code>isAuthEnabled: true</code>:</strong> The primary
                   credential (Bearer JWT or API Key) is checked exclusively via the{" "}
                   <code>Authorization</code> header or the <code>X-API-Key</code> header /{" "}
@@ -217,12 +283,12 @@ const TermsCondition = () => {
                   inside custom headers is <strong>always ignored</strong> — it can never
                   substitute for the primary check.
                 </p>
-                <p className="mt-2 text-blue-400">
+                <p className="mt-2 text-blue-600 dark:text-blue-400">
                   🔒 <strong>Custom headers & cookies:</strong> Checked <em>after</em> the primary
                   credential and must match exactly. They are additive constraints, never a
                   substitute for a missing or invalid primary credential.
                 </p>
-                <p className="mt-2 text-emerald-400">
+                <p className="mt-2 text-emerald-600 dark:text-emerald-400">
                   ⬇️ <strong>When <code>isAuthEnabled: false</code>:</strong> Authentication is
                   skipped entirely — including custom headers and cookies configured for that
                   endpoint. Disabling auth disables <em>all</em> auth-layer checks.
@@ -234,14 +300,22 @@ const TermsCondition = () => {
           {/* Section 8 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-bold tracking-tight text-white">
+              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
                 8. Validation Failures & Ignored Input
               </h2>
               <Badge color="orange">TL;DR: Bad definitions get rejected up front</Badge>
             </div>
-            <div className="text-sm leading-relaxed p-4 rounded border border-orange-500/20 bg-orange-500/10 text-orange-400">
-              <p className="font-bold text-orange-400">⚠️ Bad Definitions Get Rejected Up Front</p>
-              <ul className="list-disc pl-5 mt-2 space-y-1 text-zinc-300">
+            <div
+              className={`text-sm leading-relaxed p-4 rounded border ${
+                isWhiteTheme
+                  ? "bg-orange-50 border-orange-200 text-gray-700"
+                  : "bg-orange-500/10 border-orange-500/20 text-orange-400"
+              }`}
+            >
+              <p className={`font-bold ${isWhiteTheme ? "text-orange-600" : "text-orange-400"}`}>
+                ⚠️ Bad Definitions Get Rejected Up Front
+              </p>
+              <ul className={`list-disc pl-5 mt-2 space-y-1 ${isWhiteTheme ? "text-gray-700" : "text-zinc-300"}`}>
                 <li>
                   <strong>Rejected outright (definition never saved):</strong> a non-integer{" "}
                   <code>statusCode</code> outside 100–599, negative <code>latency</code> or{" "}
@@ -280,15 +354,17 @@ const TermsCondition = () => {
           {/* Section 9 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-bold tracking-tight text-white">9. Cookie Policy & Data Privacy</h2>
+              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
+                9. Cookie Policy & Data Privacy
+              </h2>
               <Badge color="teal">TL;DR: Essential cookies only, no tracking</Badge>
             </div>
-            <p className="text-sm text-zinc-400 leading-relaxed">
+            <p className={`text-sm leading-relaxed ${isWhiteTheme ? "text-gray-700" : "text-zinc-400"}`}>
               The Service uses cookies solely to enable core functionality and improve user
               experience. We do not sell, share, or use cookies for cross-site advertising. Our
               use of cookies is limited to:
             </p>
-            <ul className="list-disc pl-5 text-sm space-y-1 text-zinc-400">
+            <ul className={`list-disc pl-5 text-sm space-y-1 ${isWhiteTheme ? "text-gray-700" : "text-zinc-400"}`}>
               <li>
                 <strong>Session Management:</strong> Cookies maintain your authenticated session
                 (e.g., <code>sessionToken</code>) and simulate API authentication flows.
@@ -309,9 +385,15 @@ const TermsCondition = () => {
                 governs both directions.
               </li>
             </ul>
-            <div className="p-3 rounded border border-amber-500/20 bg-amber-500/10 text-xs text-amber-300">
+            <div
+              className={`p-3 rounded border text-xs ${
+                isWhiteTheme
+                  ? "bg-amber-50 border-amber-200 text-gray-700"
+                  : "bg-amber-500/10 border-amber-500/20 text-amber-300"
+              }`}
+            >
               <p className="font-bold">🔒 Your Privacy Rights:</p>
-              <p className="mt-1">
+              <p className={`mt-1 ${isWhiteTheme ? "text-gray-700" : "text-zinc-300"}`}>
                 Since the Service is a <strong>local development tool</strong>, we do not transmit
                 any cookie data to external servers. All cookies are scoped to your local machine
                 or test domain. You have the right to clear all cookies at any time via your
@@ -324,21 +406,27 @@ const TermsCondition = () => {
           {/* Section 10 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-bold tracking-tight text-white">
+              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
                 10. Features & Dynamic Mocking
               </h2>
               <Badge color="indigo">TL;DR: Define APIs, toggle AI responses, get fake data</Badge>
             </div>
-            <div className="space-y-3 text-sm text-zinc-400 leading-relaxed">
+            <div className={`space-y-3 text-sm leading-relaxed ${isWhiteTheme ? "text-gray-700" : "text-zinc-400"}`}>
               <p>
                 <strong>How to define an API:</strong> Provide a URL path (e.g.,{" "}
                 <code>/users/:id</code>), select an HTTP method, and define your request/response
                 schemas. Enforce authentication (Bearer/API Key), custom headers, and cookies
                 directly through the UI.
               </p>
-              <div className="border-l-4 pl-4 py-2 text-xs font-mono tracking-tight border-indigo-600 bg-indigo-950/20 text-zinc-300">
+              <div
+                className={`border-l-4 pl-4 py-2 text-xs font-mono tracking-tight ${
+                  isWhiteTheme
+                    ? "border-indigo-400 bg-indigo-50/50 text-gray-700"
+                    : "border-indigo-600 bg-indigo-950/20 text-zinc-300"
+                }`}
+              >
                 <p>
-                  <strong className="text-indigo-400">🤖 Dynamic Responses:</strong> Enable{" "}
+                  <strong className="text-indigo-600 dark:text-indigo-400">🤖 Dynamic Responses:</strong> Enable{" "}
                   <code>"airesponse": true</code> to use Faker.js placeholders:
                 </p>
                 <ul className="list-disc ml-4 mt-2 space-y-1">
@@ -347,7 +435,7 @@ const TermsCondition = () => {
                   <li><code>{"{{faker.string.uuid}}"}</code> → "a7d3f8e2-..."</li>
                   <li><code>{"{{faker.date.recent}}"}</code> → "2026-06-20T15:32:00Z"</li>
                 </ul>
-                <p className="mt-2 text-green-400">
+                <p className="mt-2 text-emerald-600 dark:text-emerald-400">
                   ✅ The server recursively scans every nested field — arrays, objects, and
                   strings — to replace placeholders on every request. When{" "}
                   <code>airesponse</code> is <code>false</code>, no substitution happens and
@@ -359,7 +447,7 @@ const TermsCondition = () => {
                 order described in <strong>Section 7</strong>. Combine Bearer tokens with custom
                 headers and cookies to simulate complex real-world authorization.
               </p>
-              <p className="text-xs text-zinc-500">
+              <p className={`text-xs ${isWhiteTheme ? "text-gray-500" : "text-zinc-500"}`}>
                 💡 <strong>Pro Tip:</strong> Combine dynamic responses with rate limiting (
                 <code>rateLimit</code>) and latency (<code>latency</code>) to mimic production API
                 behaviour more realistically.
@@ -370,14 +458,22 @@ const TermsCondition = () => {
           {/* Section 11 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-bold tracking-tight text-white">
+              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
                 11. User Responsibilities & Consequences
               </h2>
               <Badge color="blue">TL;DR: Misuse it, lose access</Badge>
             </div>
-            <div className="text-sm leading-relaxed p-4 rounded border border-blue-500/20 bg-blue-500/10 text-blue-400">
-              <p className="font-bold text-blue-400">📋 You Are Responsible For:</p>
-              <ul className="list-disc pl-5 mt-2 space-y-1 text-zinc-300">
+            <div
+              className={`text-sm leading-relaxed p-4 rounded border ${
+                isWhiteTheme
+                  ? "bg-blue-50 border-blue-200 text-gray-700"
+                  : "bg-blue-500/10 border-blue-500/20 text-blue-400"
+              }`}
+            >
+              <p className={`font-bold ${isWhiteTheme ? "text-blue-600" : "text-blue-400"}`}>
+                📋 You Are Responsible For:
+              </p>
+              <ul className={`list-disc pl-5 mt-2 space-y-1 ${isWhiteTheme ? "text-gray-700" : "text-zinc-300"}`}>
                 <li>
                   <strong>API Definitions:</strong> the correctness and security of your mock
                   definitions. Misconfigured auth or validation rules may cause unexpected
@@ -399,8 +495,10 @@ const TermsCondition = () => {
                   development.
                 </li>
               </ul>
-              <p className="mt-3 text-red-400 font-bold">⚠️ Consequences of Violation:</p>
-              <ul className="list-disc pl-5 mt-1 space-y-1 text-red-400">
+              <p className={`mt-3 font-bold ${isWhiteTheme ? "text-red-600" : "text-red-400"}`}>
+                ⚠️ Consequences of Violation:
+              </p>
+              <ul className={`list-disc pl-5 mt-1 space-y-1 ${isWhiteTheme ? "text-red-700" : "text-red-400"}`}>
                 <li>Immediate suspension or termination of your account.</li>
                 <li>Permanent deletion of your project data and API keys.</li>
                 <li>Legal action in cases of severe abuse or illegal activity.</li>
@@ -411,10 +509,12 @@ const TermsCondition = () => {
           {/* Section 12 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-bold tracking-tight text-white">12. Modifications & Inquiries</h2>
+              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
+                12. Modifications & Inquiries
+              </h2>
               <Badge color="blue">TL;DR: Check here for updates</Badge>
             </div>
-            <p className="text-sm text-zinc-400 leading-relaxed">
+            <p className={`text-sm leading-relaxed ${isWhiteTheme ? "text-gray-700" : "text-zinc-400"}`}>
               These terms are fluid and subject to revision. Continued use of the platform
               following any adjustment reflects binding acceptance of the updated terms. For
               legal, compliance, or feature inquiries, contact us at:
@@ -422,13 +522,13 @@ const TermsCondition = () => {
             <div className="flex flex-col space-y-1 text-sm">
               <a
                 href="mailto:adityaboxi2005@gmail.com"
-                className="text-blue-400 hover:underline hover:text-blue-300 font-medium"
+                className="text-blue-600 dark:text-blue-400 hover:underline hover:text-blue-500 font-medium"
               >
                 adityaboxi2005@gmail.com
               </a>
               <a
                 href="mailto:krishnaboxi1983@gmail.com"
-                className="text-blue-400 hover:underline hover:text-blue-300 font-medium"
+                className="text-blue-600 dark:text-blue-400 hover:underline hover:text-blue-500 font-medium"
               >
                 krishnaboxi1983@gmail.com
               </a>
@@ -436,8 +536,8 @@ const TermsCondition = () => {
           </section>
 
           {/* Footer */}
-          <hr className="border-zinc-800" />
-          <p className="text-[10px] text-center text-zinc-500">
+          <hr className={isWhiteTheme ? "border-gray-100" : "border-zinc-800"} />
+          <p className={`text-[10px] text-center ${isWhiteTheme ? "text-gray-400" : "text-zinc-500"}`}>
             By using the Service, you acknowledge that you have read, understood, and agreed to
             these Terms of Service.
           </p>

@@ -132,7 +132,7 @@ const RequestResponsePanels = React.memo(({
               <button
                 type="button"
                 onClick={() => formatJSON(value, setter, setError)}
-                className="text-blue-400 hover:text-blue-300 text-xs font-medium tracking-wide shrink-0 transition-colors select-none focus:outline-none"
+                className="bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1 rounded text-xs font-medium transition-colors"
               >
                 Format JSON
               </button>
@@ -145,5 +145,3 @@ const RequestResponsePanels = React.memo(({
 });
 
 export default RequestResponsePanels;
-
-

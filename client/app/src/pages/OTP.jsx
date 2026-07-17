@@ -1,4 +1,3 @@
-
 import { useState, useRef, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -94,14 +93,12 @@ function OTP() {
       const data = await response.json();
       if (response.ok) {
         await login(data.user);
-
-
-     setTimeout(() => {
-  navigate("/general-questions", {
-    state: { username, email, name },
-    replace: true,
-  });
-}, 1000);
+        setTimeout(() => {
+          navigate("/general-questions", {
+            state: { username, email, name },
+            replace: true,
+          });
+        }, 1000);
       } else {
         setError(data.message || "Verification failed. Please try again.");
       }
@@ -115,16 +112,19 @@ function OTP() {
   if (!username || !email) {
     return (
       <div className={`min-h-screen flex items-center justify-center font-sans selection:bg-blue-500/30 p-4 ${
-        isWhiteTheme ? "bg-gray-100" : "bg-[#1e1e24]"
+        isWhiteTheme ? "bg-gray-100" : "bg-zinc-950"
       }`}>
         <div className={`p-8 rounded shadow-lg border w-full max-w-sm text-center ${
-          isWhiteTheme ? "bg-white border-gray-200" : "bg-[#2b2d31] border-zinc-700/50"
+          isWhiteTheme ? "bg-white border-gray-200" : "bg-zinc-900 border-zinc-800"
         }`}>
           <h1 className="text-lg font-semibold text-red-400 mb-2">Unauthorized Access</h1>
-          <p className={`text-sm mb-6 ${isWhiteTheme ? "text-gray-600" : "text-gray-400"}`}>
+          <p className={`text-sm mb-6 ${isWhiteTheme ? "text-gray-600" : "text-zinc-400"}`}>
             Please sign up first to access this page.
           </p>
-          <button onClick={() => navigate("/signup")} className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 rounded text-sm transition-colors">
+          <button
+            onClick={() => navigate("/signup")}
+            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 rounded text-sm transition-colors"
+          >
             Go to Signup
           </button>
         </div>
@@ -134,30 +134,30 @@ function OTP() {
 
   return (
     <div className={`min-h-screen flex items-center justify-center font-sans selection:bg-blue-500/30 p-4 ${
-      isWhiteTheme ? "bg-gray-100" : "bg-[#1e1e24]"
+      isWhiteTheme ? "bg-gray-100" : "bg-zinc-950"
     }`}>
       <div className={`p-8 rounded shadow-lg border w-full max-w-sm ${
-        isWhiteTheme ? "bg-white border-gray-200" : "bg-[#2b2d31] border-zinc-700/50"
+        isWhiteTheme ? "bg-white border-gray-200" : "bg-zinc-900 border-zinc-800"
       }`}>
-        <h1 className={`text-lg font-semibold mb-2 ${isWhiteTheme ? "text-gray-800" : "text-gray-200"}`}>OTP Verification</h1>
-        <p className={`text-sm mb-5 ${isWhiteTheme ? "text-gray-600" : "text-gray-400"}`}>
-          Verification code sent to: <strong className={isWhiteTheme ? "text-gray-800" : "text-gray-200"}>{email}</strong>
+        <h1 className={`text-lg font-semibold mb-2 ${isWhiteTheme ? "text-gray-800" : "text-white"}`}>OTP Verification</h1>
+        <p className={`text-sm mb-5 ${isWhiteTheme ? "text-gray-600" : "text-zinc-400"}`}>
+          Verification code sent to: <strong className={isWhiteTheme ? "text-gray-800" : "text-white"}>{email}</strong>
         </p>
 
         <div className={`p-3 rounded mb-4 text-center text-sm transition-colors duration-300 border ${
           timer < 10
             ? isWhiteTheme
               ? "bg-red-100 border-red-400 text-red-700"
-              : "bg-red-900/30 border-red-500/50 text-red-400"
+              : "bg-red-500/10 border-red-500/30 text-red-400"
             : isWhiteTheme
               ? "bg-green-100 border-green-400 text-green-700"
-              : "bg-green-900/30 border-green-500/50 text-green-400"
+              : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"
         }`}>
           <strong className="font-medium">OTP Valid For: {timer} seconds</strong>
           {timer === 0 && <span className="font-bold"> (Expired!)</span>}
         </div>
 
-        <h3 className={`text-xs font-medium mb-2 ${isWhiteTheme ? "text-gray-500" : "text-gray-400"}`}>
+        <h3 className={`text-xs font-medium mb-2 ${isWhiteTheme ? "text-gray-500" : "text-zinc-500"}`}>
           Resend available in: {timer} seconds
         </h3>
 
@@ -171,7 +171,7 @@ function OTP() {
           className={`w-full rounded px-3 py-2 text-sm outline-none focus:border-blue-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed mb-5 tracking-widest ${
             isWhiteTheme
               ? "bg-gray-50 border border-gray-300 text-gray-900 placeholder-gray-400 focus:border-blue-500"
-              : "bg-[#1e1f22] border border-zinc-700/50 text-gray-200 placeholder-zinc-600 focus:border-blue-500"
+              : "bg-zinc-900 border border-zinc-800 text-zinc-300 placeholder-zinc-500 focus:border-blue-500"
           }`}
         />
 
@@ -183,8 +183,8 @@ function OTP() {
               timer === 0 || isLoading
                 ? isWhiteTheme
                   ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                  : "bg-[#1e1f22] text-zinc-500 border border-zinc-700/50 cursor-not-allowed"
-                : "bg-green-600 hover:bg-green-500 text-white"
+                  : "bg-zinc-800 text-zinc-500 border border-zinc-700 cursor-not-allowed"
+                : "bg-blue-600 hover:bg-blue-500 text-white"
             }`}
           >
             {isLoading ? "Verifying..." : "Verify OTP"}
@@ -196,7 +196,7 @@ function OTP() {
               timer > 0 || isLoading
                 ? isWhiteTheme
                   ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                  : "bg-[#1e1f22] text-zinc-500 border border-zinc-700/50 cursor-not-allowed"
+                  : "bg-zinc-800 text-zinc-500 border border-zinc-700 cursor-not-allowed"
                 : "bg-blue-600 hover:bg-blue-500 text-white"
             }`}
           >

@@ -23,7 +23,6 @@ const setStoredWidth = (key, value) => {
 
 function ApiToolsPage({ projectId: propProjectId }) {
   // ---- Project ID ----
-  // Use prop, or fallback to localStorage, or hardcoded default
   const projectId = useMemo(() => {
     if (propProjectId) return propProjectId;
     try {
@@ -52,10 +51,8 @@ function ApiToolsPage({ projectId: propProjectId }) {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
       if (mobile) {
-        // On mobile, stack vertically (100% width)
         setLeftWidth(100);
       } else {
-        // Restore from storage if not mobile
         const stored = getStoredWidth('apiToolsLeftWidth', 50);
         setLeftWidth(stored);
       }
@@ -69,10 +66,7 @@ function ApiToolsPage({ projectId: propProjectId }) {
     (e) => {
       e.preventDefault();
       const clientX = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX;
-      dragStartRef.current = {
-        x: clientX,
-        width: leftWidth,
-      };
+      dragStartRef.current = { x: clientX, width: leftWidth };
       setIsDragging(true);
     },
     [leftWidth]
@@ -81,12 +75,7 @@ function ApiToolsPage({ projectId: propProjectId }) {
   const handleDragMove = useCallback(
     (e) => {
       if (!isDragging || !containerRef.current) return;
-
-      // Cancel previous animation frame
-      if (rafIdRef.current) {
-        cancelAnimationFrame(rafIdRef.current);
-      }
-
+      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
       rafIdRef.current = requestAnimationFrame(() => {
         const clientX = e.type === 'touchmove' ? e.touches[0].clientX : e.clientX;
         const containerRect = containerRef.current.getBoundingClientRect();
@@ -103,10 +92,7 @@ function ApiToolsPage({ projectId: propProjectId }) {
 
   const handleDragEnd = useCallback(() => {
     setIsDragging(false);
-    if (rafIdRef.current) {
-      cancelAnimationFrame(rafIdRef.current);
-      rafIdRef.current = null;
-    }
+    if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
   }, []);
 
   // ---- Global listeners ----
@@ -123,7 +109,6 @@ function ApiToolsPage({ projectId: propProjectId }) {
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
     }
-
     return () => {
       window.removeEventListener('mousemove', handleDragMove);
       window.removeEventListener('touchmove', handleDragMove);
@@ -132,10 +117,7 @@ function ApiToolsPage({ projectId: propProjectId }) {
       window.removeEventListener('mouseleave', handleDragEnd);
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
-      if (rafIdRef.current) {
-        cancelAnimationFrame(rafIdRef.current);
-        rafIdRef.current = null;
-      }
+      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
     };
   }, [isDragging, handleDragMove, handleDragEnd]);
 
@@ -146,16 +128,16 @@ function ApiToolsPage({ projectId: propProjectId }) {
     setStoredWidth('apiToolsLeftWidth', newWidth);
   }, []);
 
-  // ---- Render ---- 
+  // ---- Render ----
   return (
     <div
       ref={containerRef}
-      className="flex h-full min-h-screen bg-[#1e1e24]"
+      className="flex h-full min-h-screen bg-zinc-950"
       style={{ flexDirection: isMobile ? 'column' : 'row' }}
     >
       {/* Left Panel - OpenApi */}
       <div
-        className="overflow-auto border-r border-[#2d2d3a]"
+        className="overflow-auto border-r border-zinc-800"
         style={{
           width: isMobile ? '100%' : `${leftWidth}%`,
           height: isMobile ? '50%' : '100%',
@@ -167,8 +149,8 @@ function ApiToolsPage({ projectId: propProjectId }) {
       {/* Divider - only visible on desktop */}
       {!isMobile && (
         <div
-          className={`relative w-2 bg-[#2d2d3a] hover:bg-indigo-500 active:bg-indigo-400 cursor-col-resize transition-colors ${
-            isDragging ? 'bg-indigo-500' : ''
+          className={`relative w-2 bg-zinc-800 hover:bg-blue-500 active:bg-blue-400 cursor-col-resize transition-colors ${
+            isDragging ? 'bg-blue-500' : ''
           }`}
           onMouseDown={handleDragStart}
           onTouchStart={handleDragStart}
@@ -180,9 +162,9 @@ function ApiToolsPage({ projectId: propProjectId }) {
         >
           {/* Visual grip dots */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col gap-1 pointer-events-none">
-            <div className="w-1 h-1 rounded-full bg-gray-500/40" />
-            <div className="w-1 h-1 rounded-full bg-gray-500/40" />
-            <div className="w-1 h-1 rounded-full bg-gray-500/40" />
+            <div className="w-1 h-1 rounded-full bg-zinc-500/40" />
+            <div className="w-1 h-1 rounded-full bg-zinc-500/40" />
+            <div className="w-1 h-1 rounded-full bg-zinc-500/40" />
           </div>
         </div>
       )}
