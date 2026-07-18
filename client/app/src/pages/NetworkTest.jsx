@@ -9,6 +9,8 @@ const DEFAULT_DELAY_MS = 100;
 const CACHE_TTL_MS = 30_000; // 30 seconds
 
 function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = DEFAULT_DELAY_MS }) {
+  console.log('[NetworkTest] 🚀 Component mounted with projectId:', projectId);
+
   // ---- State ----
   const [status, setStatus] = useState('idle'); // idle | running | done | error
   const [average, setAverage] = useState(null);
@@ -26,19 +28,24 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
   // ---- Lifecycle ----
   useEffect(() => {
     mountedRef.current = true;
+    console.log('[NetworkTest] ✅ mountedRef set to true');
     return () => {
       mountedRef.current = false;
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
       }
+      console.log('[NetworkTest] 🧹 Component unmounted, aborting any pending requests');
     };
   }, []);
 
   // ---- Core test logic ----
   const runTest = useCallback(async (force = false) => {
+    console.log('[NetworkTest] ▶️ runTest called with force =', force);
+
     // Check cache (only if not forced and component is mounted)
     if (!force && cacheRef.current && (Date.now() - cacheRef.current.timestamp < CACHE_TTL_MS)) {
+      console.log('[NetworkTest] 💾 Cache HIT – using cached results from', new Date(cacheRef.current.timestamp).toLocaleTimeString());
       if (mountedRef.current) {
         const cached = cacheRef.current;
         setAverage(cached.result);
@@ -47,9 +54,11 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
         setStatus('done');
         setSaved(false);
         setError(null);
+        console.log('[NetworkTest] 📊 Restored cached stats:', cached.stats);
       }
       return;
     }
+    console.log('[NetworkTest] 💾 Cache MISS or expired – starting fresh test');
 
     // Reset state
     if (mountedRef.current) {
@@ -60,11 +69,13 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
       setProgress(0);
       setAverage(null);
       setStats({ min: null, max: null, samples: 0 });
+      console.log('[NetworkTest] 🔄 State reset for new test');
     }
 
     // Abort any previous request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
+      console.log('[NetworkTest] ⏹️ Aborted previous test');
     }
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -76,6 +87,7 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
     for (let i = 0; i < sampleCount; i++) {
       if (signal.aborted || !mountedRef.current) break;
 
+      console.log(`[NetworkTest] 📡 Ping attempt ${i + 1}/${sampleCount}`);
       const start = performance.now();
       try {
         const response = await fetch(`${API_BASE}/api/latency-test`, {
@@ -87,16 +99,21 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
         const elapsed = performance.now() - start;
         results.push(elapsed);
         successCount++;
+        console.log(`[NetworkTest] ✅ Ping ${i + 1} succeeded – ${elapsed.toFixed(2)} ms`);
       } catch (err) {
         if (err.name === 'AbortError' || !mountedRef.current) {
+          console.log(`[NetworkTest] ⏹️ Ping ${i + 1} aborted`);
           break;
         }
-        // Network or server error – we still continue to the next attempt
+        console.warn(`[NetworkTest] ❌ Ping ${i + 1} failed:`, err.message);
+        // continue to next attempt
       }
 
       // Update progress (including failed attempts)
       if (mountedRef.current) {
-        setProgress(((i + 1) / sampleCount) * 100);
+        const progressVal = ((i + 1) / sampleCount) * 100;
+        setProgress(progressVal);
+        console.log(`[NetworkTest] 📊 Progress: ${Math.round(progressVal)}%`);
       }
 
       // Delay between requests (if not last and not aborted)
@@ -109,8 +126,12 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
     abortControllerRef.current = null;
 
     // If aborted or unmounted, set status accordingly
-    if (!mountedRef.current) return;
+    if (!mountedRef.current) {
+      console.log('[NetworkTest] ⏹️ Component unmounted during test – exiting');
+      return;
+    }
     if (signal.aborted) {
+      console.log('[NetworkTest] ⏹️ Test aborted by user');
       setStatus('idle');
       setProgress(0);
       return;
@@ -118,6 +139,7 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
 
     // If no successful results
     if (results.length === 0) {
+      console.warn('[NetworkTest] ❌ No successful pings – all attempts failed');
       setStatus('error');
       setError('All attempts failed. Please check your network or try again.');
       setProgress(100);
@@ -129,6 +151,13 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
     const min = Math.min(...results);
     const max = Math.max(...results);
     const avgRounded = Math.round(avg);
+
+    console.log('[NetworkTest] 📊 Test results:', {
+      avg: avgRounded,
+      min: Math.round(min),
+      max: Math.round(max),
+      samples: results.length
+    });
 
     // Update state
     setAverage(avgRounded);
@@ -144,26 +173,39 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
       individual: results,
       timestamp: Date.now(),
     };
+    console.log('[NetworkTest] 💾 Cached results (TTL = 30s)');
 
     // If projectId provided, send report to backend (non‑blocking)
     if (projectId) {
+      console.log('[NetworkTest] 📤 Sending latency report to /api/latency-report for project:', projectId);
       try {
-        await fetch(`${API_BASE}/api/latency-report`, {
+        const response = await fetch(`${API_BASE}/api/latency-report`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ project_id: projectId, rtts: avgRounded }), // ✅ fixed: rtts
+          body: JSON.stringify({ project_id: projectId, rtts: avgRounded }),
         });
+        if (!response.ok) {
+          console.warn('[NetworkTest] ⚠️ Latency report HTTP error:', response.status);
+          throw new Error(`HTTP ${response.status}`);
+        }
+        const result = await response.json();
+        console.log('[NetworkTest] ✅ Latency report saved successfully:', result);
         if (mountedRef.current) setSaved(true);
       } catch (e) {
-        console.warn('Failed to save latency report:', e);
+        console.warn('[NetworkTest] ❌ Failed to save latency report:', e);
         // Don't set error – the test itself succeeded
       }
+    } else {
+      console.log('[NetworkTest] ⏭️ No projectId provided, skipping latency report');
     }
+
+    console.log('[NetworkTest] ✅ Test completed successfully');
   }, [projectId, sampleCount, delayMs]);
 
   // ---- Manual cache clear ----
   const clearCache = useCallback(() => {
+    console.log('[NetworkTest] 🗑️ Clearing cache');
     cacheRef.current = null;
     if (mountedRef.current) {
       setStatus('idle');
@@ -173,6 +215,7 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
       setSaved(false);
       setError(null);
       setProgress(0);
+      console.log('[NetworkTest] 🔄 State reset after cache clear');
     }
   }, []);
 
@@ -208,6 +251,8 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
   const secondaryBtn = "bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm transition";
 
   // ---- Render ----
+  console.log('[NetworkTest] 🖥️ Rendering – status:', status, '– average:', average, '– saved:', saved);
+
   return (
     <div className="p-6 max-w-3xl mx-auto">
       <h1 className="text-2xl font-semibold text-white mb-2">🌐 Network Latency</h1>

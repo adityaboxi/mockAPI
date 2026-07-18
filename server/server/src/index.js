@@ -32,6 +32,14 @@ const importRoutes = require('./routes/importRoutes');
 const app = express();
 const server = http.createServer(app);
 
+console.log('[Server] 🚀 Starting server...');
+console.log('[Server] 📌 Environment variables:');
+console.log(`  - PORT: ${process.env.PORT || 3000}`);
+console.log(`  - CLIENT_URL: ${process.env.CLIENT_URL || 'http://localhost:8082'}`);
+console.log(`  - REDIS_URL: ${process.env.REDIS_URL ? '✅ set' : '❌ missing'}`);
+console.log(`  - MONGO_URI: ${process.env.MONGO_URI ? '✅ set' : '❌ missing'}`);
+console.log(`  - CSRF_SECRET: ${process.env.CSRF_SECRET ? '✅ set' : '❌ missing'}`);
+
 // ================================================================
 // TIME WINDOW HELPER (shared by dashboard + latency-stats)
 // ================================================================
@@ -58,6 +66,7 @@ const io = new Server(server, {
   pingInterval: 60000,
   pingTimeout: 20000,
 });
+console.log('[Socket] ✅ Socket.IO server initialized');
 
 let pubClient, subClient; // may remain undefined if adapter fails
 let mainRedisClient;
@@ -71,33 +80,43 @@ let heartbeatInterval, dataPollingInterval;
 //  over the last 24h, based on total_latency (server + team + user).
 // -----------------------------------------------------------------
 async function aggregateAllLatencies(projectIds) {
-  if (!projectIds || projectIds.length === 0) return new Map();
-
-  const stats = await ApiCallLog.aggregate([
-    {
-      $match: {
-        project_id: { $in: projectIds },
-        timestamp: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
-      }
-    },
-    {
-      $group: {
-        _id: {
-          project_id: '$project_id',
-          path: '$path',
-          method: '$method'
-        },
-        avgLatency: { $avg: { $ifNull: ['$total_latency', '$latency_ms'] } }
-      }
-    }
-  ]);
-
-  const map = new Map();
-  for (const s of stats) {
-    const key = `${s._id.project_id}::${s._id.path}::${s._id.method}`;
-    map.set(key, Math.round(s.avgLatency));
+  console.log(`[DB] aggregateAllLatencies called for ${projectIds.length} projects`);
+  if (!projectIds || projectIds.length === 0) {
+    console.log('[DB] No project IDs provided, returning empty map');
+    return new Map();
   }
-  return map;
+
+  try {
+    const stats = await ApiCallLog.aggregate([
+      {
+        $match: {
+          project_id: { $in: projectIds },
+          timestamp: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            project_id: '$project_id',
+            path: '$path',
+            method: '$method'
+          },
+          avgLatency: { $avg: { $ifNull: ['$total_latency', '$latency_ms'] } }
+        }
+      }
+    ]);
+    console.log(`[DB] aggregateAllLatencies returned ${stats.length} aggregated entries`);
+
+    const map = new Map();
+    for (const s of stats) {
+      const key = `${s._id.project_id}::${s._id.path}::${s._id.method}`;
+      map.set(key, Math.round(s.avgLatency));
+    }
+    return map;
+  } catch (err) {
+    console.error('[DB] aggregateAllLatencies error:', err);
+    return new Map();
+  }
 }
 
 // ================================================================
@@ -113,22 +132,28 @@ const startServer = async () => {
     console.warn('[WARN] CLIENT_URL not set, defaulting to http://localhost:8082');
   }
 
+  console.log('[Server] 🔌 Connecting to MongoDB...');
   await connectDB();
+  console.log('[Server] ✅ MongoDB connected');
+
+  console.log('[Server] 🔌 Connecting to Redis...');
   mainRedisClient = await connectRedis();
+  console.log('[Server] ✅ Redis connected');
 
   // ---------- Redis adapter for Socket.IO (multi-instance scaling) ----------
   try {
+    console.log('[Socket] Setting up Redis adapter...');
     pubClient = createClient({ url: process.env.REDIS_URL });
     subClient = pubClient.duplicate();
     await Promise.all([pubClient.connect(), subClient.connect()]);
     io.adapter(createAdapter(pubClient, subClient));
-    console.log('[BOOT] Socket.IO Redis adapter connected');
+    console.log('[Socket] ✅ Redis adapter connected');
   } catch (err) {
-    console.error('[BOOT] Socket.io Redis adapter failed (non-fatal):', err.message);
-    // pubClient/subClient remain undefined – we'll handle gracefully later
+    console.error('[Socket] ❌ Redis adapter failed (non-fatal):', err.message);
   }
 
   // ---------- Redis Pub/Sub listener for AI events ----------
+  console.log('[Redis] Setting up AI Pub/Sub listener...');
   aiSubscriber = mainRedisClient.duplicate();
   await aiSubscriber.connect();
 
@@ -142,36 +167,44 @@ const startServer = async () => {
         return;
       }
       const eventName = channel.replace('ws:ai:', '');
+      console.log(`[AI Pub/Sub] Emitting ai:${eventName} to user:${userId}`);
       io.to(`user:${userId}`).emit(`ai:${eventName}`, { jobId, ...payload });
     } catch (err) {
       console.error('[AI Pub/Sub] Failed to parse message:', err);
     }
   });
   aiSubscriber.on('error', (err) => console.error('[AI Pub/Sub] Redis error:', err));
-  console.log('[BOOT] Redis Pub/Sub listener for AI events started');
+  console.log('[Redis] ✅ AI Pub/Sub listener started');
 
   // ---------- Redis Pub/Sub listener for new API logs (real-time dashboard) ----------
+  console.log('[Redis] Setting up log Pub/Sub listener...');
   logSubscriber = mainRedisClient.duplicate();
   await logSubscriber.connect();
 
   logSubscriber.subscribe('ws:new_api_log', (message) => {
     try {
       const logData = JSON.parse(message);
+      console.log('[Redis] 📨 Received new_api_log:', logData);
       io.emit('new_api_log', logData);
     } catch (err) {
       console.error('[Log Pub/Sub] Failed to parse log message:', err);
     }
   });
   logSubscriber.on('error', (err) => console.error('[Log Pub/Sub] Redis error:', err));
-  console.log('[BOOT] Redis Pub/Sub listener for new API logs started');
+  console.log('[Redis] ✅ Log Pub/Sub listener started');
 
   // ---------- BullMQ queues ----------
+  console.log('[Queue] Initializing BullMQ queues...');
   const queueConnection = { connection: { url: process.env.REDIS_URL } };
-  latencyQueue = new Queue('latency-store', queueConnection);
+  
+  latencyQueue = new Queue('bullmq-latency-store', queueConnection);
   projectQueue = new Queue('projectQueue', queueConnection);
   mockSyncQueue = new Queue('mockSyncQueue', queueConnection);
+  console.log('[Queue] ✅ Queues initialized: latency-store, projectQueue, mockSyncQueue');
 
-  require('./queues/emailQueue'); // loads the email worker (uses same Redis)
+  // Load email worker (just requires the file, the worker starts automatically)
+  require('./queues/emailQueue');
+  console.log('[Queue] ✅ Email worker loaded');
 
   // ---------- CORS ----------
   app.use(cors({
@@ -203,7 +236,6 @@ const startServer = async () => {
   });
 
   // ---------- CSRF Protection ----------
-  // NOTE: All /api/* routes are exempted because they use JWT + CORS.
   const { generateToken, doubleCsrfProtection } = doubleCsrf({
     getSecret: () => process.env.CSRF_SECRET,
     cookieName: 'x-csrf-token',
@@ -224,7 +256,7 @@ const startServer = async () => {
   });
 
   // ================================================================
-  // CONTROLLERS (imports are kept as is)
+  // CONTROLLERS (imports)
   // ================================================================
   const login = require('./controllers/login');
   const setuser = require('./controllers/setuser');
@@ -260,8 +292,11 @@ const startServer = async () => {
   const delete_project = require('./controllers/delete_project');
 
   // ================================================================
-  // ROUTES (no changes)
+  // ROUTES
   // ================================================================
+  console.log('[Server] 📡 Registering routes...');
+
+  // Auth routes
   app.post('/api/isemailvalid', isemailvalid);
   app.post('/api/isvalidusername', isvalidusername);
   app.post('/api/setuser', setuser);
@@ -313,11 +348,13 @@ const startServer = async () => {
     res.json({ timestamp: Date.now() });
   });
 
-  // ---- LATENCY REPORT (FIXED) ----
+  // ---- LATENCY REPORT ----
   app.post('/api/latency-report', authenticateToken, async (req, res) => {
+    console.log(`[API] POST /api/latency-report (user: ${req.user.username})`, req.body);
     try {
       const { project_id, rtts } = req.body;
       if (!project_id) {
+        console.warn('[API] Missing project_id in latency-report');
         return res.status(400).json({ error: 'Missing project_id' });
       }
 
@@ -328,29 +365,35 @@ const startServer = async () => {
       } else if (typeof rtts === 'number') {
         avgRtt = Math.round(rtts);
       } else {
+        console.warn('[API] Invalid rtts format:', rtts);
         return res.status(400).json({ error: 'Invalid rtts, expected array or number' });
       }
+      console.log(`[API] Computed avgRtt: ${avgRtt}ms`);
 
       const username = req.user.username;
 
       // 1. Update User's latency field
+      console.log(`[DB] Updating user ${username} latency to ${avgRtt}`);
       const user = await User.findOneAndUpdate(
         { username },
         { latency: avgRtt },
         { new: true }
       );
       if (!user) {
-        console.warn(`[latency-report] User ${username} not found`);
-        // but we can still continue
+        console.warn(`[DB] User ${username} not found`);
+      } else {
+        console.log(`[DB] User ${username} updated`);
       }
 
       // 2. Update or create TeamLatency for this user + project
+      console.log(`[DB] Updating TeamLatency for ${username} in project ${project_id}`);
       let teamLat = await TeamLatency.findOne({ project_id, username });
       if (teamLat) {
         const total = teamLat.averageRtt * teamLat.sampleCount + avgRtt;
         teamLat.sampleCount += 1;
         teamLat.averageRtt = Math.round(total / teamLat.sampleCount);
         await teamLat.save();
+        console.log(`[DB] TeamLatency updated: avg=${teamLat.averageRtt}, samples=${teamLat.sampleCount}`);
       } else {
         teamLat = await TeamLatency.create({
           project_id,
@@ -358,14 +401,17 @@ const startServer = async () => {
           averageRtt: avgRtt,
           sampleCount: 1,
         });
+        console.log(`[DB] TeamLatency created: avg=${avgRtt}`);
       }
 
-      // 3. Recalculate the global ProjectLatency for this project
+      // 3. Recalculate global ProjectLatency
+      console.log(`[DB] Recalculating ProjectLatency for project ${project_id}`);
       const allTeamLatencies = await TeamLatency.find({ project_id });
       let projectAvg = null;
       if (allTeamLatencies.length > 0) {
         const total = allTeamLatencies.reduce((sum, doc) => sum + doc.averageRtt, 0);
         projectAvg = Math.round(total / allTeamLatencies.length);
+        console.log(`[DB] ProjectLatency computed: ${projectAvg}ms from ${allTeamLatencies.length} members`);
 
         await ProjectLatency.findOneAndUpdate(
           { project_id },
@@ -377,50 +423,59 @@ const startServer = async () => {
         );
       }
 
-      // 4. (Optional) Enqueue a job for further processing (logging, etc.)
-      //    Catch errors silently so they don't affect the response.
+      // 4. Enqueue a job for further processing
+      console.log(`[Queue] Adding latency job to bullmq-latency-store for ${username}`);
       latencyQueue.add('store-member-latency', {
         project_id,
         username,
         rtt: avgRtt,
-      }).catch(err => console.error('[latency-report] Queue job failed:', err.message));
+      }).catch(err => console.error('[Queue] Failed to add latency job:', err));
 
       res.json({
         success: true,
         userLatency: avgRtt,
-        teamLatency: teamLat.averageRtt,          // ✅ return the average, not the document
+        teamLatency: teamLat.averageRtt,
         projectAverage: projectAvg,
       });
 
     } catch (err) {
-      console.error('[latency-report]', err);
+      console.error('[API] Error in latency-report:', err);
       res.status(500).json({ error: 'Failed to save latency report' });
     }
   });
 
   // ---- OPENAPI IMPORT (sync) ----
   app.post('/api/import-openapi', authenticateToken, upload.single('file'), async (req, res) => {
+    console.log(`[API] POST /api/import-openapi (user: ${req.user.username}), file: ${req.file?.originalname}`);
     try {
-      if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+      if (!req.file) {
+        console.warn('[API] No file uploaded');
+        return res.status(400).json({ error: 'No file uploaded' });
+      }
 
       const fileBuffer = req.file.buffer;
       const fileName = req.file.originalname || '';
       const isJson = fileName.endsWith('.json') || (req.file.mimetype === 'application/json');
+      console.log(`[API] Parsing ${isJson ? 'JSON' : 'YAML'} file: ${fileName}`);
 
       let spec;
       try {
         spec = isJson
           ? JSON.parse(fileBuffer.toString('utf-8'))
           : yaml.load(fileBuffer.toString('utf-8'));
+        console.log('[API] Spec parsed successfully');
       } catch (parseErr) {
+        console.error('[API] Parse error:', parseErr);
         return res.status(400).json({ error: 'Invalid file format: ' + parseErr.message });
       }
       if (!spec || !spec.paths) {
+        console.warn('[API] No paths found in spec');
         return res.status(400).json({ error: 'No paths found in OpenAPI spec' });
       }
 
       const basePath = spec.basePath || '';
       const endpointsMap = {};
+      let endpointCount = 0;
 
       Object.keys(spec.paths).forEach(rawPath => {
         const fullPath = basePath + rawPath;
@@ -428,30 +483,36 @@ const startServer = async () => {
         Object.keys(pathObj).forEach(method => {
           if (!['get', 'post', 'put', 'delete', 'patch', 'options'].includes(method)) return;
           const operation = pathObj[method];
-
+          // ✅ FIX: Store baseUrlPath versionless, urlPath versioned
+          const version = 'v1';
+          const versionedPath = `/${version}${fullPath}`;
           if (!endpointsMap[fullPath]) {
             endpointsMap[fullPath] = { baseUrlPath: fullPath, versions: [] };
           }
           endpointsMap[fullPath].versions.push({
             method: method.toUpperCase(),
-            urlPath: fullPath,
-            version: 'v1',
+            urlPath: versionedPath,
+            version: version,
             protocol: 'https',
             statusCode: 200,
             requestBody: operation.requestBody?.content?.['application/json']?.schema?.example || null,
             responseBody: operation.responses?.['200']?.content?.['application/json']?.schema?.example || null,
           });
+          endpointCount++;
         });
       });
 
       const endpointsArray = Object.values(endpointsMap);
+      console.log(`[API] Extracted ${endpointsArray.length} endpoints, ${endpointCount} total versions`);
       if (endpointsArray.length === 0) {
+        console.warn('[API] No valid HTTP methods found');
         return res.status(400).json({ error: 'No valid HTTP methods found' });
       }
 
       const projectId = uuidv4();
       const invitationCode = Math.random().toString(36).substring(2, 8).toUpperCase();
       const projectName = spec.info?.title || 'Imported Project';
+      console.log(`[API] Creating project: ${projectName} (ID: ${projectId})`);
 
       const newProject = new Project({
         id: projectId,
@@ -462,6 +523,7 @@ const startServer = async () => {
         isActive: true,
       });
       await newProject.save();
+      console.log('[DB] Project saved');
 
       const projectApiHistory = new ProjectApiHistory({
         projectID: projectId,
@@ -470,10 +532,13 @@ const startServer = async () => {
         endpoints: endpointsArray,
       });
       await projectApiHistory.save();
+      console.log('[DB] ProjectApiHistory saved');
 
+      console.log('[Queue] Adding create-project job to projectQueue');
       await projectQueue.add('create-project', { action: 'create', projectId });
 
       const syncDelay = 5000;
+      let syncJobs = 0;
       for (const endpoint of endpointsArray) {
         for (const ver of endpoint.versions) {
           await mockSyncQueue.add('sync-api', {
@@ -489,8 +554,10 @@ const startServer = async () => {
               statusCode: ver.statusCode,
             }
           }, { delay: syncDelay });
+          syncJobs++;
         }
       }
+      console.log(`[Queue] Added ${syncJobs} sync-api jobs to mockSyncQueue`);
 
       res.status(201).json({
         success: true,
@@ -500,33 +567,40 @@ const startServer = async () => {
         message: 'Project created. Container is starting, APIs will be synced shortly.'
       });
     } catch (err) {
-      console.error('[import-openapi]', err);
+      console.error('[API] Error in import-openapi:', err);
       res.status(500).json({ error: 'Failed to import OpenAPI: ' + err.message });
     }
   });
 
   // ---- DASHBOARD DATA ----
   app.get('/api/dashboard-data', authenticateToken, async (req, res) => {
+    const username = req.user.username;
+    console.log(`[API] GET /api/dashboard-data (user: ${username})`);
     try {
-      const username = req.user.username;
       const cacheKey = `dashboard:${username}`;
       if (mainRedisClient) {
         const cached = await mainRedisClient.get(cacheKey);
         if (cached) {
+          console.log(`[Redis] Cache hit for ${cacheKey}`);
           return res.json(JSON.parse(cached));
         }
+        console.log(`[Redis] Cache miss for ${cacheKey}`);
       }
 
+      console.log(`[DB] Fetching projects for user ${username}`);
       const projects = await Project.find({
         $or: [{ username }, { members: username }]
       }).lean();
+      console.log(`[DB] Found ${projects.length} projects`);
 
       if (projects.length === 0) {
         return res.json({ projects: [] });
       }
 
       const projectIds = projects.map(p => p.id);
+      console.log(`[DB] Project IDs: ${projectIds.join(', ')}`);
 
+      // Fetch latencies
       const latencyDocs = await ProjectLatency.find({
         project_id: { $in: projectIds }
       }).lean();
@@ -537,20 +611,27 @@ const startServer = async () => {
       }).lean();
       const historyMap = new Map(histories.map(h => [h.projectID, h]));
 
+      // Fetch user RTT from Redis
       const rttKeys = projectIds.map(id => `latency:${id}:${username}`);
       const networkRttMap = new Map();
       if (mainRedisClient) {
+        console.log(`[Redis] Fetching RTT for keys: ${rttKeys.join(', ')}`);
         const pipeline = mainRedisClient.multi();
         rttKeys.forEach(key => pipeline.get(key));
         const rttResults = await pipeline.exec();
         projectIds.forEach((id, idx) => {
           const val = rttResults[idx]?.[1];
-          if (val) networkRttMap.set(id, parseInt(val, 10));
+          if (val) {
+            networkRttMap.set(id, parseInt(val, 10));
+            console.log(`[Redis] RTT for ${id}: ${val}ms`);
+          }
         });
       }
 
+      // Aggregate server latencies
       const latStatsMap = await aggregateAllLatencies(projectIds);
 
+      // Enrich projects
       const enriched = projects.map(project => {
         const rttDoc = latencyMap.get(project.id);
         const projectRtt = rttDoc ? rttDoc.averageRtt : null;
@@ -567,7 +648,9 @@ const startServer = async () => {
             return {
               version: ver.version,
               label: ver.version,
-              latency: totalLatency
+              latency: totalLatency,
+              // ✅ CRITICAL: Include urlPath so the frontend can query the correct versioned path
+              urlPath: ver.urlPath
             };
           });
 
@@ -591,32 +674,38 @@ const startServer = async () => {
       const response = { projects: enriched };
       if (mainRedisClient) {
         await mainRedisClient.setEx(cacheKey, 15, JSON.stringify(response));
+        console.log(`[Redis] Cached dashboard data for ${cacheKey}`);
       }
       res.json(response);
     } catch (err) {
-      console.error('[dashboard-data]', err);
+      console.error('[API] Error in dashboard-data:', err);
       res.status(500).json({ error: 'Failed to load dashboard data' });
     }
   });
 
   // ---- LATENCY STATS ----
   app.get('/api/latency-stats', authenticateToken, async (req, res) => {
-    try {
-      const { project_id, path, method } = req.query;
-      const range = req.query.range || '6h';
+    const { project_id, path, method } = req.query;
+    const range = req.query.range || '6h';
+    console.log(`[API] GET /api/latency-stats (user: ${req.user.username}) – project: ${project_id}, path: ${path}, method: ${method}, range: ${range}`);
 
+    try {
       if (!project_id || !path || !method) {
+        console.warn('[API] Missing query params');
         return res.status(400).json({ error: 'Missing project_id, path, or method' });
       }
 
       const since = new Date(Date.now() - resolveTimeWindow(range));
+      console.log(`[API] Fetching stats since ${since.toISOString()}`);
 
       const cacheKey = `latStats:${project_id}:${path}:${method}:${range}`;
       if (mainRedisClient) {
         const cached = await mainRedisClient.get(cacheKey);
         if (cached) {
+          console.log(`[Redis] Cache hit for ${cacheKey}`);
           return res.json(JSON.parse(cached));
         }
+        console.log(`[Redis] Cache miss for ${cacheKey}`);
       }
 
       const pipeline = [
@@ -634,7 +723,7 @@ const startServer = async () => {
               $toDate: {
                 $subtract: [
                   { $toLong: '$timestamp' },
-                  { $mod: [{ $toLong: '$timestamp' }, 1000 * 60 * 5] } // 5-minute buckets
+                  { $mod: [{ $toLong: '$timestamp' }, 1000 * 60 * 5] }
                 ]
               }
             },
@@ -653,15 +742,18 @@ const startServer = async () => {
         }
       ];
 
+      console.log(`[DB] Executing latency stats aggregation for project ${project_id}`);
       const points = await ApiCallLog.aggregate(pipeline);
+      console.log(`[DB] Got ${points.length} data points`);
       const response = { points };
 
       if (mainRedisClient) {
         await mainRedisClient.setEx(cacheKey, 30, JSON.stringify(response));
+        console.log(`[Redis] Cached latency stats for ${cacheKey}`);
       }
       res.json(response);
     } catch (err) {
-      console.error('[latency-stats]', err);
+      console.error('[API] Error in latency-stats:', err);
       res.status(500).json({ error: 'Failed to fetch latency stats' });
     }
   });
@@ -675,41 +767,55 @@ const startServer = async () => {
   let lastCheckedTime = new Date();
 
   io.engine.on('connection_error', (err) => {
-    console.error('[SOCKET.IO] Handshake error:', err.message, err.context);
+    console.error('[Socket] Handshake error:', err.message, err.context);
   });
 
   io.on('connection', (socket) => {
+    console.log(`[Socket] Client connected: ${socket.id}`);
     socket.on('join_room', (roomName) => {
-      if (roomName && typeof roomName === 'string') socket.join(roomName);
+      if (roomName && typeof roomName === 'string') {
+        socket.join(roomName);
+        console.log(`[Socket] ${socket.id} joined room ${roomName}`);
+      }
     });
 
     socket.on('join_project', async (projectId) => {
       if (!projectId) return;
       socket.join(projectId);
+      console.log(`[Socket] ${socket.id} joined project room ${projectId}`);
       try {
         const cacheKey = `initial_logs:${projectId}`;
         let logs = null;
         if (pubClient) {
           const cached = await pubClient.get(cacheKey);
           if (cached) logs = JSON.parse(cached);
+          console.log(`[Socket] ${cached ? 'Cache hit' : 'Cache miss'} for ${cacheKey}`);
         }
         if (!logs) {
           logs = await SystemEventLog.find({ projectId })
             .sort({ createdAt: -1 })
             .limit(50);
+          console.log(`[Socket] Fetched ${logs.length} logs from DB`);
           if (pubClient) {
             await pubClient.setEx(cacheKey, 30, JSON.stringify(logs));
           }
         }
         socket.emit('initial_logs', logs);
       } catch (err) {
-        console.error('[join_project] Error fetching logs:', err);
+        console.error('[Socket] Error fetching logs:', err);
         socket.emit('initial_logs', []);
       }
     });
 
     socket.on('leave_project', (projectId) => {
-      if (projectId) socket.leave(projectId);
+      if (projectId) {
+        socket.leave(projectId);
+        console.log(`[Socket] ${socket.id} left project room ${projectId}`);
+      }
+    });
+
+    socket.on('disconnect', () => {
+      console.log(`[Socket] Client disconnected: ${socket.id}`);
     });
   });
 
@@ -717,6 +823,7 @@ const startServer = async () => {
   heartbeatInterval = setInterval(() => {
     io.emit('heartbeat', { timestamp: Date.now() });
   }, HEARTBEAT_INTERVAL);
+  console.log(`[Socket] Heartbeat interval set to ${HEARTBEAT_INTERVAL}ms`);
 
   const LOG_POLLING_INTERVAL = parseInt(process.env.LOG_POLLING_INTERVAL, 10) || 30000;
   dataPollingInterval = setInterval(async () => {
@@ -725,6 +832,7 @@ const startServer = async () => {
       const newLogs = await SystemEventLog.find({ createdAt: { $gt: lastCheckedTime } })
         .sort({ createdAt: 1 });
       if (newLogs.length) {
+        console.log(`[Socket] Polling found ${newLogs.length} new logs`);
         const logsByProject = {};
         newLogs.forEach(log => {
           if (!logsByProject[log.projectId]) logsByProject[log.projectId] = [];
@@ -736,41 +844,51 @@ const startServer = async () => {
       }
       lastCheckedTime = now;
     } catch (err) {
-      console.error('[LOG_POLLING] error:', err.message);
+      console.error('[Socket] Polling error:', err.message);
     }
   }, LOG_POLLING_INTERVAL);
+  console.log(`[Socket] Log polling interval set to ${LOG_POLLING_INTERVAL}ms`);
 
   // ================================================================
   // GRACEFUL SHUTDOWN
   // ================================================================
   const gracefulShutdown = async () => {
-    console.log('[SHUTDOWN] Received signal, shutting down gracefully...');
+    console.log('[Server] 🔴 Shutting down gracefully...');
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     if (dataPollingInterval) clearInterval(dataPollingInterval);
 
+    console.log('[Queue] Closing queues...');
     if (latencyQueue) await latencyQueue.close().catch(() => {});
     if (projectQueue) await projectQueue.close().catch(() => {});
     if (mockSyncQueue) await mockSyncQueue.close().catch(() => {});
 
+    console.log('[Redis] Quitting Redis clients...');
     if (pubClient) await pubClient.quit().catch(() => {});
     if (subClient) await subClient.quit().catch(() => {});
     if (mainRedisClient) await mainRedisClient.quit().catch(() => {});
     if (aiSubscriber) await aiSubscriber.quit().catch(() => {});
     if (logSubscriber) await logSubscriber.quit().catch(() => {});
 
-    server.close(() => process.exit(0));
-    setTimeout(() => process.exit(1), 5000);
+    console.log('[Server] Closing HTTP server...');
+    server.close(() => {
+      console.log('[Server] ✅ Shutdown complete');
+      process.exit(0);
+    });
+    setTimeout(() => {
+      console.error('[Server] ⏰ Shutdown timeout, forcing exit');
+      process.exit(1);
+    }, 5000);
   };
   process.on('SIGINT', gracefulShutdown);
   process.on('SIGTERM', gracefulShutdown);
 
   const PORT = process.env.PORT || 3000;
   server.listen(PORT, () => {
-    console.log(`[BOOT] Server listening on port ${PORT}`);
+    console.log(`[Server] ✅ Listening on port ${PORT}`);
   });
 };
 
 startServer().catch((err) => {
-  console.error('[BOOT] Fatal startup error:', err);
+  console.error('[Server] ❌ Fatal startup error:', err);
   process.exit(1);
 });

@@ -44,13 +44,11 @@ function NetworkTestInline({ onComplete, isWhiteTheme }) {
         setStatus('done');
         setSaved(false);
         setError(null);
-        // ✅ Important: call onComplete for cached results too
         if (typeof onComplete === 'function') onComplete(true);
       }
       return;
     }
 
-    // Reset state
     if (mountedRef.current) {
       setStatus('running');
       setError(null);
@@ -61,6 +59,7 @@ function NetworkTestInline({ onComplete, isWhiteTheme }) {
       setStats({ min: null, max: null, samples: 0 });
     }
 
+    // Abort previous request
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
@@ -131,7 +130,7 @@ function NetworkTestInline({ onComplete, isWhiteTheme }) {
     if (typeof onComplete === 'function') onComplete(true);
   }, [onComplete]);
 
-  const clearCache = () => {
+  const clearCache = useCallback(() => {
     cacheRef.current = null;
     if (mountedRef.current) {
       setStatus('idle');
@@ -142,7 +141,7 @@ function NetworkTestInline({ onComplete, isWhiteTheme }) {
       setError(null);
       setProgress(0);
     }
-  };
+  }, []);
 
   const renderStatusMessage = () => {
     if (status === 'idle') return 'Press "Run Test" to measure your network latency.';
@@ -177,7 +176,6 @@ function NetworkTestInline({ onComplete, isWhiteTheme }) {
     );
   };
 
-  // Theme‑aware styles
   const cardBg = isWhiteTheme ? 'bg-white border-gray-200' : 'bg-zinc-900 border-zinc-800';
   const textColor = isWhiteTheme ? 'text-gray-800' : 'text-zinc-300';
   const mutedText = isWhiteTheme ? 'text-gray-500' : 'text-zinc-400';
@@ -280,26 +278,19 @@ const GeneralQuestionPage = () => {
     if (!isFormValid) return;
     setIsSubmitting(true);
 
-    // Simulate async submission or use real API call
-    const data = { useCase, heardFrom, excitedFeatures, additionalFeedback, username, email };
+    console.log('Answers:', { useCase, heardFrom, excitedFeatures, additionalFeedback, username, email });
 
-    // For demo, we just log and navigate
-    console.log('Answers:', data);
-
-    // Replace with actual API call if needed
-    // await fetch('/api/answers', { method: 'POST', body: JSON.stringify(data) });
-
-    // Navigate to dashboard after short delay (simulate async)
+    // Simulate async submission – replace with actual API call if needed
     setTimeout(() => {
       navigate('/', { replace: true, state: { from: 'onboarding' } });
     }, 500);
   }, [useCase, heardFrom, excitedFeatures, additionalFeedback, username, email, navigate, isFormValid]);
 
-  const toggleFeature = (feature) => {
+  const toggleFeature = useCallback((feature) => {
     setExcitedFeatures(prev =>
       prev.includes(feature) ? prev.filter(f => f !== feature) : [...prev, feature]
     );
-  };
+  }, []);
 
   const featureOptions = [
     'API Mocking', 'Latency Simulation', 'AI‑Powered Design', 'Real‑Time Analytics', 'Team Collaboration'
@@ -312,7 +303,6 @@ const GeneralQuestionPage = () => {
     isTestComplete &&
     termsAccepted;
 
-  // Theme‑aware styles for inputs
   const inputBase = `w-full rounded px-3 py-2 text-sm outline-none focus:border-blue-500 transition-colors ${
     isWhiteTheme
       ? 'bg-gray-50 border border-gray-300 text-gray-900 placeholder-gray-400'
@@ -353,7 +343,6 @@ const GeneralQuestionPage = () => {
               value={useCase}
               onChange={(e) => setUseCase(e.target.value)}
               className={inputBase}
-              required
             >
               <option value="">Select an option</option>
               <option value="prototyping">Prototyping</option>
@@ -375,7 +364,6 @@ const GeneralQuestionPage = () => {
               onChange={(e) => setHeardFrom(e.target.value)}
               placeholder="e.g., Google, Twitter, friend..."
               className={inputBase}
-              required
             />
           </div>
 
@@ -397,6 +385,11 @@ const GeneralQuestionPage = () => {
                 </label>
               ))}
             </div>
+            {excitedFeatures.length > 0 && (
+              <div className="mt-1 text-xs text-zinc-500">
+                Selected: {excitedFeatures.join(', ')}
+              </div>
+            )}
           </div>
 
           {/* Additional Feedback */}

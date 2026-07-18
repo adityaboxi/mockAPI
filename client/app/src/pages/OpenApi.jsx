@@ -10,6 +10,8 @@ const ALLOWED_EXTENSIONS = ['.json', '.yaml', '.yml'];
 
 // ---------- Component ----------
 function OpenApi() {
+  console.log('[OpenApi] 🚀 Component mounted');
+
   // ---- State ----
   const [projectName, setProjectName] = useState('');
   const [file, setFile] = useState(null);
@@ -28,44 +30,53 @@ function OpenApi() {
   // ---- Lifecycle ----
   useEffect(() => {
     mountedRef.current = true;
+    console.log('[OpenApi] ✅ mountedRef set to true');
     return () => {
       mountedRef.current = false;
-      // Cancel any ongoing request and polling
+      console.log('[OpenApi] 🧹 Component unmounting, cleaning up...');
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
+        console.log('[OpenApi] ⏹️ Aborted in-flight import request');
       }
       if (pollTimeoutRef.current) {
         clearTimeout(pollTimeoutRef.current);
         pollTimeoutRef.current = null;
+        console.log('[OpenApi] ⏹️ Cleared poll timeout');
       }
     };
   }, []);
 
   // ---- Helper: validate file ----
   const validateFile = (file) => {
+    console.log('[OpenApi] 🔍 Validating file:', file?.name, 'size:', file?.size);
     if (!file) return { valid: false, error: 'No file selected' };
 
     if (file.size > MAX_FILE_SIZE) {
+      console.warn('[OpenApi] ❌ File too large:', file.size, '>', MAX_FILE_SIZE);
       return { valid: false, error: `File too large (max ${MAX_FILE_SIZE / 1024 / 1024} MB)` };
     }
 
     const ext = '.' + (file.name.split('.').pop() || '').toLowerCase();
     const isValidExt = ALLOWED_EXTENSIONS.includes(ext);
     const isValidType = ALLOWED_TYPES.includes(file.type);
+    console.log('[OpenApi] 📄 File extension:', ext, '– validExt:', isValidExt, '– validType:', isValidType);
 
-    // Accept if either type or extension is allowed (some browsers misreport MIME)
     if (!isValidType && !isValidExt) {
+      console.warn('[OpenApi] ❌ Invalid file type – extension:', ext, '– MIME:', file.type);
       return { valid: false, error: 'Invalid file type. Please upload JSON or YAML.' };
     }
 
+    console.log('[OpenApi] ✅ File validation passed');
     return { valid: true, error: null };
   };
 
   // ---- File selection handlers ----
   const handleFileChange = (e) => {
+    console.log('[OpenApi] 📁 File input changed');
     const f = e.target.files[0];
     if (f) {
+      console.log('[OpenApi] 📄 Selected file:', f.name, 'size:', f.size);
       const validation = validateFile(f);
       if (!validation.valid) {
         setStatus({ type: 'error', message: 'Invalid file', detail: validation.error });
@@ -74,14 +85,19 @@ function OpenApi() {
       }
       setFile(f);
       setStatus({ type: '', message: '', detail: '' });
+      console.log('[OpenApi] ✅ File accepted and stored');
+    } else {
+      console.log('[OpenApi] ⏭️ No file selected');
     }
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
     setDragActive(false);
+    console.log('[OpenApi] 📂 Drop event');
     const f = e.dataTransfer.files[0];
     if (f) {
+      console.log('[OpenApi] 📄 Dropped file:', f.name, 'size:', f.size);
       const validation = validateFile(f);
       if (!validation.valid) {
         setStatus({ type: 'error', message: 'Invalid file', detail: validation.error });
@@ -90,28 +106,35 @@ function OpenApi() {
       }
       setFile(f);
       setStatus({ type: '', message: '', detail: '' });
+      console.log('[OpenApi] ✅ Dropped file accepted');
+    } else {
+      console.log('[OpenApi] ⏭️ No file dropped');
     }
   };
 
   const handleDragOver = (e) => {
     e.preventDefault();
     setDragActive(true);
+    console.log('[OpenApi] 🔄 Drag over – active:', true);
   };
 
   const handleDragLeave = (e) => {
     e.preventDefault();
     setDragActive(false);
+    console.log('[OpenApi] 🔄 Drag leave – active:', false);
   };
 
   const handleClear = () => {
-    // Cancel ongoing operations
+    console.log('[OpenApi] 🗑️ Clear/Cancel triggered');
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
+      console.log('[OpenApi] ⏹️ Aborted import request');
     }
     if (pollTimeoutRef.current) {
       clearTimeout(pollTimeoutRef.current);
       pollTimeoutRef.current = null;
+      console.log('[OpenApi] ⏹️ Cleared poll timeout');
     }
     setFile(null);
     setProjectName('');
@@ -120,12 +143,15 @@ function OpenApi() {
     setJobId(null);
     setLoading(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
+    console.log('[OpenApi] 🔄 All state reset');
   };
 
   // ---- Poll job status (with timeout) ----
   const pollJobStatus = useCallback(async (jobId, attempts = 0) => {
+    console.log(`[OpenApi] 📡 Polling status for job ${jobId} – attempt ${attempts + 1}/60`);
     const MAX_ATTEMPTS = 60; // 2 minutes (60 * 2s)
     if (attempts >= MAX_ATTEMPTS) {
+      console.warn('[OpenApi] ⏰ Import timed out after', MAX_ATTEMPTS, 'attempts');
       if (mountedRef.current) {
         setStatus({
           type: 'error',
@@ -139,37 +165,51 @@ function OpenApi() {
     }
 
     try {
+      console.log('[OpenApi] 🌐 Fetching status from:', `${API_BASE}/api/import-status/${jobId}`);
       const res = await fetch(`${API_BASE}/api/import-status/${jobId}`, {
         credentials: 'include',
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        console.warn('[OpenApi] ⚠️ Status fetch HTTP error:', res.status);
+        throw new Error(`HTTP ${res.status}`);
+      }
 
       const data = await res.json();
+      console.log('[OpenApi] 📨 Status response:', data);
 
-      if (!mountedRef.current) return;
+      if (!mountedRef.current) {
+        console.log('[OpenApi] ⏹️ Component unmounted – stopping poll');
+        return;
+      }
 
       // Update progress if provided
       if (data.progress !== undefined) {
+        console.log('[OpenApi] 📊 Progress update:', data.progress, '%');
         setUploadProgress(data.progress);
       }
 
+      const statusType = data.status === 'completed' ? 'success' : 'loading';
       setStatus({
-        type: data.status === 'completed' ? 'success' : 'loading',
+        type: statusType,
         message: data.message || 'Processing...',
         detail: data.detail || '',
       });
+      console.log('[OpenApi] 📋 Status set to:', statusType, '- message:', data.message);
 
       if (data.status === 'completed') {
+        console.log('[OpenApi] ✅ Import completed successfully');
         setLoading(false);
         setUploadProgress(100);
         setFile(null);
         setProjectName('');
         if (fileInputRef.current) fileInputRef.current.value = '';
         setJobId(null);
+        console.log('[OpenApi] 🔄 State reset after completion');
         return;
       }
 
       if (data.status === 'failed') {
+        console.warn('[OpenApi] ❌ Import failed:', data.detail);
         setStatus({
           type: 'error',
           message: '❌ Import failed',
@@ -182,12 +222,16 @@ function OpenApi() {
       }
 
       // Still processing – poll again
+      console.log('[OpenApi] ⏳ Still processing – scheduling next poll in 2s');
       pollTimeoutRef.current = setTimeout(() => {
         pollJobStatus(jobId, attempts + 1);
       }, 2000);
     } catch (err) {
-      if (!mountedRef.current) return;
-      console.error('[pollJobStatus] Error:', err);
+      if (!mountedRef.current) {
+        console.log('[OpenApi] ⏹️ Component unmounted – stopping poll');
+        return;
+      }
+      console.error('[OpenApi] ❌ Status check error:', err);
       setStatus({
         type: 'error',
         message: '❌ Status check failed',
@@ -200,21 +244,29 @@ function OpenApi() {
 
   // ---- Import logic ----
   const handleImport = useCallback(async () => {
-    if (!file || loading) return;
+    console.log('[OpenApi] 🚀 Import triggered');
+    if (!file || loading) {
+      console.warn('[OpenApi] ⚠️ Cannot import: file?', !!file, '– loading?', loading);
+      return;
+    }
     const trimmedName = projectName.trim();
     if (!trimmedName) {
+      console.warn('[OpenApi] ⚠️ Project name is empty');
       setStatus({ type: 'error', message: 'Project name required', detail: 'Please enter a project name.' });
       return;
     }
+    console.log('[OpenApi] 📦 Importing with projectName:', trimmedName, '– file:', file.name);
 
     // Cancel any ongoing operation
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
+      console.log('[OpenApi] ⏹️ Aborted previous request');
     }
     if (pollTimeoutRef.current) {
       clearTimeout(pollTimeoutRef.current);
       pollTimeoutRef.current = null;
+      console.log('[OpenApi] ⏹️ Cleared previous poll timeout');
     }
 
     const controller = new AbortController();
@@ -224,12 +276,14 @@ function OpenApi() {
     setUploadProgress(0);
     setJobId(null);
     setStatus({ type: 'loading', message: '⏳ Uploading...', detail: 'Preparing file...' });
+    console.log('[OpenApi] 🔄 State set to loading');
 
     const formData = new FormData();
     formData.append('file', file);
     formData.append('projectName', trimmedName);
 
     try {
+      console.log('[OpenApi] 🌐 Sending POST to:', `${API_BASE}/api/import-openapi`);
       const response = await fetch(`${API_BASE}/api/import-openapi`, {
         method: 'POST',
         credentials: 'include',
@@ -242,12 +296,18 @@ function OpenApi() {
         try {
           const errorData = await response.json();
           if (errorData.error) errorMsg = errorData.error;
+          console.warn('[OpenApi] ⚠️ Server error response:', errorData);
         } catch (_) { /* ignore */ }
+        console.warn('[OpenApi] ❌ Upload HTTP error:', response.status, '-', errorMsg);
         throw new Error(errorMsg);
       }
 
       const data = await response.json();
-      if (!mountedRef.current) return;
+      console.log('[OpenApi] 📨 Upload response:', data);
+      if (!mountedRef.current) {
+        console.log('[OpenApi] ⏹️ Component unmounted – stopping after upload');
+        return;
+      }
 
       setJobId(data.jobId);
       setStatus({
@@ -256,20 +316,26 @@ function OpenApi() {
         detail: `Job ${data.jobId} is being processed.`,
       });
       setUploadProgress(10);
+      console.log('[OpenApi] 📋 Job ID:', data.jobId, '– polling will start in 2s');
 
       // Start polling
       pollTimeoutRef.current = setTimeout(() => {
         pollJobStatus(data.jobId, 0);
       }, 2000);
     } catch (err) {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current) {
+        console.log('[OpenApi] ⏹️ Component unmounted – ignoring error');
+        return;
+      }
       if (err.name === 'AbortError') {
+        console.warn('[OpenApi] ⏹️ Upload aborted by user');
         setStatus({
           type: 'error',
           message: '⏹️ Upload cancelled',
           detail: 'The import was aborted.',
         });
       } else {
+        console.error('[OpenApi] ❌ Import error:', err);
         setStatus({
           type: 'error',
           message: '❌ Import failed',
@@ -283,6 +349,7 @@ function OpenApi() {
   }, [file, loading, projectName, pollJobStatus]);
 
   // ---- Render ----
+  console.log('[OpenApi] 🖥️ Rendering – loading:', loading, '– progress:', uploadProgress, '– status:', status.type, '– file:', !!file, '– jobId:', jobId);
   return (
     <div className="p-6 max-w-3xl mx-auto">
       <h1 className="text-2xl font-semibold text-white mb-4">📂 Import OpenAPI</h1>
@@ -299,7 +366,10 @@ function OpenApi() {
           id="projectName"
           type="text"
           value={projectName}
-          onChange={(e) => setProjectName(e.target.value)}
+          onChange={(e) => {
+            console.log('[OpenApi] 📝 Project name changed to:', e.target.value);
+            setProjectName(e.target.value);
+          }}
           placeholder="Enter project name (e.g., my-api-project)"
           className="w-full rounded px-4 py-2 text-sm bg-zinc-900 border border-zinc-800 text-zinc-300 placeholder-zinc-500 focus:outline-none focus:border-blue-500 transition-colors"
           disabled={loading}
@@ -320,13 +390,17 @@ function OpenApi() {
             ? 'border-indigo-400 bg-indigo-500/10'
             : 'border-zinc-800 hover:border-indigo-400 bg-zinc-900'
         } cursor-pointer`}
-        onClick={() => fileInputRef.current?.click()}
+        onClick={() => {
+          console.log('[OpenApi] 👆 Clicked drop zone – opening file picker');
+          fileInputRef.current?.click();
+        }}
         role="button"
         tabIndex={0}
         aria-label="Click or drag to upload OpenAPI file"
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
+            console.log('[OpenApi] ⌨️ Keyboard – opening file picker');
             fileInputRef.current?.click();
           }
         }}
@@ -376,7 +450,7 @@ function OpenApi() {
         <button
           onClick={handleImport}
           disabled={!file || loading || !projectName.trim()}
-          className="flex-1 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-xl text-white font-medium transition"
+          className={`flex-1 py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-xl text-white font-medium transition`}
           aria-label="Import the selected file"
         >
           {loading ? `⏳ ${Math.round(uploadProgress)}%` : '🚀 Import'}

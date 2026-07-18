@@ -6,19 +6,18 @@ import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid
 } from 'recharts';
-import { socket } from '../socket'; // 确保 socket 单例已正确导出
+import { socket } from '../socket';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
-// ---------- 带 TTL 和大小限制的缓存 ----------
-const CACHE_TTL = 5 * 60 * 1000;      // 5 分钟
+// ---------- Cache ----------
+const CACHE_TTL = 5 * 60 * 1000;
 const MAX_CACHE_SIZE = 50;
 
 class ChartCache {
   constructor() {
     this.map = new Map();
   }
-
   get(key) {
     const entry = this.map.get(key);
     if (!entry) return null;
@@ -28,7 +27,6 @@ class ChartCache {
     }
     return entry.data;
   }
-
   set(key, data) {
     if (!this.map.has(key) && this.map.size >= MAX_CACHE_SIZE) {
       const oldestKey = this.map.keys().next().value;
@@ -36,7 +34,6 @@ class ChartCache {
     }
     this.map.set(key, { data, timestamp: Date.now() });
   }
-
   has(key) {
     const entry = this.map.get(key);
     if (!entry) return false;
@@ -46,7 +43,6 @@ class ChartCache {
     }
     return true;
   }
-
   clear() {
     this.map.clear();
   }
@@ -54,7 +50,7 @@ class ChartCache {
 
 const chartCache = new ChartCache();
 
-// ---------- 版本项（memoized） ----------
+// ---------- Memoized VersionItem ----------
 const VersionItem = memo(
   ({ ver, api, projectId, isActive, onSelect, onHover }) => (
     <div
@@ -93,10 +89,9 @@ const VersionItem = memo(
 VersionItem.displayName = 'VersionItem';
 
 // ============================================================
-// 主组件
+// Main Dashboard Component
 // ============================================================
 function Dashboard() {
-  // ---------- 状态 ----------
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -111,13 +106,12 @@ function Dashboard() {
   const [expandedProjects, setExpandedProjects] = useState({});
   const [expandedApis, setExpandedApis] = useState({});
 
-  // ---------- Refs ----------
   const abortControllerRef = useRef(null);
   const refreshIntervalRef = useRef(null);
   const prefetchAbortControllerRef = useRef(null);
   const mountedRef = useRef(true);
 
-  // ---------- 清理 ----------
+  // ---------- Cleanup ----------
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -128,21 +122,24 @@ function Dashboard() {
     };
   }, []);
 
-  // ---------- 获取项目列表（侧边栏） ----------
+  // ---------- Fetch projects (sidebar) ----------
   useEffect(() => {
+    console.log('[Dashboard] 📡 Fetching projects...');
     const controller = new AbortController();
     const signal = controller.signal;
 
     fetch(`${API_BASE}/api/dashboard-data`, { credentials: 'include', signal })
       .then(res => {
-        if (!res.ok) throw new Error('Failed to fetch dashboard');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       })
       .then(data => {
         if (!mountedRef.current) return;
         const projs = data.projects || [];
+        console.log('[Dashboard] ✅ Projects loaded:', projs.length, 'projects');
+        console.log('[Dashboard] 📊 Projects data:', projs);
         setProjects(projs);
-        // 默认展开所有项目和 API
+
         const newExpProj = {};
         const newExpApi = {};
         projs.forEach(proj => {
@@ -154,25 +151,31 @@ function Dashboard() {
         setExpandedProjects(newExpProj);
         setExpandedApis(newExpApi);
 
-        // 默认选中第一个 API 的第一个版本
         const firstProj = projs[0];
         const firstApi = firstProj?.apis?.[0];
         const firstVer = firstApi?.versions?.[0];
         if (firstProj && firstApi && firstVer) {
+          const path = firstVer.urlPath || firstApi.path;
+          console.log('[Dashboard] 🎯 Auto‑selecting first version:', firstVer.label, 'with path:', path);
           setSelectedVersion({
             projectId: firstProj.id,
             apiId: firstApi.id,
-            path: firstApi.path,
+            path: path,
             method: firstApi.method,
             version: firstVer.version,
             label: firstVer.label,
           });
+        } else {
+          console.warn('[Dashboard] ⚠️ No projects/APIs found to auto-select');
         }
       })
       .catch(err => {
-        if (err.name !== 'AbortError' && mountedRef.current) {
-          setError(err.message);
+        if (err.name === 'AbortError') {
+          console.log('[Dashboard] ⏹️ Projects fetch aborted');
+          return;
         }
+        console.error('[Dashboard] ❌ Projects fetch error:', err);
+        if (mountedRef.current) setError(err.message);
       })
       .finally(() => {
         if (mountedRef.current) setLoading(false);
@@ -181,7 +184,7 @@ function Dashboard() {
     return () => controller.abort();
   }, []);
 
-  // ---------- 获取图表数据（带缓存） ----------
+  // ---------- Fetch chart data ----------
   const fetchChartData = useCallback(async (
     projectId,
     path,
@@ -190,18 +193,20 @@ function Dashboard() {
     force = false
   ) => {
     const cacheKey = `stats:${projectId}:${path}:${method}:${range}`;
+    console.log(`[Dashboard] 📈 fetchChartData called: ${method} ${path} | range=${range} | force=${force} | cacheKey=${cacheKey}`);
 
-    // 非强制刷新且缓存有效 → 直接使用
     if (!force && chartCache.has(cacheKey)) {
+      const cached = chartCache.get(cacheKey);
+      console.log('[Dashboard] 💾 Cache HIT for', cacheKey, '→', cached?.length, 'points');
       if (mountedRef.current) {
-        setChartData(chartCache.get(cacheKey));
+        setChartData(cached);
         setChartError(null);
         setChartLoading(false);
       }
       return;
     }
+    console.log('[Dashboard] 💾 Cache MISS for', cacheKey, '– fetching from API');
 
-    // 取消进行中的请求
     if (abortControllerRef.current) abortControllerRef.current.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -214,17 +219,29 @@ function Dashboard() {
 
     try {
       const url = `${API_BASE}/api/latency-stats?project_id=${encodeURIComponent(projectId)}&path=${encodeURIComponent(path)}&method=${method}&range=${range}`;
+      console.log('[Dashboard] 🌐 Fetching chart data from:', url);
       const res = await fetch(url, { credentials: 'include', signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const points = data.points || [];
+      console.log('[Dashboard] ✅ Chart data received:', points.length, 'points');
+      if (points.length > 0) {
+        console.log('[Dashboard] 📊 Sample points:', points.slice(0, 3));
+      } else {
+        console.warn('[Dashboard] ⚠️ No data points returned for this endpoint.');
+      }
 
       if (mountedRef.current && !signal.aborted) {
         chartCache.set(cacheKey, points);
         setChartData(points);
+        console.log('[Dashboard] 💾 Chart data cached and state updated, chartData length:', points.length);
       }
     } catch (err) {
-      if (err.name === 'AbortError') return;
+      if (err.name === 'AbortError') {
+        console.log('[Dashboard] ⏹️ Chart fetch aborted');
+        return;
+      }
+      console.error('[Dashboard] ❌ Chart fetch error:', err);
       if (mountedRef.current) {
         setChartError(err.message || 'Failed to load chart data');
         setChartData([]);
@@ -239,23 +256,46 @@ function Dashboard() {
     }
   }, [timeRange]);
 
-  // ---------- 选中版本变化 → 加载图表 ----------
+  // ---------- Log chartData changes ----------
   useEffect(() => {
+    console.log('[Dashboard] 📊 chartData changed, length:', chartData.length);
+  }, [chartData]);
+
+  // ---------- Manual refresh function ----------
+  const refreshData = useCallback(() => {
+    console.log('[Dashboard] 🔄 Manual refresh triggered');
+    chartCache.clear();
     if (selectedVersion) {
       fetchChartData(
         selectedVersion.projectId,
         selectedVersion.path,
         selectedVersion.method,
         timeRange,
-        true   // 强制刷新（因为用户明确选择了新版本）
+        true
       );
     }
   }, [selectedVersion, timeRange, fetchChartData]);
 
-  // ---------- 自动刷新（轮询） ----------
+  // ---------- Load chart when selection changes ----------
+  useEffect(() => {
+    if (selectedVersion) {
+      console.log('[Dashboard] 🔄 Selection changed, fetching chart for:', selectedVersion);
+      fetchChartData(
+        selectedVersion.projectId,
+        selectedVersion.path,
+        selectedVersion.method,
+        timeRange,
+        true
+      );
+    }
+  }, [selectedVersion, timeRange, fetchChartData]);
+
+  // ---------- Auto‑refresh (polling) ----------
   useEffect(() => {
     if (autoRefresh && selectedVersion) {
+      console.log('[Dashboard] 🔄 Auto‑refresh ENABLED, starting interval');
       refreshIntervalRef.current = setInterval(() => {
+        console.log('[Dashboard] 🔄 Auto‑refresh tick');
         fetchChartData(
           selectedVersion.projectId,
           selectedVersion.path,
@@ -263,9 +303,10 @@ function Dashboard() {
           timeRange,
           true
         );
-      }, 30000); // 30 秒
+      }, 30000);
     } else {
       if (refreshIntervalRef.current) {
+        console.log('[Dashboard] 🔄 Auto‑refresh DISABLED, clearing interval');
         clearInterval(refreshIntervalRef.current);
         refreshIntervalRef.current = null;
       }
@@ -275,22 +316,26 @@ function Dashboard() {
     };
   }, [autoRefresh, selectedVersion, timeRange, fetchChartData]);
 
-  // ---------- WebSocket 实时更新 ----------
+  // ---------- WebSocket listener ----------
   useEffect(() => {
     if (!socket) {
-      console.warn('[Dashboard] Socket not available');
+      console.warn('[Dashboard] ⚠️ Socket not available');
       return;
     }
 
     const onNewLog = (logData) => {
-      if (!selectedVersion) return;
+      console.log('[Dashboard] 📨 WS new_api_log received:', logData);
+      if (!selectedVersion) {
+        console.log('[Dashboard] ⏭️ No selected version, ignoring log');
+        return;
+      }
       const { project_id, path, method } = logData;
       if (
         project_id === selectedVersion.projectId &&
         path === selectedVersion.path &&
         method === selectedVersion.method
       ) {
-        // 收到新日志 → 强制刷新图表
+        console.log('[Dashboard] 🔄 WS log matches current selection – triggering chart refresh');
         fetchChartData(
           selectedVersion.projectId,
           selectedVersion.path,
@@ -298,6 +343,8 @@ function Dashboard() {
           timeRange,
           true
         );
+      } else {
+        console.log('[Dashboard] ⏭️ WS log does NOT match current selection (current:', selectedVersion, ')');
       }
     };
 
@@ -307,12 +354,16 @@ function Dashboard() {
     };
   }, [socket, selectedVersion, timeRange, fetchChartData]);
 
-  // ---------- 鼠标悬停时预取版本数据 ----------
+  // ---------- Prefetch on hover ----------
   const prefetchVersion = useCallback((ver, projId, api) => {
-    const cacheKey = `stats:${projId}:${api.path}:${api.method}:${timeRange}`;
-    if (chartCache.has(cacheKey)) return;
+    const path = ver.urlPath || api.path;
+    const cacheKey = `stats:${projId}:${path}:${api.method}:${timeRange}`;
+    if (chartCache.has(cacheKey)) {
+      console.log('[Dashboard] 👆 Prefetch SKIP (already cached):', cacheKey);
+      return;
+    }
+    console.log('[Dashboard] 👆 Prefetch START:', ver.label, 'for', projId, path);
 
-    // 取消进行中的预取
     if (prefetchAbortControllerRef.current) {
       prefetchAbortControllerRef.current.abort();
     }
@@ -320,7 +371,7 @@ function Dashboard() {
     prefetchAbortControllerRef.current = controller;
     const { signal } = controller;
 
-    const url = `${API_BASE}/api/latency-stats?project_id=${projId}&path=${encodeURIComponent(api.path)}&method=${api.method}&range=${timeRange}`;
+    const url = `${API_BASE}/api/latency-stats?project_id=${projId}&path=${encodeURIComponent(path)}&method=${api.method}&range=${timeRange}`;
     fetch(url, { credentials: 'include', signal })
       .then(res => res.json())
       .then(data => {
@@ -328,24 +379,30 @@ function Dashboard() {
         const points = data.points || [];
         if (!chartCache.has(cacheKey)) {
           chartCache.set(cacheKey, points);
+          console.log('[Dashboard] 👆 Prefetch COMPLETED:', cacheKey, points.length, 'points');
         }
       })
-      .catch(() => { /* 静默忽略预取错误 */ });
+      .catch(err => {
+        if (err.name === 'AbortError') return;
+        console.warn('[Dashboard] 👆 Prefetch error:', err);
+      });
   }, [timeRange]);
 
-  // ---------- 版本选择 ----------
+  // ---------- Version selection ----------
   const handleVersionSelect = useCallback((ver, projId, api) => {
+    const path = ver.urlPath || api.path;
+    console.log('[Dashboard] 🎯 Version selected:', ver.label, 'for', projId, path);
     setSelectedVersion({
       projectId: projId,
       apiId: api.id,
-      path: api.path,
+      path: path,
       method: api.method,
       version: ver.version,
       label: ver.label,
     });
   }, []);
 
-  // ---------- 树展开/折叠 ----------
+  // ---------- Tree toggles ----------
   const toggleProject = useCallback((id) => {
     setExpandedProjects(prev => ({ ...prev, [id]: !prev[id] }));
   }, []);
@@ -354,7 +411,7 @@ function Dashboard() {
     setExpandedApis(prev => ({ ...prev, [id]: !prev[id] }));
   }, []);
 
-  // ---------- 筛选项目 ----------
+  // ---------- Filter projects ----------
   const filteredProjects = useMemo(() => {
     if (!searchTerm.trim()) return projects;
     const term = searchTerm.toLowerCase();
@@ -369,7 +426,7 @@ function Dashboard() {
       .filter(proj => proj.apis?.length > 0);
   }, [projects, searchTerm]);
 
-  // ---------- 渲染树 ----------
+  // ---------- Render tree ----------
   const renderTree = useMemo(() => {
     if (filteredProjects.length === 0) {
       return (
@@ -486,7 +543,7 @@ function Dashboard() {
     toggleApi,
   ]);
 
-  // ---------- 图表渲染 ----------
+  // ---------- Chart render ----------
   const renderCharts = () => {
     if (chartLoading) {
       return (
@@ -526,6 +583,12 @@ function Dashboard() {
           <span className="text-xs text-zinc-600">
             Make a mock API call to start collecting statistics.
           </span>
+          <button
+            onClick={refreshData}
+            className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded text-white text-sm transition"
+          >
+            🔄 Refresh Data
+          </button>
         </div>
       );
     }
@@ -587,7 +650,7 @@ function Dashboard() {
     );
   };
 
-  // ---------- 渲染 ----------
+  // ---------- Main render ----------
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen text-zinc-500">
@@ -606,7 +669,7 @@ function Dashboard() {
 
   return (
     <div className="flex h-screen bg-zinc-950 text-zinc-300 overflow-hidden">
-      {/* 侧边栏 */}
+      {/* Sidebar */}
       <div className="w-72 bg-zinc-900 border-r border-zinc-800 flex flex-col flex-shrink-0">
         <div className="p-4 border-b border-zinc-800 text-xs font-semibold text-zinc-500 uppercase flex justify-between">
           <span>📂 Explorer</span>
@@ -635,7 +698,7 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* 主内容 */}
+      {/* Main content */}
       <div className="flex-1 flex flex-col overflow-hidden p-6">
         <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
           <h1 className="text-xl font-medium text-white truncate">
@@ -644,6 +707,12 @@ function Dashboard() {
               : 'API Performance'}
           </h1>
           <div className="flex items-center gap-3 flex-wrap">
+            <button
+              onClick={refreshData}
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-white text-sm transition"
+            >
+              🔄 Refresh
+            </button>
             <select
               value={timeRange}
               onChange={(e) => setTimeRange(e.target.value)}
