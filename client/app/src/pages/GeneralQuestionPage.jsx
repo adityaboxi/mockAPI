@@ -20,35 +20,46 @@ function NetworkTestInline({ onComplete, isWhiteTheme }) {
 
   const cacheRef = useRef(null);
   const abortControllerRef = useRef(null);
+  const mountedRef = useRef(true);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
+        abortControllerRef.current = null;
       }
     };
   }, []);
 
   const runTest = useCallback(async (force = false) => {
+    // Check cache
     if (!force && cacheRef.current && (Date.now() - cacheRef.current.timestamp < CACHE_TTL_MS)) {
-      const cached = cacheRef.current;
-      setAverage(cached.result);
-      setStats(cached.stats);
-      setIndividualResults(cached.individual);
-      setStatus('done');
-      setSaved(false);
-      setError(null);
-      onComplete && onComplete(true);
+      if (mountedRef.current) {
+        const cached = cacheRef.current;
+        setAverage(cached.result);
+        setStats(cached.stats);
+        setIndividualResults(cached.individual);
+        setStatus('done');
+        setSaved(false);
+        setError(null);
+        // ✅ Important: call onComplete for cached results too
+        if (typeof onComplete === 'function') onComplete(true);
+      }
       return;
     }
 
-    setStatus('running');
-    setError(null);
-    setSaved(false);
-    setIndividualResults([]);
-    setProgress(0);
-    setAverage(null);
-    setStats({ min: null, max: null, samples: 0 });
+    // Reset state
+    if (mountedRef.current) {
+      setStatus('running');
+      setError(null);
+      setSaved(false);
+      setIndividualResults([]);
+      setProgress(0);
+      setAverage(null);
+      setStats({ min: null, max: null, samples: 0 });
+    }
 
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -59,7 +70,7 @@ function NetworkTestInline({ onComplete, isWhiteTheme }) {
 
     const results = [];
     for (let i = 0; i < DEFAULT_SAMPLE_COUNT; i++) {
-      if (signal.aborted) break;
+      if (signal.aborted || !mountedRef.current) break;
       const start = performance.now();
       try {
         const response = await fetch(`${API_BASE}/api/latency-test`, {
@@ -70,15 +81,20 @@ function NetworkTestInline({ onComplete, isWhiteTheme }) {
         await response.json();
         results.push(performance.now() - start);
       } catch (err) {
-        if (err.name === 'AbortError') break;
+        if (err.name === 'AbortError' || !mountedRef.current) break;
+        // other errors: continue
       }
-      setProgress(((i + 1) / DEFAULT_SAMPLE_COUNT) * 100);
-      if (i < DEFAULT_SAMPLE_COUNT - 1 && !signal.aborted) {
+      if (mountedRef.current) {
+        setProgress(((i + 1) / DEFAULT_SAMPLE_COUNT) * 100);
+      }
+      if (i < DEFAULT_SAMPLE_COUNT - 1 && !signal.aborted && mountedRef.current) {
         await new Promise(resolve => setTimeout(resolve, DEFAULT_DELAY_MS));
       }
     }
 
     abortControllerRef.current = null;
+
+    if (!mountedRef.current) return;
 
     if (signal.aborted) {
       setStatus('idle');
@@ -90,7 +106,7 @@ function NetworkTestInline({ onComplete, isWhiteTheme }) {
       setStatus('error');
       setError('All attempts failed. Please check your network or try again.');
       setProgress(100);
-      onComplete && onComplete(false);
+      if (typeof onComplete === 'function') onComplete(false);
       return;
     }
 
@@ -112,18 +128,20 @@ function NetworkTestInline({ onComplete, isWhiteTheme }) {
       timestamp: Date.now(),
     };
 
-    onComplete && onComplete(true);
+    if (typeof onComplete === 'function') onComplete(true);
   }, [onComplete]);
 
   const clearCache = () => {
     cacheRef.current = null;
-    setStatus('idle');
-    setAverage(null);
-    setStats({ min: null, max: null, samples: 0 });
-    setIndividualResults([]);
-    setSaved(false);
-    setError(null);
-    setProgress(0);
+    if (mountedRef.current) {
+      setStatus('idle');
+      setAverage(null);
+      setStats({ min: null, max: null, samples: 0 });
+      setIndividualResults([]);
+      setSaved(false);
+      setError(null);
+      setProgress(0);
+    }
   };
 
   const renderStatusMessage = () => {
@@ -159,7 +177,7 @@ function NetworkTestInline({ onComplete, isWhiteTheme }) {
     );
   };
 
-  // Theme‑aware style variables (dark now uses zinc palette)
+  // Theme‑aware styles
   const cardBg = isWhiteTheme ? 'bg-white border-gray-200' : 'bg-zinc-900 border-zinc-800';
   const textColor = isWhiteTheme ? 'text-gray-800' : 'text-zinc-300';
   const mutedText = isWhiteTheme ? 'text-gray-500' : 'text-zinc-400';
@@ -254,16 +272,28 @@ const GeneralQuestionPage = () => {
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const handleTestComplete = (success) => {
+  const handleTestComplete = useCallback((success) => {
     setIsTestComplete(success === true);
-  };
+  }, []);
 
-  const handleContinue = () => {
+  const handleContinue = useCallback(() => {
     if (!isFormValid) return;
     setIsSubmitting(true);
-    console.log('Answers:', { useCase, heardFrom, excitedFeatures, additionalFeedback });
-    navigate('/', { replace: true });
-  };
+
+    // Simulate async submission or use real API call
+    const data = { useCase, heardFrom, excitedFeatures, additionalFeedback, username, email };
+
+    // For demo, we just log and navigate
+    console.log('Answers:', data);
+
+    // Replace with actual API call if needed
+    // await fetch('/api/answers', { method: 'POST', body: JSON.stringify(data) });
+
+    // Navigate to dashboard after short delay (simulate async)
+    setTimeout(() => {
+      navigate('/', { replace: true, state: { from: 'onboarding' } });
+    }, 500);
+  }, [useCase, heardFrom, excitedFeatures, additionalFeedback, username, email, navigate, isFormValid]);
 
   const toggleFeature = (feature) => {
     setExcitedFeatures(prev =>
@@ -281,6 +311,14 @@ const GeneralQuestionPage = () => {
     excitedFeatures.length > 0 &&
     isTestComplete &&
     termsAccepted;
+
+  // Theme‑aware styles for inputs
+  const inputBase = `w-full rounded px-3 py-2 text-sm outline-none focus:border-blue-500 transition-colors ${
+    isWhiteTheme
+      ? 'bg-gray-50 border border-gray-300 text-gray-900 placeholder-gray-400'
+      : 'bg-zinc-900 border border-zinc-800 text-zinc-300 placeholder-zinc-500'
+  }`;
+  const labelBase = `block text-xs font-medium mb-1 ${isWhiteTheme ? 'text-gray-700' : 'text-zinc-300'}`;
 
   return (
     <div className={`min-h-screen w-full flex flex-col font-sans transition-colors duration-150 ${
@@ -308,17 +346,14 @@ const GeneralQuestionPage = () => {
 
           {/* Use Case */}
           <div>
-            <label className={`block text-xs font-medium mb-1 ${isWhiteTheme ? 'text-gray-700' : 'text-zinc-300'}`}>
+            <label className={labelBase}>
               What is your primary use case for MockAPI? <span className="text-red-400">*</span>
             </label>
             <select
               value={useCase}
               onChange={(e) => setUseCase(e.target.value)}
-              className={`w-full rounded px-3 py-2 text-sm outline-none focus:border-blue-500 transition-colors ${
-                isWhiteTheme
-                  ? 'bg-gray-50 border border-gray-300 text-gray-900'
-                  : 'bg-zinc-900 border border-zinc-800 text-zinc-300'
-              }`}
+              className={inputBase}
+              required
             >
               <option value="">Select an option</option>
               <option value="prototyping">Prototyping</option>
@@ -331,7 +366,7 @@ const GeneralQuestionPage = () => {
 
           {/* How did you hear? */}
           <div>
-            <label className={`block text-xs font-medium mb-1 ${isWhiteTheme ? 'text-gray-700' : 'text-zinc-300'}`}>
+            <label className={labelBase}>
               How did you hear about us? <span className="text-red-400">*</span>
             </label>
             <input
@@ -339,17 +374,14 @@ const GeneralQuestionPage = () => {
               value={heardFrom}
               onChange={(e) => setHeardFrom(e.target.value)}
               placeholder="e.g., Google, Twitter, friend..."
-              className={`w-full rounded px-3 py-2 text-sm outline-none focus:border-blue-500 transition-colors ${
-                isWhiteTheme
-                  ? 'bg-gray-50 border border-gray-300 text-gray-900 placeholder-gray-400'
-                  : 'bg-zinc-900 border border-zinc-800 text-zinc-300 placeholder-zinc-500'
-              }`}
+              className={inputBase}
+              required
             />
           </div>
 
           {/* Excited Features (multi-select) */}
           <div>
-            <label className={`block text-xs font-medium mb-1 ${isWhiteTheme ? 'text-gray-700' : 'text-zinc-300'}`}>
+            <label className={labelBase}>
               What features are you most excited about? <span className="text-red-400">*</span>
             </label>
             <div className="flex flex-wrap gap-2">
@@ -359,7 +391,7 @@ const GeneralQuestionPage = () => {
                     type="checkbox"
                     checked={excitedFeatures.includes(feature)}
                     onChange={() => toggleFeature(feature)}
-                    className="accent-blue-500"
+                    className="accent-blue-500 w-3.5 h-3.5"
                   />
                   {feature}
                 </label>
@@ -369,19 +401,13 @@ const GeneralQuestionPage = () => {
 
           {/* Additional Feedback */}
           <div>
-            <label className={`block text-xs font-medium mb-1 ${isWhiteTheme ? 'text-gray-700' : 'text-zinc-300'}`}>
-              Additional feedback (optional)
-            </label>
+            <label className={labelBase}>Additional feedback (optional)</label>
             <textarea
               value={additionalFeedback}
               onChange={(e) => setAdditionalFeedback(e.target.value)}
               rows="2"
               placeholder="Anything else you'd like to share?"
-              className={`w-full rounded px-3 py-2 text-sm outline-none focus:border-blue-500 transition-colors ${
-                isWhiteTheme
-                  ? 'bg-gray-50 border border-gray-300 text-gray-900 placeholder-gray-400'
-                  : 'bg-zinc-900 border border-zinc-800 text-zinc-300 placeholder-zinc-500'
-              }`}
+              className={inputBase}
             />
           </div>
         </div>

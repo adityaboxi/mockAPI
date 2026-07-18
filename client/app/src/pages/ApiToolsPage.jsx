@@ -3,7 +3,7 @@ import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react'
 import NetworkTest from './NetworkTest';
 import OpenApi from './OpenApi';
 
-// Helper to safely access localStorage
+// ---------- Helper functions (persist width) ----------
 const getStoredWidth = (key, fallback = 50) => {
   try {
     const stored = localStorage.getItem(key);
@@ -21,8 +21,9 @@ const setStoredWidth = (key, value) => {
   }
 };
 
+// ---------- Component ----------
 function ApiToolsPage({ projectId: propProjectId }) {
-  // ---- Project ID ----
+  // ---- Project ID (from prop or localStorage) ----
   const projectId = useMemo(() => {
     if (propProjectId) return propProjectId;
     try {
@@ -41,29 +42,33 @@ function ApiToolsPage({ projectId: propProjectId }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
-  // ---- Drag refs for throttling ----
+  // ---- Refs for drag (throttling) ----
   const rafIdRef = useRef(null);
   const dragStartRef = useRef({ x: 0, width: 0 });
 
-  // ---- Responsive check ----
+  // ---- Responsive handler ----
+  const handleResize = useCallback(() => {
+    const mobile = window.innerWidth < 768;
+    setIsMobile(mobile);
+    if (mobile) {
+      setLeftWidth(100);           // mobile: full width for each panel (stacked)
+    } else {
+      const stored = getStoredWidth('apiToolsLeftWidth', 50);
+      setLeftWidth(stored);
+    }
+  }, []);
+
+  // ---- Register resize listener (and call once on mount) ----
   useEffect(() => {
-    const handleResize = () => {
-      const mobile = window.innerWidth < 768;
-      setIsMobile(mobile);
-      if (mobile) {
-        setLeftWidth(100);
-      } else {
-        const stored = getStoredWidth('apiToolsLeftWidth', 50);
-        setLeftWidth(stored);
-      }
-    };
+    handleResize(); // ensures initial sync
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  }, [handleResize]);
 
   // ---- Drag handlers ----
   const handleDragStart = useCallback(
     (e) => {
+      // Prevent text selection and scrolling
       e.preventDefault();
       const clientX = e.type === 'touchstart' ? e.touches[0].clientX : e.clientX;
       dragStartRef.current = { x: clientX, width: leftWidth };
@@ -75,6 +80,9 @@ function ApiToolsPage({ projectId: propProjectId }) {
   const handleDragMove = useCallback(
     (e) => {
       if (!isDragging || !containerRef.current) return;
+      // Prevent default only if event is cancelable (touch events are)
+      if (e.cancelable) e.preventDefault();
+
       if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
       rafIdRef.current = requestAnimationFrame(() => {
         const clientX = e.type === 'touchmove' ? e.touches[0].clientX : e.clientX;
@@ -92,10 +100,13 @@ function ApiToolsPage({ projectId: propProjectId }) {
 
   const handleDragEnd = useCallback(() => {
     setIsDragging(false);
-    if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
+    if (rafIdRef.current) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
   }, []);
 
-  // ---- Global listeners ----
+  // ---- Global event listeners (while dragging) ----
   useEffect(() => {
     if (isDragging) {
       window.addEventListener('mousemove', handleDragMove);
@@ -109,6 +120,7 @@ function ApiToolsPage({ projectId: propProjectId }) {
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
     }
+
     return () => {
       window.removeEventListener('mousemove', handleDragMove);
       window.removeEventListener('touchmove', handleDragMove);
@@ -117,7 +129,10 @@ function ApiToolsPage({ projectId: propProjectId }) {
       window.removeEventListener('mouseleave', handleDragEnd);
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
-      if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
+      if (rafIdRef.current) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
     };
   }, [isDragging, handleDragMove, handleDragEnd]);
 
@@ -135,7 +150,7 @@ function ApiToolsPage({ projectId: propProjectId }) {
       className="flex h-full min-h-screen bg-zinc-950"
       style={{ flexDirection: isMobile ? 'column' : 'row' }}
     >
-      {/* Left Panel - OpenApi */}
+      {/* Left Panel – OpenApi */}
       <div
         className="overflow-auto border-r border-zinc-800"
         style={{
@@ -146,7 +161,7 @@ function ApiToolsPage({ projectId: propProjectId }) {
         <OpenApi />
       </div>
 
-      {/* Divider - only visible on desktop */}
+      {/* Divider – visible only on desktop */}
       {!isMobile && (
         <div
           className={`relative w-2 bg-zinc-800 hover:bg-blue-500 active:bg-blue-400 cursor-col-resize transition-colors ${
@@ -157,8 +172,11 @@ function ApiToolsPage({ projectId: propProjectId }) {
           onDoubleClick={handleDividerDoubleClick}
           role="separator"
           aria-valuenow={leftWidth}
-          aria-label="Resize panels – double‑click to reset"
+          aria-valuemin={20}
+          aria-valuemax={80}
+          aria-label="Resize panels – double‑click to reset to 50/50"
           aria-orientation="vertical"
+          tabIndex={0}
         >
           {/* Visual grip dots */}
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col gap-1 pointer-events-none">
@@ -169,7 +187,7 @@ function ApiToolsPage({ projectId: propProjectId }) {
         </div>
       )}
 
-      {/* Right Panel - NetworkTest */}
+      {/* Right Panel – NetworkTest */}
       <div
         className="overflow-auto"
         style={{

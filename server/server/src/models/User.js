@@ -36,6 +36,10 @@ const userSchema = new mongoose.Schema({
   createdAt: { 
     type: Date, 
     default: Date.now 
+  },
+  latency:{
+    type: Number,
+    default: 0
   }
 }, { 
   timestamps: true 

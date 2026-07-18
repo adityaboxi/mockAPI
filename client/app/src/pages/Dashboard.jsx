@@ -1,15 +1,17 @@
 // src/pages/Dashboard.jsx
-import React, { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
+import React, {
+  useState, useEffect, useMemo, useCallback, useRef, memo
+} from 'react';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid
 } from 'recharts';
-import { socket } from '../socket'; // your Socket.IO client
+import { socket } from '../socket'; // 确保 socket 单例已正确导出
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
-// ---------- Cache with TTL and size limit ----------
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+// ---------- 带 TTL 和大小限制的缓存 ----------
+const CACHE_TTL = 5 * 60 * 1000;      // 5 分钟
 const MAX_CACHE_SIZE = 50;
 
 class ChartCache {
@@ -28,7 +30,6 @@ class ChartCache {
   }
 
   set(key, data) {
-    // Avoid eviction if key already exists
     if (!this.map.has(key) && this.map.size >= MAX_CACHE_SIZE) {
       const oldestKey = this.map.keys().next().value;
       this.map.delete(oldestKey);
@@ -53,7 +54,7 @@ class ChartCache {
 
 const chartCache = new ChartCache();
 
-// ---------- Memoized VersionItem ----------
+// ---------- 版本项（memoized） ----------
 const VersionItem = memo(
   ({ ver, api, projectId, isActive, onSelect, onHover }) => (
     <div
@@ -67,6 +68,7 @@ const VersionItem = memo(
       role="treeitem"
       tabIndex={0}
       aria-selected={isActive}
+      aria-label={`${ver.label} ${ver.latency}ms`}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
@@ -90,8 +92,11 @@ const VersionItem = memo(
 
 VersionItem.displayName = 'VersionItem';
 
+// ============================================================
+// 主组件
+// ============================================================
 function Dashboard() {
-  // ---------- State ----------
+  // ---------- 状态 ----------
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -106,12 +111,13 @@ function Dashboard() {
   const [expandedProjects, setExpandedProjects] = useState({});
   const [expandedApis, setExpandedApis] = useState({});
 
+  // ---------- Refs ----------
   const abortControllerRef = useRef(null);
   const refreshIntervalRef = useRef(null);
   const prefetchAbortControllerRef = useRef(null);
   const mountedRef = useRef(true);
 
-  // ---------- Cleanup ----------
+  // ---------- 清理 ----------
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -122,7 +128,7 @@ function Dashboard() {
     };
   }, []);
 
-  // ---------- Fetch projects (sidebar) ----------
+  // ---------- 获取项目列表（侧边栏） ----------
   useEffect(() => {
     const controller = new AbortController();
     const signal = controller.signal;
@@ -136,7 +142,7 @@ function Dashboard() {
         if (!mountedRef.current) return;
         const projs = data.projects || [];
         setProjects(projs);
-        // Default all projects and APIs to expanded
+        // 默认展开所有项目和 API
         const newExpProj = {};
         const newExpApi = {};
         projs.forEach(proj => {
@@ -148,6 +154,7 @@ function Dashboard() {
         setExpandedProjects(newExpProj);
         setExpandedApis(newExpApi);
 
+        // 默认选中第一个 API 的第一个版本
         const firstProj = projs[0];
         const firstApi = firstProj?.apis?.[0];
         const firstVer = firstApi?.versions?.[0];
@@ -174,9 +181,17 @@ function Dashboard() {
     return () => controller.abort();
   }, []);
 
-  // ---------- Fetch chart data ----------
-  const fetchChartData = useCallback(async (projectId, path, method, range = timeRange, force = false) => {
+  // ---------- 获取图表数据（带缓存） ----------
+  const fetchChartData = useCallback(async (
+    projectId,
+    path,
+    method,
+    range = timeRange,
+    force = false
+  ) => {
     const cacheKey = `stats:${projectId}:${path}:${method}:${range}`;
+
+    // 非强制刷新且缓存有效 → 直接使用
     if (!force && chartCache.has(cacheKey)) {
       if (mountedRef.current) {
         setChartData(chartCache.get(cacheKey));
@@ -186,6 +201,7 @@ function Dashboard() {
       return;
     }
 
+    // 取消进行中的请求
     if (abortControllerRef.current) abortControllerRef.current.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -202,7 +218,8 @@ function Dashboard() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const points = data.points || [];
-      if (mountedRef.current) {
+
+      if (mountedRef.current && !signal.aborted) {
         chartCache.set(cacheKey, points);
         setChartData(points);
       }
@@ -215,12 +232,14 @@ function Dashboard() {
     } finally {
       if (mountedRef.current) {
         setChartLoading(false);
-        abortControllerRef.current = null;
+        if (abortControllerRef.current === controller) {
+          abortControllerRef.current = null;
+        }
       }
     }
   }, [timeRange]);
 
-  // ---------- Load chart when selection changes ----------
+  // ---------- 选中版本变化 → 加载图表 ----------
   useEffect(() => {
     if (selectedVersion) {
       fetchChartData(
@@ -228,12 +247,12 @@ function Dashboard() {
         selectedVersion.path,
         selectedVersion.method,
         timeRange,
-        true
+        true   // 强制刷新（因为用户明确选择了新版本）
       );
     }
   }, [selectedVersion, timeRange, fetchChartData]);
 
-  // ---------- Auto‑refresh (REST polling) ----------
+  // ---------- 自动刷新（轮询） ----------
   useEffect(() => {
     if (autoRefresh && selectedVersion) {
       refreshIntervalRef.current = setInterval(() => {
@@ -244,7 +263,7 @@ function Dashboard() {
           timeRange,
           true
         );
-      }, 30000);
+      }, 30000); // 30 秒
     } else {
       if (refreshIntervalRef.current) {
         clearInterval(refreshIntervalRef.current);
@@ -256,9 +275,12 @@ function Dashboard() {
     };
   }, [autoRefresh, selectedVersion, timeRange, fetchChartData]);
 
-  // ---------- WebSocket: real‑time new log listener ----------
+  // ---------- WebSocket 实时更新 ----------
   useEffect(() => {
-    if (!socket) return;
+    if (!socket) {
+      console.warn('[Dashboard] Socket not available');
+      return;
+    }
 
     const onNewLog = (logData) => {
       if (!selectedVersion) return;
@@ -268,6 +290,7 @@ function Dashboard() {
         path === selectedVersion.path &&
         method === selectedVersion.method
       ) {
+        // 收到新日志 → 强制刷新图表
         fetchChartData(
           selectedVersion.projectId,
           selectedVersion.path,
@@ -279,15 +302,17 @@ function Dashboard() {
     };
 
     socket.on('new_api_log', onNewLog);
-    return () => socket.off('new_api_log', onNewLog);
+    return () => {
+      socket.off('new_api_log', onNewLog);
+    };
   }, [socket, selectedVersion, timeRange, fetchChartData]);
 
-  // ---------- Prefetch on hover (with abort) ----------
+  // ---------- 鼠标悬停时预取版本数据 ----------
   const prefetchVersion = useCallback((ver, projId, api) => {
     const cacheKey = `stats:${projId}:${api.path}:${api.method}:${timeRange}`;
     if (chartCache.has(cacheKey)) return;
 
-    // Cancel any ongoing prefetch
+    // 取消进行中的预取
     if (prefetchAbortControllerRef.current) {
       prefetchAbortControllerRef.current.abort();
     }
@@ -305,10 +330,10 @@ function Dashboard() {
           chartCache.set(cacheKey, points);
         }
       })
-      .catch(() => {});
+      .catch(() => { /* 静默忽略预取错误 */ });
   }, [timeRange]);
 
-  // ---------- Version selection ----------
+  // ---------- 版本选择 ----------
   const handleVersionSelect = useCallback((ver, projId, api) => {
     setSelectedVersion({
       projectId: projId,
@@ -320,7 +345,7 @@ function Dashboard() {
     });
   }, []);
 
-  // ---------- Tree toggle handlers ----------
+  // ---------- 树展开/折叠 ----------
   const toggleProject = useCallback((id) => {
     setExpandedProjects(prev => ({ ...prev, [id]: !prev[id] }));
   }, []);
@@ -329,7 +354,7 @@ function Dashboard() {
     setExpandedApis(prev => ({ ...prev, [id]: !prev[id] }));
   }, []);
 
-  // ---------- Filter projects ----------
+  // ---------- 筛选项目 ----------
   const filteredProjects = useMemo(() => {
     if (!searchTerm.trim()) return projects;
     const term = searchTerm.toLowerCase();
@@ -344,7 +369,7 @@ function Dashboard() {
       .filter(proj => proj.apis?.length > 0);
   }, [projects, searchTerm]);
 
-  // ---------- Render tree ----------
+  // ---------- 渲染树 ----------
   const renderTree = useMemo(() => {
     if (filteredProjects.length === 0) {
       return (
@@ -363,12 +388,23 @@ function Dashboard() {
           <div
             className="flex items-center gap-1 py-1 cursor-pointer hover:text-white group"
             onClick={() => toggleProject(proj.id)}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleProject(proj.id); }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                toggleProject(proj.id);
+              }
+            }}
             role="button"
             tabIndex={0}
             aria-expanded={isProjExpanded}
+            aria-label={`${proj.name} (${proj.apis?.length || 0} APIs)`}
           >
-            <span className={`text-zinc-500 transition-transform duration-200 ${isProjExpanded ? 'rotate-90' : ''}`} aria-hidden="true">
+            <span
+              className={`text-zinc-500 transition-transform duration-200 ${
+                isProjExpanded ? 'rotate-90' : ''
+              }`}
+              aria-hidden="true"
+            >
               ▸
             </span>
             <span className="text-zinc-400 group-hover:text-white">📁 {proj.name}</span>
@@ -384,12 +420,23 @@ function Dashboard() {
                     <div
                       className="flex items-center gap-1 py-1 cursor-pointer hover:text-white group"
                       onClick={() => toggleApi(api.id)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleApi(api.id); }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          toggleApi(api.id);
+                        }
+                      }}
                       role="button"
                       tabIndex={0}
                       aria-expanded={isApiExpanded}
+                      aria-label={`${api.method} ${api.path} (${api.versions?.length || 0} versions)`}
                     >
-                      <span className={`text-zinc-500 transition-transform duration-200 ${isApiExpanded ? 'rotate-90' : ''}`} aria-hidden="true">
+                      <span
+                        className={`text-zinc-500 transition-transform duration-200 ${
+                          isApiExpanded ? 'rotate-90' : ''
+                        }`}
+                        aria-hidden="true"
+                      >
                         ▸
                       </span>
                       <span className="text-zinc-400 group-hover:text-white text-sm">
@@ -439,10 +486,14 @@ function Dashboard() {
     toggleApi,
   ]);
 
-  // ---------- Charts ----------
+  // ---------- 图表渲染 ----------
   const renderCharts = () => {
     if (chartLoading) {
-      return <div className="flex items-center justify-center h-48 text-zinc-500 animate-pulse">Loading data...</div>;
+      return (
+        <div className="flex items-center justify-center h-48 text-zinc-500 animate-pulse">
+          Loading data...
+        </div>
+      );
     }
 
     if (chartError) {
@@ -450,13 +501,16 @@ function Dashboard() {
         <div className="flex flex-col items-center justify-center h-48 text-red-400">
           <div>⚠️ {chartError}</div>
           <button
-            onClick={() => selectedVersion && fetchChartData(
-              selectedVersion.projectId,
-              selectedVersion.path,
-              selectedVersion.method,
-              timeRange,
-              true
-            )}
+            onClick={() =>
+              selectedVersion &&
+              fetchChartData(
+                selectedVersion.projectId,
+                selectedVersion.path,
+                selectedVersion.method,
+                timeRange,
+                true
+              )
+            }
             className="mt-2 px-4 py-1 bg-blue-600 hover:bg-blue-500 rounded text-white text-sm transition"
           >
             Retry
@@ -469,7 +523,9 @@ function Dashboard() {
       return (
         <div className="text-zinc-500 text-center py-8">
           No data available for this endpoint.<br />
-          <span className="text-xs text-zinc-600">Make a mock API call to start collecting statistics.</span>
+          <span className="text-xs text-zinc-600">
+            Make a mock API call to start collecting statistics.
+          </span>
         </div>
       );
     }
@@ -477,21 +533,46 @@ function Dashboard() {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[400px]">
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-          <h3 className="text-sm font-medium text-zinc-400 uppercase mb-2">📈 Latency vs Requests</h3>
+          <h3 className="text-sm font-medium text-zinc-400 uppercase mb-2">
+            📈 Latency vs Requests
+          </h3>
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#3f3f46" />
               <XAxis dataKey="time" tick={{ fill: '#a1a1aa' }} fontSize={10} />
               <YAxis yAxisId="left" stroke="#a78bfa" tick={{ fill: '#a78bfa' }} fontSize={10} />
-              <YAxis yAxisId="right" orientation="right" stroke="#fbbf24" tick={{ fill: '#fbbf24' }} fontSize={10} />
+              <YAxis
+                yAxisId="right"
+                orientation="right"
+                stroke="#fbbf24"
+                tick={{ fill: '#fbbf24' }}
+                fontSize={10}
+              />
               <Tooltip contentStyle={{ background: '#18181b', border: '1px solid #27272a' }} />
-              <Line yAxisId="left" type="monotone" dataKey="latency" stroke="#a78bfa" strokeWidth={2} dot={false} />
-              <Line yAxisId="right" type="monotone" dataKey="requests" stroke="#fbbf24" strokeWidth={2} dot={false} strokeDasharray="4 4" />
+              <Line
+                yAxisId="left"
+                type="monotone"
+                dataKey="latency"
+                stroke="#a78bfa"
+                strokeWidth={2}
+                dot={false}
+              />
+              <Line
+                yAxisId="right"
+                type="monotone"
+                dataKey="requests"
+                stroke="#fbbf24"
+                strokeWidth={2}
+                dot={false}
+                strokeDasharray="4 4"
+              />
             </LineChart>
           </ResponsiveContainer>
         </div>
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-          <h3 className="text-sm font-medium text-zinc-400 uppercase mb-2">📊 Requests over Time</h3>
+          <h3 className="text-sm font-medium text-zinc-400 uppercase mb-2">
+            📊 Requests over Time
+          </h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#3f3f46" />
@@ -506,6 +587,7 @@ function Dashboard() {
     );
   };
 
+  // ---------- 渲染 ----------
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen text-zinc-500">
@@ -524,7 +606,7 @@ function Dashboard() {
 
   return (
     <div className="flex h-screen bg-zinc-950 text-zinc-300 overflow-hidden">
-      {/* Sidebar */}
+      {/* 侧边栏 */}
       <div className="w-72 bg-zinc-900 border-r border-zinc-800 flex flex-col flex-shrink-0">
         <div className="p-4 border-b border-zinc-800 text-xs font-semibold text-zinc-500 uppercase flex justify-between">
           <span>📂 Explorer</span>
@@ -547,11 +629,13 @@ function Dashboard() {
           />
         </div>
         <div className="flex-1 overflow-y-auto px-2 py-2 custom-scrollbar">
-          <ul className="space-y-1" role="tree">{renderTree}</ul>
+          <ul className="space-y-1" role="tree">
+            {renderTree}
+          </ul>
         </div>
       </div>
 
-      {/* Main content */}
+      {/* 主内容 */}
       <div className="flex-1 flex flex-col overflow-hidden p-6">
         <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
           <h1 className="text-xl font-medium text-white truncate">
@@ -576,7 +660,7 @@ function Dashboard() {
               <input
                 type="checkbox"
                 checked={autoRefresh}
-                onChange={() => setAutoRefresh(prev => !prev)}
+                onChange={() => setAutoRefresh((prev) => !prev)}
                 className="w-4 h-4 accent-blue-500"
                 aria-label="Toggle auto-refresh"
               />
@@ -588,8 +672,12 @@ function Dashboard() {
         <div className="flex-1 overflow-y-auto">
           {renderCharts()}
           <div className="mt-4 text-xs text-zinc-600 text-center border-t border-zinc-800 pt-3">
-            {autoRefresh && <span className="text-blue-400 mr-2">⏳ Auto-refreshing every 30s •</span>}
-            {socket?.connected && <span className="text-emerald-400 mr-2">⚡ Real‑time updates active</span>}
+            {autoRefresh && (
+              <span className="text-blue-400 mr-2">⏳ Auto-refreshing every 30s •</span>
+            )}
+            {socket?.connected && (
+              <span className="text-emerald-400 mr-2">⚡ Real‑time updates active</span>
+            )}
             All timestamps in your local timezone
           </div>
         </div>

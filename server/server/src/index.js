@@ -23,6 +23,8 @@ const ApiCallLog = require('./models/ApiCallLog');
 const Project = require('./models/Project');
 const ProjectLatency = require('./models/ProjectLatency');
 const ProjectApiHistory = require('./models/ProjectApiHistory');
+const User = require('./models/User');
+const TeamLatency = require('./models/TeamLatency');
 
 // ---------- ROUTES ----------
 const importRoutes = require('./routes/importRoutes');
@@ -311,27 +313,85 @@ const startServer = async () => {
     res.json({ timestamp: Date.now() });
   });
 
-  // ---- LATENCY REPORT ----
+  // ---- LATENCY REPORT (FIXED) ----
   app.post('/api/latency-report', authenticateToken, async (req, res) => {
     try {
-      const { project_id, rtt } = req.body;
-      if (!project_id || rtt == null) {
-        return res.status(400).json({ error: 'Missing project_id or rtt' });
+      const { project_id, rtts } = req.body;
+      if (!project_id) {
+        return res.status(400).json({ error: 'Missing project_id' });
       }
+
+      let avgRtt;
+      if (Array.isArray(rtts) && rtts.length > 0) {
+        const sum = rtts.reduce((a, b) => a + b, 0);
+        avgRtt = Math.round(sum / rtts.length);
+      } else if (typeof rtts === 'number') {
+        avgRtt = Math.round(rtts);
+      } else {
+        return res.status(400).json({ error: 'Invalid rtts, expected array or number' });
+      }
+
       const username = req.user.username;
 
-      let doc = await ProjectLatency.findOne({ project_id });
-      if (!doc) {
-        doc = await ProjectLatency.create({ project_id, averageRtt: rtt, sampleCount: 1 });
-      } else {
-        doc.averageRtt = Math.round((doc.averageRtt + rtt) / 2);
-        doc.sampleCount += 1;
-        // ✅ REMOVED: doc.updatedAt = new Date(); – Mongoose handles it
-        await doc.save();
+      // 1. Update User's latency field
+      const user = await User.findOneAndUpdate(
+        { username },
+        { latency: avgRtt },
+        { new: true }
+      );
+      if (!user) {
+        console.warn(`[latency-report] User ${username} not found`);
+        // but we can still continue
       }
 
-      await latencyQueue.add('store-member-latency', { project_id, username, rtt });
-      res.json({ project_id, averageRtt: doc.averageRtt, sampleCount: doc.sampleCount });
+      // 2. Update or create TeamLatency for this user + project
+      let teamLat = await TeamLatency.findOne({ project_id, username });
+      if (teamLat) {
+        const total = teamLat.averageRtt * teamLat.sampleCount + avgRtt;
+        teamLat.sampleCount += 1;
+        teamLat.averageRtt = Math.round(total / teamLat.sampleCount);
+        await teamLat.save();
+      } else {
+        teamLat = await TeamLatency.create({
+          project_id,
+          username,
+          averageRtt: avgRtt,
+          sampleCount: 1,
+        });
+      }
+
+      // 3. Recalculate the global ProjectLatency for this project
+      const allTeamLatencies = await TeamLatency.find({ project_id });
+      let projectAvg = null;
+      if (allTeamLatencies.length > 0) {
+        const total = allTeamLatencies.reduce((sum, doc) => sum + doc.averageRtt, 0);
+        projectAvg = Math.round(total / allTeamLatencies.length);
+
+        await ProjectLatency.findOneAndUpdate(
+          { project_id },
+          {
+            averageRtt: projectAvg,
+            sampleCount: allTeamLatencies.length,
+          },
+          { upsert: true, new: true }
+        );
+      }
+
+      // 4. (Optional) Enqueue a job for further processing (logging, etc.)
+      //    Catch errors silently so they don't affect the response.
+      latencyQueue.add('store-member-latency', {
+        project_id,
+        username,
+        rtt: avgRtt,
+      }).catch(err => console.error('[latency-report] Queue job failed:', err.message));
+
+      res.json({
+        success: true,
+        userLatency: avgRtt,
+        teamLatency: teamLat.averageRtt,          // ✅ return the average, not the document
+        projectAverage: projectAvg,
+      });
+
     } catch (err) {
       console.error('[latency-report]', err);
       res.status(500).json({ error: 'Failed to save latency report' });
@@ -400,7 +460,6 @@ const startServer = async () => {
         invitationCode,
         members: [req.user.username],
         isActive: true,
-        // ✅ REMOVED: createdAt – Mongoose will add it automatically
       });
       await newProject.save();
 
@@ -451,9 +510,11 @@ const startServer = async () => {
     try {
       const username = req.user.username;
       const cacheKey = `dashboard:${username}`;
-      const cached = await mainRedisClient.get(cacheKey);
-      if (cached) {
-        return res.json(JSON.parse(cached));
+      if (mainRedisClient) {
+        const cached = await mainRedisClient.get(cacheKey);
+        if (cached) {
+          return res.json(JSON.parse(cached));
+        }
       }
 
       const projects = await Project.find({
@@ -477,14 +538,16 @@ const startServer = async () => {
       const historyMap = new Map(histories.map(h => [h.projectID, h]));
 
       const rttKeys = projectIds.map(id => `latency:${id}:${username}`);
-      const pipeline = mainRedisClient.multi();
-      rttKeys.forEach(key => pipeline.get(key));
-      const rttResults = await pipeline.exec();
       const networkRttMap = new Map();
-      projectIds.forEach((id, idx) => {
-        const val = rttResults[idx]?.[1];
-        if (val) networkRttMap.set(id, parseInt(val, 10));
-      });
+      if (mainRedisClient) {
+        const pipeline = mainRedisClient.multi();
+        rttKeys.forEach(key => pipeline.get(key));
+        const rttResults = await pipeline.exec();
+        projectIds.forEach((id, idx) => {
+          const val = rttResults[idx]?.[1];
+          if (val) networkRttMap.set(id, parseInt(val, 10));
+        });
+      }
 
       const latStatsMap = await aggregateAllLatencies(projectIds);
 
@@ -526,7 +589,9 @@ const startServer = async () => {
       });
 
       const response = { projects: enriched };
-      await mainRedisClient.setEx(cacheKey, 15, JSON.stringify(response));
+      if (mainRedisClient) {
+        await mainRedisClient.setEx(cacheKey, 15, JSON.stringify(response));
+      }
       res.json(response);
     } catch (err) {
       console.error('[dashboard-data]', err);
@@ -547,9 +612,11 @@ const startServer = async () => {
       const since = new Date(Date.now() - resolveTimeWindow(range));
 
       const cacheKey = `latStats:${project_id}:${path}:${method}:${range}`;
-      const cached = await mainRedisClient.get(cacheKey);
-      if (cached) {
-        return res.json(JSON.parse(cached));
+      if (mainRedisClient) {
+        const cached = await mainRedisClient.get(cacheKey);
+        if (cached) {
+          return res.json(JSON.parse(cached));
+        }
       }
 
       const pipeline = [
@@ -589,7 +656,9 @@ const startServer = async () => {
       const points = await ApiCallLog.aggregate(pipeline);
       const response = { points };
 
-      await mainRedisClient.setEx(cacheKey, 30, JSON.stringify(response));
+      if (mainRedisClient) {
+        await mainRedisClient.setEx(cacheKey, 30, JSON.stringify(response));
+      }
       res.json(response);
     } catch (err) {
       console.error('[latency-stats]', err);

@@ -18,43 +18,49 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
   const [error, setError] = useState(null);
   const [progress, setProgress] = useState(0);
 
-  // ---- Cache ----
-  const cacheRef = useRef(null); // { result, stats, individual, timestamp }
-
-  // ---- Abort controller ----
+  // ---- Refs ----
+  const cacheRef = useRef(null);
   const abortControllerRef = useRef(null);
+  const mountedRef = useRef(true);
 
-  // ---- Cleanup on unmount ----
+  // ---- Lifecycle ----
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
+        abortControllerRef.current = null;
       }
     };
   }, []);
 
   // ---- Core test logic ----
   const runTest = useCallback(async (force = false) => {
-    // Check cache
+    // Check cache (only if not forced and component is mounted)
     if (!force && cacheRef.current && (Date.now() - cacheRef.current.timestamp < CACHE_TTL_MS)) {
-      const cached = cacheRef.current;
-      setAverage(cached.result);
-      setStats(cached.stats);
-      setIndividualResults(cached.individual);
-      setStatus('done');
-      setSaved(false);
-      setError(null);
+      if (mountedRef.current) {
+        const cached = cacheRef.current;
+        setAverage(cached.result);
+        setStats(cached.stats);
+        setIndividualResults(cached.individual);
+        setStatus('done');
+        setSaved(false);
+        setError(null);
+      }
       return;
     }
 
     // Reset state
-    setStatus('running');
-    setError(null);
-    setSaved(false);
-    setIndividualResults([]);
-    setProgress(0);
-    setAverage(null);
-    setStats({ min: null, max: null, samples: 0 });
+    if (mountedRef.current) {
+      setStatus('running');
+      setError(null);
+      setSaved(false);
+      setIndividualResults([]);
+      setProgress(0);
+      setAverage(null);
+      setStats({ min: null, max: null, samples: 0 });
+    }
 
     // Abort any previous request
     if (abortControllerRef.current) {
@@ -68,7 +74,7 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
     let successCount = 0;
 
     for (let i = 0; i < sampleCount; i++) {
-      if (signal.aborted) break;
+      if (signal.aborted || !mountedRef.current) break;
 
       const start = performance.now();
       try {
@@ -77,23 +83,24 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
           signal,
         });
         if (!response.ok) throw new Error(`Server responded with ${response.status}`);
-        await response.json(); // ensure body is consumed
+        await response.json(); // consume body
         const elapsed = performance.now() - start;
         results.push(elapsed);
         successCount++;
       } catch (err) {
-        if (err.name === 'AbortError') {
-          // Request was aborted – stop the test
+        if (err.name === 'AbortError' || !mountedRef.current) {
           break;
         }
         // Network or server error – we still continue to the next attempt
       }
 
       // Update progress (including failed attempts)
-      setProgress(((i + 1) / sampleCount) * 100);
+      if (mountedRef.current) {
+        setProgress(((i + 1) / sampleCount) * 100);
+      }
 
       // Delay between requests (if not last and not aborted)
-      if (i < sampleCount - 1 && !signal.aborted) {
+      if (i < sampleCount - 1 && !signal.aborted && mountedRef.current) {
         await new Promise(resolve => setTimeout(resolve, delayMs));
       }
     }
@@ -101,7 +108,8 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
     // Cleanup controller
     abortControllerRef.current = null;
 
-    // If aborted, set status to idle (or done with partial results? We'll treat as idle)
+    // If aborted or unmounted, set status accordingly
+    if (!mountedRef.current) return;
     if (signal.aborted) {
       setStatus('idle');
       setProgress(0);
@@ -144,27 +152,29 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           credentials: 'include',
-          body: JSON.stringify({ project_id: projectId, rtt: avgRounded }),
+          body: JSON.stringify({ project_id: projectId, rtts: avgRounded }), // ✅ fixed: rtts
         });
-        setSaved(true);
+        if (mountedRef.current) setSaved(true);
       } catch (e) {
         console.warn('Failed to save latency report:', e);
-        // We don't set an error here – the test itself succeeded
+        // Don't set error – the test itself succeeded
       }
     }
   }, [projectId, sampleCount, delayMs]);
 
   // ---- Manual cache clear ----
-  const clearCache = () => {
+  const clearCache = useCallback(() => {
     cacheRef.current = null;
-    setStatus('idle');
-    setAverage(null);
-    setStats({ min: null, max: null, samples: 0 });
-    setIndividualResults([]);
-    setSaved(false);
-    setError(null);
-    setProgress(0);
-  };
+    if (mountedRef.current) {
+      setStatus('idle');
+      setAverage(null);
+      setStats({ min: null, max: null, samples: 0 });
+      setIndividualResults([]);
+      setSaved(false);
+      setError(null);
+      setProgress(0);
+    }
+  }, []);
 
   // ---- Render helpers ----
   const renderStatusMessage = () => {
@@ -194,7 +204,6 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
     );
   };
 
-  // Unified blue button styles
   const primaryBtn = "bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-medium transition disabled:opacity-50";
   const secondaryBtn = "bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-sm transition";
 

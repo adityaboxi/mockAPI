@@ -3,11 +3,12 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
-// Maximum file size: 10 MB
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+// ---------- Constants ----------
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const ALLOWED_TYPES = ['application/json', 'application/yaml', 'text/yaml', 'text/plain'];
 const ALLOWED_EXTENSIONS = ['.json', '.yaml', '.yml'];
 
+// ---------- Component ----------
 function OpenApi() {
   // ---- State ----
   const [projectName, setProjectName] = useState('');
@@ -17,17 +18,22 @@ function OpenApi() {
   const [status, setStatus] = useState({ type: '', message: '', detail: '' });
   const [dragActive, setDragActive] = useState(false);
   const [jobId, setJobId] = useState(null);
-  const fileInputRef = useRef(null);
 
-  // ---- Abort controller & polling timeout ----
+  // ---- Refs ----
+  const fileInputRef = useRef(null);
   const abortControllerRef = useRef(null);
   const pollTimeoutRef = useRef(null);
+  const mountedRef = useRef(true);
 
-  // ---- Cleanup on unmount ----
+  // ---- Lifecycle ----
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
+      // Cancel any ongoing request and polling
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
+        abortControllerRef.current = null;
       }
       if (pollTimeoutRef.current) {
         clearTimeout(pollTimeoutRef.current);
@@ -44,10 +50,11 @@ function OpenApi() {
       return { valid: false, error: `File too large (max ${MAX_FILE_SIZE / 1024 / 1024} MB)` };
     }
 
-    const isValidType = ALLOWED_TYPES.includes(file.type);
-    const ext = '.' + file.name.split('.').pop().toLowerCase();
+    const ext = '.' + (file.name.split('.').pop() || '').toLowerCase();
     const isValidExt = ALLOWED_EXTENSIONS.includes(ext);
+    const isValidType = ALLOWED_TYPES.includes(file.type);
 
+    // Accept if either type or extension is allowed (some browsers misreport MIME)
     if (!isValidType && !isValidExt) {
       return { valid: false, error: 'Invalid file type. Please upload JSON or YAML.' };
     }
@@ -97,7 +104,7 @@ function OpenApi() {
   };
 
   const handleClear = () => {
-    // Cancel any ongoing upload and polling
+    // Cancel ongoing operations
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
@@ -117,15 +124,17 @@ function OpenApi() {
 
   // ---- Poll job status (with timeout) ----
   const pollJobStatus = useCallback(async (jobId, attempts = 0) => {
-    const MAX_ATTEMPTS = 60; // 2 minutes (60 * 2s = 120s)
+    const MAX_ATTEMPTS = 60; // 2 minutes (60 * 2s)
     if (attempts >= MAX_ATTEMPTS) {
-      setStatus({
-        type: 'error',
-        message: '⏰ Import timed out',
-        detail: 'The import is taking too long. Please try again.',
-      });
-      setLoading(false);
-      setUploadProgress(0);
+      if (mountedRef.current) {
+        setStatus({
+          type: 'error',
+          message: '⏰ Import timed out',
+          detail: 'The import is taking too long. Please try again.',
+        });
+        setLoading(false);
+        setUploadProgress(0);
+      }
       return;
     }
 
@@ -133,11 +142,14 @@ function OpenApi() {
       const res = await fetch(`${API_BASE}/api/import-status/${jobId}`, {
         credentials: 'include',
       });
-      if (!res.ok) throw new Error('Failed to fetch status');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
       const data = await res.json();
 
-      // Update progress if available
-      if (data.progress) {
+      if (!mountedRef.current) return;
+
+      // Update progress if provided
+      if (data.progress !== undefined) {
         setUploadProgress(data.progress);
       }
 
@@ -174,6 +186,7 @@ function OpenApi() {
         pollJobStatus(jobId, attempts + 1);
       }, 2000);
     } catch (err) {
+      if (!mountedRef.current) return;
       console.error('[pollJobStatus] Error:', err);
       setStatus({
         type: 'error',
@@ -188,7 +201,8 @@ function OpenApi() {
   // ---- Import logic ----
   const handleImport = useCallback(async () => {
     if (!file || loading) return;
-    if (!projectName.trim()) {
+    const trimmedName = projectName.trim();
+    if (!trimmedName) {
       setStatus({ type: 'error', message: 'Project name required', detail: 'Please enter a project name.' });
       return;
     }
@@ -213,7 +227,7 @@ function OpenApi() {
 
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('projectName', projectName.trim());
+    formData.append('projectName', trimmedName);
 
     try {
       const response = await fetch(`${API_BASE}/api/import-openapi`, {
@@ -224,11 +238,17 @@ function OpenApi() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || `Server responded with ${response.status}`);
+        let errorMsg = `Server responded with ${response.status}`;
+        try {
+          const errorData = await response.json();
+          if (errorData.error) errorMsg = errorData.error;
+        } catch (_) { /* ignore */ }
+        throw new Error(errorMsg);
       }
 
       const data = await response.json();
+      if (!mountedRef.current) return;
+
       setJobId(data.jobId);
       setStatus({
         type: 'loading',
@@ -242,6 +262,7 @@ function OpenApi() {
         pollJobStatus(data.jobId, 0);
       }, 2000);
     } catch (err) {
+      if (!mountedRef.current) return;
       if (err.name === 'AbortError') {
         setStatus({
           type: 'error',
@@ -269,7 +290,7 @@ function OpenApi() {
         Upload a JSON or YAML file to automatically create all endpoints.
       </p>
 
-      {/* Project Name Input – already present and improved */}
+      {/* Project Name */}
       <div className="mb-4">
         <label htmlFor="projectName" className="block text-sm font-medium text-zinc-300 mb-1">
           Project Name <span className="text-red-400" aria-hidden="true">*</span>
@@ -325,15 +346,22 @@ function OpenApi() {
         />
       </div>
 
+      {/* File info */}
       {file && (
         <div className="mt-4 flex items-center justify-between bg-zinc-900 border border-zinc-800 rounded-xl px-4 py-3">
           <span className="text-zinc-300 truncate max-w-[200px]">{file.name}</span>
           <span className="text-zinc-500 text-sm">{(file.size / 1024).toFixed(1)} KB</span>
-          <button onClick={handleClear} className="text-red-400 hover:text-red-300 text-xl leading-none">✕</button>
+          <button
+            onClick={handleClear}
+            className="text-red-400 hover:text-red-300 text-xl leading-none"
+            aria-label="Remove selected file"
+          >
+            ✕
+          </button>
         </div>
       )}
 
-      {/* Upload progress bar */}
+      {/* Progress bar */}
       {loading && (
         <div className="mt-4 w-full bg-zinc-800 rounded-full h-2.5">
           <div
@@ -343,7 +371,7 @@ function OpenApi() {
         </div>
       )}
 
-      {/* Action buttons */}
+      {/* Buttons */}
       <div className="mt-6 flex gap-3">
         <button
           onClick={handleImport}

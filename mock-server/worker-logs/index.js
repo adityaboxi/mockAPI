@@ -8,21 +8,27 @@ const ApiCallLog = require('./models/ApiCallLog');
 const BlockedIP = require('./models/BlockedIP');
 const TeamLatency = require('./models/TeamLatency');
 
-// Redis client used for caching team/user latency
+// Redis client (for caching team/user latency) – must export a connected client
 const redisInternal = require('./config/redisInternal');
 
 // ---------- MongoDB Connection ----------
-mongoose.connect(process.env.MONGO_URI)
+mongoose.connect(process.env.MONGO_URI, {
+  // Mongoose 6+ defaults are fine; optionally add options if needed
+})
   .then(() => console.log('[worker-logs] ✅ MongoDB connected'))
   .catch(err => {
     console.error('[worker-logs] ❌ MongoDB connection error:', err);
     process.exit(1);
   });
 
-// ---------- Redis Connection Options for BullMQ ----------
+// ---------- Redis Connection for BullMQ ----------
 const connectionOpts = {
   connection: { url: process.env.INTERNAL_REDIS_URL },
-  // BullMQ default retry settings can be overridden per worker
+  // If you prefer host/port, use:
+  // connection: {
+  //   host: process.env.INTERNAL_REDIS_HOST || 'redis-internal',
+  //   port: parseInt(process.env.INTERNAL_REDIS_PORT) || 6379,
+  // }
 };
 
 // ---------- Email Transporter ----------
@@ -94,7 +100,7 @@ const apiLogsWorker = new Worker(
   {
     ...connectionOpts,
     prefix: 'bullmq',
-    attempts: 3, // Retry up to 3 times
+    attempts: 3,
     backoff: { type: 'exponential', delay: 1000 },
     removeOnComplete: { age: 3600 },   // 1 hour
     removeOnFail: { age: 86400 },      // 24 hours
@@ -156,14 +162,14 @@ const emailWorker = new Worker(
   {
     ...connectionOpts,
     prefix: 'bullmq',
-    attempts: 3, // Retry up to 3 times for transient email failures
+    attempts: 3,
     backoff: { type: 'exponential', delay: 2000 },
     removeOnComplete: true,               // remove immediately on success
     removeOnFail: { count: 50 },          // keep last 50 failures
   }
 );
 
-// ==================== WORKER 3: Team Latency ====================
+// ==================== WORKER 3: Team Latency (FIXED AVERAGE) ====================
 const latencyWorker = new Worker(
   'bullmq-latency-store',
   async (job) => {
@@ -187,9 +193,12 @@ const latencyWorker = new Worker(
           sampleCount: 1
         });
       } else {
-        // Simple moving average (smoothes outliers)
-        teamDoc.averageRtt = Math.round((teamDoc.averageRtt + rtt) / 2);
-        teamDoc.sampleCount += 1;
+        // ✅ CORRECTED: Use weighted moving average
+        const oldAvg = teamDoc.averageRtt;
+        const oldCount = teamDoc.sampleCount;
+        const newAvg = Math.round((oldAvg * oldCount + rtt) / (oldCount + 1));
+        teamDoc.averageRtt = newAvg;
+        teamDoc.sampleCount = oldCount + 1;
         await teamDoc.save();
       }
 
@@ -200,8 +209,10 @@ const latencyWorker = new Worker(
         : rtt;
 
       // Cache in Redis (for fast access by OpenResty and dashboard)
-      await redisInternal.setEx(`team:latency:${project_id}`, 3600, String(teamAvg));
-      await redisInternal.setEx(`user:latency:${project_id}:${username}`, 3600, String(rtt));
+      // Use setex or set with EX – standard Redis commands
+      // Assume redisInternal is an ioredis client; use setex
+      await redisInternal.setex(`team:latency:${project_id}`, 3600, String(teamAvg));
+      await redisInternal.setex(`user:latency:${project_id}:${username}`, 3600, String(rtt));
 
       console.log(`[latency] ✅ Team average updated: ${teamAvg}ms for ${project_id}`);
     } catch (err) {
@@ -212,7 +223,7 @@ const latencyWorker = new Worker(
   {
     ...connectionOpts,
     prefix: 'bullmq',
-    attempts: 3, // Retry up to 3 times
+    attempts: 3,
     backoff: { type: 'exponential', delay: 1000 },
     removeOnComplete: { age: 3600 },
     removeOnFail: { age: 86400 },
@@ -236,7 +247,9 @@ async function shutdown() {
   await emailWorker.close();
   await latencyWorker.close();
   await mongoose.disconnect();
-  if (redisInternal) await redisInternal.quit().catch(() => {});
+  if (redisInternal && typeof redisInternal.quit === 'function') {
+    await redisInternal.quit().catch(() => {});
+  }
   process.exit(0);
 }
 

@@ -15,7 +15,7 @@ const docker = new Docker({ socketPath: '/var/run/docker.sock' });
 const NETWORK = process.env.DOCKER_NETWORK || 'orch-net';
 const IMAGE = process.env.PROJECT_IMAGE || 'project-container:latest';
 
-// External Redis (BullMQ)
+// Redis connections
 const REDIS_HOST = process.env.REDIS_HOST || 'redis-external';
 const REDIS_PORT = parseInt(process.env.REDIS_PORT || '6379', 10);
 const connectionOpts = {
@@ -27,7 +27,6 @@ const connectionOpts = {
 
 const externalRedis = new IORedis({ host: REDIS_HOST, port: REDIS_PORT });
 
-// Internal Redis (routes, locks, latency keys)
 const INTERNAL_REDIS_HOST = process.env.INTERNAL_REDIS_HOST || 'redis-internal';
 const INTERNAL_REDIS_PORT = parseInt(process.env.INTERNAL_REDIS_PORT || '6379', 10);
 const internalRedis = new IORedis({ host: INTERNAL_REDIS_HOST, port: INTERNAL_REDIS_PORT });
@@ -43,9 +42,11 @@ async function getRoute(projectId) {
   const raw = await internalRedis.hget('routes', projectId);
   return raw ? JSON.parse(raw) : null;
 }
+
 async function setRoute(projectId, route) {
   await internalRedis.hset('routes', projectId, JSON.stringify(route));
 }
+
 async function removeRoute(projectId) {
   await internalRedis.hdel('routes', projectId);
 }
@@ -56,11 +57,72 @@ async function lockProject(projectId) {
   const result = await internalRedis.set(key, 'busy', 'EX', LOCK_TTL, 'NX');
   return result === 'OK';
 }
+
 async function unlockProject(projectId) {
   await internalRedis.del(`lock:project:${projectId}`);
 }
 
 // ---------- Container Management ----------
+
+/** Get container info; returns null if not found */
+async function getContainerInfo(containerName) {
+  try {
+    const containers = await docker.listContainers({ all: true, filters: { name: [containerName] } });
+    if (containers.length === 0) return null;
+    const container = docker.getContainer(containers[0].Id);
+    const inspect = await container.inspect();
+    return {
+      container,
+      isRunning: inspect.State.Running,
+      isPaused: inspect.State.Paused,
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+/** Sync routes to container – returns true only if sync succeeds */
+async function syncProjectContainer(containerName, timeout = 30000) {
+  const baseUrl = `http://${containerName}:3000`;
+  const start = Date.now();
+  let healthOk = false;
+
+  // Wait for health endpoint
+  while (Date.now() - start < timeout) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2000);
+      const res = await fetch(`${baseUrl}/health`, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (res.ok) {
+        healthOk = true;
+        break;
+      }
+    } catch (_) { /* ignore */ }
+    await new Promise(r => setTimeout(r, 500));
+  }
+
+  if (!healthOk) {
+    console.error(`[sync] Health check failed for ${containerName}`);
+    return false;
+  }
+
+  // Now trigger sync
+  try {
+    const syncRes = await fetch(`${baseUrl}/internal/sync`, { method: 'POST' });
+    if (!syncRes.ok) {
+      console.error(`[sync] /internal/sync returned ${syncRes.status} for ${containerName}`);
+      return false;
+    }
+    await syncRes.json();
+    return true;
+  } catch (err) {
+    console.error(`[sync] Error syncing ${containerName}:`, err.message);
+    return false;
+  }
+}
+
+/** Ensure the project container is running AND synced */
 async function ensureProjectContainerRunning(projectId) {
   const name = containerNameFor(projectId);
   const info = await getContainerInfo(name);
@@ -68,15 +130,23 @@ async function ensureProjectContainerRunning(projectId) {
 
   if (info.isPaused) {
     await info.container.unpause();
-    await syncProjectContainer(name);
+    const synced = await syncProjectContainer(name);
+    if (!synced) return false;
   } else if (!info.isRunning) {
     await info.container.start();
-    await syncProjectContainer(name);
+    const synced = await syncProjectContainer(name);
+    if (!synced) return false;
+  } else {
+    // Running, but ensure sync (maybe container restarted without sync)
+    await syncProjectContainer(name); // ignore failure? We'll still return true if sync fails? Better to check.
+    // We'll not require sync for already running containers to avoid failing if sync fails unexpectedly.
+    // But we'll log.
   }
   await setRoute(projectId, { containerName: name, status: 'running' });
   return true;
 }
 
+/** Ensure container exists and is in desired state (active or inactive) */
 async function ensureProjectContainer(projectId, isActive) {
   const name = containerNameFor(projectId);
   const info = await getContainerInfo(name);
@@ -89,18 +159,25 @@ async function ensureProjectContainer(projectId, isActive) {
     return true;
   }
 
+  // Need to run
   if (info) {
     if (info.isPaused) {
       await info.container.unpause();
-      await syncProjectContainer(name);
+      const synced = await syncProjectContainer(name);
+      if (!synced) return false;
     } else if (!info.isRunning) {
       await info.container.start();
-      await syncProjectContainer(name);
+      const synced = await syncProjectContainer(name);
+      if (!synced) return false;
+    } else {
+      // Already running; ensure sync (non‑blocking)
+      await syncProjectContainer(name).catch(() => {});
     }
     await setRoute(projectId, { containerName: name, status: 'running' });
     return true;
   }
 
+  // Container doesn't exist – create new
   const locked = await lockProject(projectId);
   if (!locked) throw new Error(`Project ${projectId} locked`);
 
@@ -109,7 +186,7 @@ async function ensureProjectContainer(projectId, isActive) {
     let container;
     if (poolContainer) {
       container = poolContainer;
-      console.log(`[update] Acquired pool container for ${projectId}`);
+      console.log(`[ensure] Acquired pool container for ${projectId}`);
     } else {
       const internalRedisUrl = `redis://${INTERNAL_REDIS_HOST}:${INTERNAL_REDIS_PORT}`;
       container = await docker.createContainer({
@@ -124,8 +201,14 @@ async function ensureProjectContainer(projectId, isActive) {
         Labels: { 'managed-by': 'right-system' },
       });
       await container.start();
-      await syncProjectContainer(name);
-      console.log(`[update] Created new container for ${projectId}`);
+      console.log(`[ensure] Created new container for ${projectId}`);
+    }
+    const synced = await syncProjectContainer(name);
+    if (!synced) {
+      // If sync fails, stop and remove the container to avoid broken state
+      await container.stop().catch(() => {});
+      await container.remove().catch(() => {});
+      throw new Error(`Sync failed for container ${name}`);
     }
     await setRoute(projectId, { containerName: name, status: 'running' });
     replenishPool().catch(() => {});
@@ -135,7 +218,7 @@ async function ensureProjectContainer(projectId, isActive) {
   }
 }
 
-// ---------- Call Project Container ----------
+/** Call the project container's internal API (with retries) */
 async function callProjectContainer(projectId, method, path, body, retries = 5, delay = 2000) {
   let lastError;
   for (let i = 0; i < retries; i++) {
@@ -155,54 +238,6 @@ async function callProjectContainer(projectId, method, path, body, retries = 5, 
     }
   }
   throw new Error(`Failed after ${retries} attempts: ${lastError.message}`);
-}
-
-// ---------- Sync Helper ----------
-async function syncProjectContainer(containerName, timeout = 30000) {
-  const baseUrl = `http://${containerName}:3000`;
-  const start = Date.now();
-  let healthOk = false;
-
-  while (Date.now() - start < timeout) {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 2000);
-      const res = await fetch(`${baseUrl}/health`, { signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (res.ok) {
-        healthOk = true;
-        break;
-      }
-    } catch (_) { /* ignore */ }
-    await new Promise(r => setTimeout(r, 500));
-  }
-
-  if (!healthOk) return false;
-
-  try {
-    const syncRes = await fetch(`${baseUrl}/internal/sync`, { method: 'POST' });
-    if (!syncRes.ok) return false;
-    await syncRes.json();
-    return true;
-  } catch (_) {
-    return true; // sync is optional; container is already healthy
-  }
-}
-
-async function getContainerInfo(containerName) {
-  try {
-    const containers = await docker.listContainers({ all: true, filters: { name: [containerName] } });
-    if (containers.length === 0) return null;
-    const container = docker.getContainer(containers[0].Id);
-    const inspect = await container.inspect();
-    return {
-      container,
-      isRunning: inspect.State.Running,
-      isPaused: inspect.State.Paused,
-    };
-  } catch (_) {
-    return null;
-  }
 }
 
 // ---------- Pool Management ----------
@@ -238,7 +273,13 @@ async function acquirePoolContainer(targetName, projectId) {
       Labels: { 'managed-by': 'right-system' },
     });
     await newContainer.start();
-    await syncProjectContainer(targetName);
+    const synced = await syncProjectContainer(targetName);
+    if (!synced) {
+      // Rollback: remove the container and throw
+      await newContainer.stop().catch(() => {});
+      await newContainer.remove().catch(() => {});
+      throw new Error(`Sync failed for pool-acquired container ${targetName}`);
+    }
     return newContainer;
   } finally {
     await internalRedis.del(POOL_LOCK_KEY).catch(() => {});
@@ -258,7 +299,7 @@ async function replenishPool() {
     const internalRedisUrl = `redis://${INTERNAL_REDIS_HOST}:${INTERNAL_REDIS_PORT}`;
     for (let i = 0; i < need; i++) {
       const name = `proj-pool-${Date.now()}-${i}`;
-      await docker.createContainer({
+      const container = await docker.createContainer({
         Image: IMAGE,
         name,
         Env: [`PROJECT_ID=pool-replenish-${i}`, `INTERNAL_REDIS_URL=${internalRedisUrl}`],
@@ -268,7 +309,9 @@ async function replenishPool() {
           LogConfig: { Type: "json-file", Config: { "max-size": "5m", "max-file": "2" } }
         },
         Labels: { 'managed-by': 'pool' },
-      }).then(c => c.start());
+      });
+      await container.start();
+      // No need to sync pool containers; they are idle and will be synced when assigned.
     }
   } catch (err) {
     console.error('[pool] Replenish error:', err.message);
@@ -293,14 +336,16 @@ const projectWorker = new Worker(
         return;
       }
 
+      // Attempt to wake up if container exists but not running
       if (existingRoute && existingRoute.containerName) {
         const ok = await ensureProjectContainerRunning(projectId);
         if (ok) {
-          console.log(`[create] Existing container for ${projectId} is now running`);
+          console.log(`[create] Existing container for ${projectId} is now running and synced`);
           return;
         }
       }
 
+      // Container doesn't exist or wake failed – create fresh
       const locked = await lockProject(projectId);
       if (!locked) throw new Error(`Project ${projectId} locked`);
 
@@ -326,10 +371,20 @@ const projectWorker = new Worker(
             Labels: { 'managed-by': 'right-system' },
           });
           await container.start();
-          await syncProjectContainer(name);
           console.log(`[create] Created new container for ${projectId}`);
         }
 
+        // syncProjectContainer already called inside acquirePoolContainer or we need to call it
+        // For new creation, we need to sync
+        if (!poolContainer) {
+          const synced = await syncProjectContainer(name);
+          if (!synced) {
+            await container.stop().catch(() => {});
+            await container.remove().catch(() => {});
+            throw new Error(`Sync failed for new container ${name}`);
+          }
+        }
+        // If poolContainer, sync was done inside acquirePoolContainer
         await setRoute(projectId, { containerName: name, status: 'running' });
         replenishPool().catch(() => {});
       } finally {
@@ -355,7 +410,7 @@ const projectWorker = new Worker(
       if (!locked) throw new Error(`Project ${projectId} locked`);
       try {
         const route = await getRoute(projectId);
-        if (route) {
+        if (route && route.containerName) {
           const container = docker.getContainer(route.containerName);
           await container.stop().catch(() => {});
           await container.remove().catch(() => {});
@@ -393,7 +448,7 @@ const mockSyncWorker = new Worker(
 
     let route = await getRoute(projectId);
 
-    // 1. If project exists but is sleeping, WAKE IT UP automatically
+    // 1. If project exists but is sleeping, WAKE IT UP (and sync)
     if (route && route.status !== 'running') {
       console.log(`[mockSyncQueue] Waking up sleeping container for project ${projectId}...`);
       const started = await ensureProjectContainerRunning(projectId);
@@ -401,20 +456,20 @@ const mockSyncWorker = new Worker(
       route = await getRoute(projectId);
     }
 
-    // 2. If route is still null, it means projectQueue is still building it. Throw to let BullMQ retry.
+    // 2. If route is still null/not running, it means container is being built. Retry.
     if (!route || route.status !== 'running') {
       console.log(`[mockSyncQueue] Container for ${projectId} not ready yet. Retrying...`);
       throw new Error(`Project ${projectId} container not ready. BullMQ will retry.`);
     }
 
-    // 3. Normalize Payload (Fixes the urlPath vs urlpath case mismatch)
+    // 3. Normalize payload (ensure urlpath exists)
     const body = versionData ? {
       ...versionData,
-      urlpath: versionData.urlPath || versionData.urlpath // Ensure 'urlpath' always exists
+      urlpath: versionData.urlPath || versionData.urlpath || ''
     } : {
       version: job.data.version,
       method: job.data.method,
-      urlpath: job.data.urlpath || job.data.urlPath,
+      urlpath: job.data.urlpath || job.data.urlPath || '',
       definition: job.data.apihistorydata,
     };
 
@@ -467,11 +522,7 @@ const importWorker = new Worker(
 
     job.updateProgress(10);
 
-    const existingProject = await Project.findOne({ 
-      username, 
-      projectname: projectName 
-    });
-
+    const existingProject = await Project.findOne({ username, projectname: projectName });
     let projectId;
     let isNewProject = false;
 
@@ -565,7 +616,6 @@ const importWorker = new Worker(
 
     const mockSyncQueue = new Queue('mockSyncQueue', { connection: connectionOpts });
     
-    // Push API additions to the queue (mockSyncQueue will naturally wait for projectQueue due to the retries added above)
     for (const endpoint of endpointsArray) {
       for (const ver of endpoint.versions) {
         await mockSyncQueue.add('sync-api', {
@@ -606,6 +656,7 @@ const importWorker = new Worker(
   }
 );
 
+// Event listeners for import worker
 importWorker.on('completed', (job) => {
   console.log(`[openapi-import] ✅ Job ${job.id} completed successfully`);
 });
@@ -701,7 +752,6 @@ async function ensureProjectImage() {
 
 // ---------- Startup ----------
 async function startup() {
-  // Connect to MongoDB
   const MONGO_URI = process.env.MONGO_URI || 'mongodb://host.docker.internal:27017/mockapi';
   await mongoose.connect(MONGO_URI);
   console.log('[worker-server] MongoDB connected');
@@ -734,7 +784,7 @@ async function startup() {
 
   await ensureProjectImage();
 
-  // 🛑 SAFER CLEANUP – only delete keys for OUR queues (avoid affecting other services)
+  // Clean up old BullMQ keys (only for our queues)
   const ourQueuePrefixes = ['bull:projectQueue:', 'bull:mockSyncQueue:', 'bull:latency-store:', 'bull:openapi-import:'];
   for (const prefix of ourQueuePrefixes) {
     try {
@@ -762,20 +812,15 @@ startup().catch(err => {
 async function gracefulShutdown() {
   console.log('[worker-server] Received shutdown signal, cleaning up...');
 
-  // Close workers
   await projectWorker.close();
   await mockSyncWorker.close();
   await latencyWorker.close();
   await importWorker.close();
 
-  // Close Redis clients
   await internalRedis.quit().catch(() => {});
   await externalRedis.quit().catch(() => {});
-
-  // Close MongoDB
   await mongoose.disconnect().catch(() => {});
 
-  // Close internal HTTP servers
   routeResolver.close(() => {});
   pauseServer.close(() => {});
 
