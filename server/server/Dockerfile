@@ -7,7 +7,7 @@ RUN npm install --omit=dev && npm cache clean --force
 
 COPY . .
 
-# ---- Production stage ----
+# ---- Production stage  ----
 FROM node:20-alpine
 WORKDIR /app
 
