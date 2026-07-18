@@ -8,5 +8,3 @@ export const authenticateUser = async (username, password) => {
   });
   return response.ok;
 };
-
-
