@@ -2,11 +2,14 @@
 import React, {
   useState, useEffect, useMemo, useCallback, useRef, memo
 } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid
 } from 'recharts';
 import { socket } from '../socket';
+import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -53,7 +56,6 @@ const chartCache = new ChartCache();
 // Helper to build full path including version prefix
 const buildFullPath = (ver, api) => {
   const base = ver.urlPath || api.path || '';
-  // Ensure base starts with '/'
   const normalizedBase = base.startsWith('/') ? base : `/${base}`;
   return `/${ver.version}${normalizedBase}`;
 };
@@ -100,6 +102,11 @@ VersionItem.displayName = 'VersionItem';
 // Main Dashboard Component
 // ============================================================
 function Dashboard() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const { theme } = useTheme();
+  const isWhiteTheme = theme === 'white';
+
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -159,7 +166,7 @@ function Dashboard() {
         setExpandedProjects(newExpProj);
         setExpandedApis(newExpApi);
 
-        // 🔥 Auto-select the first version with FULL path
+        // Auto-select the first version with full path
         const firstProj = projs[0];
         const firstApi = firstProj?.apis?.[0];
         const firstVer = firstApi?.versions?.[0];
@@ -365,7 +372,6 @@ function Dashboard() {
 
   // ---------- Prefetch on hover ----------
   const prefetchVersion = useCallback((ver, projId, api) => {
-    // 🔥 Use full path for cache key and API call
     const fullPath = buildFullPath(ver, api);
     const cacheKey = `stats:${projId}:${fullPath}:${api.method}:${timeRange}`;
     if (chartCache.has(cacheKey)) {
@@ -400,7 +406,6 @@ function Dashboard() {
 
   // ---------- Version selection ----------
   const handleVersionSelect = useCallback((ver, projId, api) => {
-    // 🔥 Use full path
     const fullPath = buildFullPath(ver, api);
     console.log('[Dashboard] 🎯 Version selected:', ver.label, 'for', projId, fullPath);
     setSelectedVersion({
@@ -678,87 +683,124 @@ function Dashboard() {
     );
   }
 
-  return (
-    <div className="flex h-screen bg-zinc-950 text-zinc-300 overflow-hidden">
-      {/* Sidebar */}
-      <div className="w-72 bg-zinc-900 border-r border-zinc-800 flex flex-col flex-shrink-0">
-        <div className="p-4 border-b border-zinc-800 text-xs font-semibold text-zinc-500 uppercase flex justify-between">
-          <span>📂 Explorer</span>
-          <button
-            onClick={() => window.location.reload()}
-            className="text-zinc-600 hover:text-zinc-300 transition-colors"
-            aria-label="Reload dashboard"
-          >
-            ⟳
-          </button>
-        </div>
-        <div className="p-3">
-          <input
-            type="text"
-            placeholder="Search..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm text-zinc-300 placeholder-zinc-500 focus:outline-none focus:border-blue-500"
-            aria-label="Search endpoints"
-          />
-        </div>
-        <div className="flex-1 overflow-y-auto px-2 py-2 custom-scrollbar">
-          <ul className="space-y-1" role="tree">
-            {renderTree}
-          </ul>
-        </div>
-      </div>
+  // Determine current project name from selectedVersion
+  const currentProjectName = selectedVersion
+    ? projects.find(p => p.id === selectedVersion.projectId)?.name || 'Project'
+    : 'No Project';
 
-      {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden p-6">
-        <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
-          <h1 className="text-xl font-medium text-white truncate">
-            {selectedVersion
-              ? `${selectedVersion.label} – ${selectedVersion.path || ''} (${selectedVersion.method})`
-              : 'API Performance'}
-          </h1>
-          <div className="flex items-center gap-3 flex-wrap">
+  // Theme classes for header
+  const headerBg = isWhiteTheme ? 'bg-white border-gray-200' : 'bg-zinc-900 border-zinc-800';
+  const headerText = isWhiteTheme ? 'text-gray-800' : 'text-white';
+
+  return (
+    <div className="h-screen flex flex-col bg-zinc-950 text-zinc-300 overflow-hidden">
+      {/* ========== TOP HEADER ========== */}
+      <header className={`h-12 shrink-0 flex items-center px-4 border-b ${headerBg}`}>
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => navigate('/setting')} // 👈 Navigates to Settings page
+            className={`flex items-center gap-2 text-sm transition-colors ${
+              isWhiteTheme ? 'text-gray-600 hover:text-gray-900' : 'text-zinc-400 hover:text-white'
+            }`}
+            aria-label="Go to Settings"
+          >
+            <span className="text-lg">←</span>
+            <span>Back</span>
+          </button>
+          <span className={`text-sm font-medium ${headerText}`}>Dashboard</span>
+        </div>
+        <div className="flex-1 flex items-center justify-end gap-4 text-sm">
+          <span className={isWhiteTheme ? 'text-gray-500' : 'text-zinc-500'}>
+            {currentProjectName}
+          </span>
+          <span className={isWhiteTheme ? 'text-gray-400' : 'text-zinc-600'}>
+            {user?.username || 'Guest'}
+          </span>
+        </div>
+      </header>
+
+      {/* ========== SIDEBAR + MAIN CONTENT ========== */}
+      <div className="flex flex-1 min-h-0">
+        {/* Sidebar */}
+        <div className="w-72 bg-zinc-900 border-r border-zinc-800 flex flex-col flex-shrink-0">
+          <div className="p-4 border-b border-zinc-800 text-xs font-semibold text-zinc-500 uppercase flex justify-between">
+            <span>📂 Explorer</span>
             <button
-              onClick={refreshData}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-white text-sm transition"
+              onClick={() => window.location.reload()}
+              className="text-zinc-600 hover:text-zinc-300 transition-colors"
+              aria-label="Reload dashboard"
             >
-              🔄 Refresh
+              ⟳
             </button>
-            <select
-              value={timeRange}
-              onChange={(e) => setTimeRange(e.target.value)}
-              className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm text-zinc-300 focus:outline-none focus:border-blue-500"
-              aria-label="Select time range"
-            >
-              <option value="1h">1 hour</option>
-              <option value="6h">6 hours</option>
-              <option value="24h">24 hours</option>
-              <option value="7d">7 days</option>
-            </select>
-            <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer">
-              <span aria-hidden="true">🔄</span>
-              <input
-                type="checkbox"
-                checked={autoRefresh}
-                onChange={() => setAutoRefresh((prev) => !prev)}
-                className="w-4 h-4 accent-blue-500"
-                aria-label="Toggle auto-refresh"
-              />
-              Auto-refresh
-            </label>
+          </div>
+          <div className="p-3">
+            <input
+              type="text"
+              placeholder="Search..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm text-zinc-300 placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+              aria-label="Search endpoints"
+            />
+          </div>
+          <div className="flex-1 overflow-y-auto px-2 py-2 custom-scrollbar">
+            <ul className="space-y-1" role="tree">
+              {renderTree}
+            </ul>
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
-          {renderCharts()}
-          <div className="mt-4 text-xs text-zinc-600 text-center border-t border-zinc-800 pt-3">
-            {autoRefresh && (
-              <span className="text-blue-400 mr-2">⏳ Auto-refreshing every 30s •</span>
-            )}
-            {socket?.connected && (
-              <span className="text-emerald-400 mr-2">⚡ Real‑time updates active</span>
-            )}
-            All timestamps in your local timezone
+        {/* Main content */}
+        <div className="flex-1 flex flex-col overflow-hidden p-6">
+          <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
+            <h1 className="text-xl font-medium text-white truncate">
+              {selectedVersion
+                ? `${selectedVersion.label} – ${selectedVersion.path || ''} (${selectedVersion.method})`
+                : 'API Performance'}
+            </h1>
+            <div className="flex items-center gap-3 flex-wrap">
+              <button
+                onClick={refreshData}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-white text-sm transition"
+              >
+                🔄 Refresh
+              </button>
+              <select
+                value={timeRange}
+                onChange={(e) => setTimeRange(e.target.value)}
+                className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm text-zinc-300 focus:outline-none focus:border-blue-500"
+                aria-label="Select time range"
+              >
+                <option value="1h">1 hour</option>
+                <option value="6h">6 hours</option>
+                <option value="24h">24 hours</option>
+                <option value="7d">7 days</option>
+              </select>
+              <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer">
+                <span aria-hidden="true">🔄</span>
+                <input
+                  type="checkbox"
+                  checked={autoRefresh}
+                  onChange={() => setAutoRefresh((prev) => !prev)}
+                  className="w-4 h-4 accent-blue-500"
+                  aria-label="Toggle auto-refresh"
+                />
+                Auto-refresh
+              </label>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto">
+            {renderCharts()}
+            <div className="mt-4 text-xs text-zinc-600 text-center border-t border-zinc-800 pt-3">
+              {autoRefresh && (
+                <span className="text-blue-400 mr-2">⏳ Auto-refreshing every 30s •</span>
+              )}
+              {socket?.connected && (
+                <span className="text-emerald-400 mr-2">⚡ Real‑time updates active</span>
+              )}
+              All timestamps in your local timezone
+            </div>
           </div>
         </div>
       </div>
@@ -767,6 +809,3 @@ function Dashboard() {
 }
 
 export default Dashboard;
-
-
-
