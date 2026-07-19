@@ -9,6 +9,7 @@ const mongoose = require('mongoose');
 // ---------- MODELS ----------
 const Project = require('./models/Project');
 const ProjectApiHistory = require('./models/ProjectApiHistory');
+const SystemEventLog = require('./models/SystemEventLog');
 
 // ---------- CONFIG ----------
 const docker = new Docker({ socketPath: '/var/run/docker.sock' });
@@ -18,7 +19,7 @@ const IMAGE = process.env.PROJECT_IMAGE || 'project-container:latest';
 console.log('[worker-server] 🚀 Starting worker-server...');
 console.log(`[worker-server] 📌 Network: ${NETWORK}, Image: ${IMAGE}`);
 
-// Redis connections
+// ---------- Redis connections ----------
 const REDIS_HOST = process.env.REDIS_HOST || 'redis-external';
 const REDIS_PORT = parseInt(process.env.REDIS_PORT || '6379', 10);
 const connectionOpts = {
@@ -29,12 +30,13 @@ const connectionOpts = {
 };
 
 console.log(`[worker-server] 📌 External Redis: ${REDIS_HOST}:${REDIS_PORT}`);
-
 const externalRedis = new IORedis({ host: REDIS_HOST, port: REDIS_PORT });
+externalRedis.on('error', (err) => console.error('[Redis-external] Error:', err));
 
 const INTERNAL_REDIS_HOST = process.env.INTERNAL_REDIS_HOST || 'redis-internal';
 const INTERNAL_REDIS_PORT = parseInt(process.env.INTERNAL_REDIS_PORT || '6379', 10);
 const internalRedis = new IORedis({ host: INTERNAL_REDIS_HOST, port: INTERNAL_REDIS_PORT });
+internalRedis.on('error', (err) => console.error('[Redis-internal] Error:', err));
 
 console.log(`[worker-server] 📌 Internal Redis: ${INTERNAL_REDIS_HOST}:${INTERNAL_REDIS_PORT}`);
 
@@ -176,9 +178,8 @@ async function waitForHealth(containerName, timeout = 30000) {
 }
 
 /**
- * FIXED: Ensure the project container is running (NO RE-SYNC)
+ * Ensure the project container is running (NO RE-SYNC)
  * Used by mockSyncQueue when it needs to wake a sleeping project
- * Just starts/unpauses + health check (no full sync)
  */
 async function ensureProjectContainerRunning(projectId) {
   console.log(`[ensureRunning] 🏃 Ensuring project ${projectId} is running (no re-sync)...`);
@@ -226,18 +227,8 @@ async function ensureProjectContainerRunning(projectId) {
 }
 
 /**
- * FIXED: Ensure container exists and is in desired state (active or inactive)
- * NEW LOGIC:
- * 1. Check actual container state first
- * 2. If ACTIVE requested:
- *    - If already running → do nothing (idempotent)
- *    - If paused → resume (no re-sync)
- *    - If stopped → start (no re-sync)
- *    - If doesn't exist → create new + sync (first time only)
- * 3. If INACTIVE requested:
- *    - If running → pause (stop without sync)
- *    - If paused/stopped → do nothing (already inactive)
- * 4. Always sync Redis state with actual container state
+ * Ensure container exists and is in desired state (active or inactive)
+ * Idempotent – no re‑sync when resuming.
  */
 async function ensureProjectContainer(projectId, isActive) {
   console.log(`[ensureContainer] 📦 Ensuring container for project ${projectId}, active=${isActive}`);
@@ -258,10 +249,10 @@ async function ensureProjectContainer(projectId, isActive) {
     }
 
     if (info.isRunning) {
-      console.log(`[ensureContainer] ⏹️ Container ${name} is running – pausing (stopping without re-sync)`);
+      console.log(`[ensureContainer] ⏹️ Container ${name} is running – stopping (no re-sync)`);
       await info.container.stop();
       await setRoute(projectId, { containerName: name, status: 'stopped' });
-      console.log(`[ensureContainer] ✅ Container ${name} paused – Radix tree data preserved`);
+      console.log(`[ensureContainer] ✅ Container ${name} stopped – data preserved`);
       return true;
     }
 
@@ -581,7 +572,6 @@ const projectWorker = new Worker(
       console.log(`[projectQueue] 🔄 Update action for project ${projectId}, active=${isActive}`);
       await job.updateProgress(30);
       
-      // Check current route status before updating
       const currentRoute = await getRoute(projectId);
       const currentStatus = currentRoute?.status || 'unknown';
       const desiredStatus = (isActive === true || isActive === 'true') ? 'running' : 'stopped';
@@ -640,10 +630,10 @@ const projectWorker = new Worker(
     backoff: { type: 'exponential', delay: 2000 },
     removeOnComplete: { age: 3600 },
     removeOnFail: { age: 86400 },
-    lockDuration: 900000,          // 15 minutes (increased from 2 min) - Docker ops take time
-    stalledInterval: 300000,        // Check every 5 min (increased from 1 min) - less noise
-    maxStalledCount: 2,             // Reduce max stalled count
-    lockRenewTime: 30000,           // Renew lock every 30s to keep it fresh
+    lockDuration: 900000,
+    stalledInterval: 300000,
+    maxStalledCount: 2,
+    lockRenewTime: 30000,
   }
 );
 
@@ -710,10 +700,10 @@ const mockSyncWorker = new Worker(
     backoff: { type: 'exponential', delay: 3000 },
     removeOnComplete: { age: 3600 },
     removeOnFail: { age: 86400 },
-    lockDuration: 300000,          // 5 minutes (increased from 1 min) - API sync can take time
-    stalledInterval: 120000,       // Check every 2 min (increased from 30s)
+    lockDuration: 300000,
+    stalledInterval: 120000,
     maxStalledCount: 2,
-    lockRenewTime: 30000,          // Renew lock every 30s
+    lockRenewTime: 30000,
   }
 );
 
@@ -742,7 +732,7 @@ const latencyWorker = new Worker(
 );
 
 // ================================================================
-// WORKER 4: OPENAPI IMPORT
+// WORKER 4: OPENAPI IMPORT (with real-time publish & human‑readable project ID)
 // ================================================================
 console.log('[worker-server] 📡 Creating openapi-import worker...');
 const importWorker = new Worker(
@@ -754,19 +744,45 @@ const importWorker = new Worker(
 
     await job.updateProgress(10);
 
+    // 🔥 Generate human‑readable project ID: username_sanitizedProjectName
+    const sanitized = projectName.replace(/[^a-zA-Z0-9]/g, '_');
+    const projectId = `${username}_${sanitized}`;
+    console.log(`[openapi-import] 📌 Generated project ID: ${projectId}`);
+
     const existingProject = await Project.findOne({ username, projectname: projectName });
-    let projectId;
     let isNewProject = false;
 
     if (existingProject) {
-      projectId = existingProject.id;
-      console.log(`[openapi-import] 📂 Project "${projectName}" exists (ID: ${projectId}) – updating`);
-    } else {
-      projectId = uuidv4();
+      // If project exists, use its ID (could be different from our generated one)
+      // To be safe, we should use the existing project ID, not regenerate.
+      // But we want consistent IDs, so we'll check if the project exists with the generated ID.
+      // For simplicity, we'll look for the project with the generated ID.
+      let projectDoc = await Project.findOne({ id: projectId });
+      if (!projectDoc) {
+        // If no project with that ID, but the user has a project with that name, update its ID? That's messy.
+        // Better: use the existing project ID if found, else create new with generated ID.
+        // We'll search by username+projectname, and if found, use its ID.
+        if (existingProject) {
+          projectId = existingProject.id; // override with existing ID
+          console.log(`[openapi-import] 📂 Project exists with ID: ${projectId} – updating`);
+        }
+      } else {
+        // Project exists with the generated ID, update it.
+        console.log(`[openapi-import] 📂 Project exists with ID: ${projectId} – updating`);
+      }
+    }
+
+    // Now ensure we have a final projectId
+    let finalProjectId = projectId;
+    let isNew = false;
+
+    let projectDoc = await Project.findOne({ id: finalProjectId });
+    if (!projectDoc) {
+      // Create new
       const invitationCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-      console.log(`[openapi-import] 🆕 Creating new project "${projectName}" with ID ${projectId}`);
+      console.log(`[openapi-import] 🆕 Creating new project "${projectName}" with ID ${finalProjectId}`);
       const newProject = new Project({
-        id: projectId,
+        id: finalProjectId,
         projectname: projectName,
         username: username,
         invitationCode,
@@ -775,9 +791,14 @@ const importWorker = new Worker(
         createdAt: new Date().toISOString()
       });
       await newProject.save();
-      isNewProject = true;
-      console.log(`[openapi-import] ✅ Project ${projectId} created`);
+      isNew = true;
+      console.log(`[openapi-import] ✅ Project ${finalProjectId} created`);
+    } else {
+      console.log(`[openapi-import] 📂 Project "${projectName}" exists (ID: ${finalProjectId}) – updating`);
     }
+
+    // For backward compatibility, if we used existing project ID, we set isNewProject appropriately.
+    // We'll use isNew to know if we need to create ProjectApiHistory from scratch.
 
     await job.updateProgress(30);
 
@@ -796,10 +817,13 @@ const importWorker = new Worker(
           endpointsMap[fullPath] = { baseUrlPath: fullPath, versions: [] };
         }
         
+        const version = 'v1';
+        const versionedPath = `/${version}${fullPath}`;
+        
         endpointsMap[fullPath].versions.push({
           method: method.toUpperCase(),
-          urlPath: fullPath,
-          version: 'v1',
+          urlPath: versionedPath,
+          version: version,
           protocol: 'https',
           statusCode: 200,
           requestBody: operation.requestBody?.content?.['application/json']?.schema?.example || null,
@@ -812,17 +836,19 @@ const importWorker = new Worker(
     console.log(`[openapi-import] 📊 Extracted ${endpointsArray.length} endpoints from spec`);
     await job.updateProgress(50);
 
-    if (isNewProject) {
+    // ---------- Save ProjectApiHistory ----------
+    if (isNew) {
       const projectApiHistory = new ProjectApiHistory({
-        projectID: projectId,
-        projectCode: projectId,
+        projectID: finalProjectId,
+        projectCode: finalProjectId,
         accessByUsernames: [username],
         endpoints: endpointsArray,
       });
       await projectApiHistory.save();
       console.log(`[openapi-import] ✅ ProjectApiHistory saved for new project`);
     } else {
-      const history = await ProjectApiHistory.findOne({ projectID: projectId });
+      // Update existing
+      const history = await ProjectApiHistory.findOne({ projectID: finalProjectId });
       if (history) {
         history.endpoints = endpointsArray;
         history.updatedAt = new Date();
@@ -830,8 +856,8 @@ const importWorker = new Worker(
         console.log(`[openapi-import] ✅ ProjectApiHistory updated for existing project`);
       } else {
         const projectApiHistory = new ProjectApiHistory({
-          projectID: projectId,
-          projectCode: projectId,
+          projectID: finalProjectId,
+          projectCode: finalProjectId,
           accessByUsernames: [username],
           endpoints: endpointsArray,
         });
@@ -840,13 +866,46 @@ const importWorker = new Worker(
       }
     }
 
+    // ---------- PUBLISH TO REDIS FOR REAL-TIME UPDATES ----------
+    try {
+      await externalRedis.publish('api_history_update', JSON.stringify({ projectId: finalProjectId }));
+      console.log(`[openapi-import] 📤 Published API history update for ${finalProjectId}`);
+    } catch (err) {
+      console.error('[openapi-import] Failed to publish history update:', err);
+    }
+
+    // ---------- Create SystemEventLog entries ----------
+    console.log(`[openapi-import] 📝 Creating SystemEventLog entries for ${endpointsArray.length} endpoints...`);
+    const systemLogs = [];
+    for (const endpoint of endpointsArray) {
+      for (const ver of endpoint.versions) {
+        systemLogs.push({
+          projectId: finalProjectId,
+          username: username,
+          action: 'created',
+          method: ver.method,
+          url: ver.urlPath,
+          version: ver.version,
+          accessByUsername: [username],
+          statusCode: 201,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        });
+      }
+    }
+    if (systemLogs.length > 0) {
+      await SystemEventLog.insertMany(systemLogs);
+      console.log(`[openapi-import] ✅ Created ${systemLogs.length} system event logs`);
+    }
+
     await job.updateProgress(70);
 
+    // ---------- Queue container and sync jobs ----------
     const projectQueue = new Queue('projectQueue', { connection: connectionOpts });
-    console.log(`[openapi-import] 🏗️ Adding ${isNewProject ? 'create' : 'update'} project job to queue for ${projectId}`);
+    console.log(`[openapi-import] 🏗️ Adding ${isNew ? 'create' : 'update'} project job to queue for ${finalProjectId}`);
     await projectQueue.add('create-project', { 
-      action: isNewProject ? 'create' : 'update',
-      projectId,
+      action: isNew ? 'create' : 'update',
+      projectId: finalProjectId,
       isActive: true 
     });
 
@@ -858,7 +917,7 @@ const importWorker = new Worker(
       for (const ver of endpoint.versions) {
         await mockSyncQueue.add('sync-api', {
           action: 'set',
-          projectId,
+          projectId: finalProjectId,
           versionData: {
             version: ver.version,
             method: ver.method,
@@ -872,15 +931,15 @@ const importWorker = new Worker(
         apiCount++;
       }
     }
-    console.log(`[openapi-import] 📤 Queued ${apiCount} API sync jobs for project ${projectId}`);
+    console.log(`[openapi-import] 📤 Queued ${apiCount} API sync jobs for project ${finalProjectId}`);
 
     await job.updateProgress(100);
 
     const result = {
       name: projectName,
       endpoints: endpointsArray.length,
-      projectId,
-      isNewProject
+      projectId: finalProjectId,
+      isNewProject: isNew
     };
 
     console.log(`[openapi-import] ✅ Job ${job.id} completed:`, result);
@@ -893,10 +952,10 @@ const importWorker = new Worker(
     backoff: { type: 'exponential', delay: 5000 },
     removeOnComplete: { age: 3600 },
     removeOnFail: { age: 86400 },
-    lockDuration: 600000,          // 10 minutes - import can take time
-    stalledInterval: 120000,       // Check every 2 minutes
+    lockDuration: 600000,
+    stalledInterval: 120000,
     maxStalledCount: 2,
-    lockRenewTime: 30000,          // Renew lock every 30s
+    lockRenewTime: 30000,
   }
 );
 
@@ -936,6 +995,7 @@ const routeResolver = http.createServer(async (req, res) => {
     res.writeHead(500).end(JSON.stringify({ error: 'Internal server error' }));
   }
 });
+
 routeResolver.listen(3002, '0.0.0.0');
 console.log('[worker-server] 🌐 Route resolver listening on port 3002');
 

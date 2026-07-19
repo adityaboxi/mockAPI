@@ -70,8 +70,8 @@ console.log('[Socket] ✅ Socket.IO server initialized');
 
 let pubClient, subClient; // may remain undefined if adapter fails
 let mainRedisClient;
-let aiSubscriber, logSubscriber;
-let latencyQueue, projectQueue, mockSyncQueue;
+let aiSubscriber, logSubscriber, historySubscriber;
+let latencyQueue, projectQueue, mockSyncQueue, openapiImportQueue;
 let heartbeatInterval, dataPollingInterval;
 
 // -----------------------------------------------------------------
@@ -193,14 +193,33 @@ const startServer = async () => {
   logSubscriber.on('error', (err) => console.error('[Log Pub/Sub] Redis error:', err));
   console.log('[Redis] ✅ Log Pub/Sub listener started');
 
+  // ---------- 🆕 Redis Pub/Sub listener for API history updates ----------
+  console.log('[Redis] Setting up API history Pub/Sub listener...');
+  historySubscriber = mainRedisClient.duplicate();
+  await historySubscriber.connect();
+
+  historySubscriber.subscribe('api_history_update', (message) => {
+    try {
+      const { projectId } = JSON.parse(message);
+      console.log(`[Redis] 📨 API history update for project ${projectId}`);
+      io.to(projectId).emit('api_history_update', { projectId });
+    } catch (err) {
+      console.error('[History Pub/Sub] Failed to parse message:', err);
+    }
+  });
+  historySubscriber.on('error', (err) => console.error('[History Pub/Sub] Redis error:', err));
+  console.log('[Redis] ✅ API history Pub/Sub listener started');
+
   // ---------- BullMQ queues ----------
   console.log('[Queue] Initializing BullMQ queues...');
   const queueConnection = { connection: { url: process.env.REDIS_URL } };
-  
+
   latencyQueue = new Queue('bullmq-latency-store', queueConnection);
   projectQueue = new Queue('projectQueue', queueConnection);
   mockSyncQueue = new Queue('mockSyncQueue', queueConnection);
-  console.log('[Queue] ✅ Queues initialized: latency-store, projectQueue, mockSyncQueue');
+  openapiImportQueue = new Queue('openapi-import', queueConnection);
+
+  console.log('[Queue] ✅ Queues initialized: latency-store, projectQueue, mockSyncQueue, openapi-import');
 
   // Load email worker (just requires the file, the worker starts automatically)
   require('./queues/emailQueue');
@@ -444,7 +463,9 @@ const startServer = async () => {
     }
   });
 
-  // ---- OPENAPI IMPORT (sync) ----
+  // ================================================================
+  //  ASYNC OPENAPI IMPORT WITH JOB ID
+  // ================================================================
   app.post('/api/import-openapi', authenticateToken, upload.single('file'), async (req, res) => {
     console.log(`[API] POST /api/import-openapi (user: ${req.user.username}), file: ${req.file?.originalname}`);
     try {
@@ -473,102 +494,76 @@ const startServer = async () => {
         return res.status(400).json({ error: 'No paths found in OpenAPI spec' });
       }
 
-      const basePath = spec.basePath || '';
-      const endpointsMap = {};
-      let endpointCount = 0;
+      // ✅ FIX: Use UI-provided project name; fall back to spec title if not provided
+      const projectName = req.body.projectName?.trim() || spec.info?.title || 'Imported Project';
+      console.log(`[API] Using project name: "${projectName}"`);
 
-      Object.keys(spec.paths).forEach(rawPath => {
-        const fullPath = basePath + rawPath;
-        const pathObj = spec.paths[rawPath];
-        Object.keys(pathObj).forEach(method => {
-          if (!['get', 'post', 'put', 'delete', 'patch', 'options'].includes(method)) return;
-          const operation = pathObj[method];
-          // ✅ FIX: Store baseUrlPath versionless, urlPath versioned
-          const version = 'v1';
-          const versionedPath = `/${version}${fullPath}`;
-          if (!endpointsMap[fullPath]) {
-            endpointsMap[fullPath] = { baseUrlPath: fullPath, versions: [] };
-          }
-          endpointsMap[fullPath].versions.push({
-            method: method.toUpperCase(),
-            urlPath: versionedPath,
-            version: version,
-            protocol: 'https',
-            statusCode: 200,
-            requestBody: operation.requestBody?.content?.['application/json']?.schema?.example || null,
-            responseBody: operation.responses?.['200']?.content?.['application/json']?.schema?.example || null,
-          });
-          endpointCount++;
-        });
-      });
-
-      const endpointsArray = Object.values(endpointsMap);
-      console.log(`[API] Extracted ${endpointsArray.length} endpoints, ${endpointCount} total versions`);
-      if (endpointsArray.length === 0) {
-        console.warn('[API] No valid HTTP methods found');
-        return res.status(400).json({ error: 'No valid HTTP methods found' });
-      }
-
-      const projectId = uuidv4();
-      const invitationCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-      const projectName = spec.info?.title || 'Imported Project';
-      console.log(`[API] Creating project: ${projectName} (ID: ${projectId})`);
-
-      const newProject = new Project({
-        id: projectId,
-        projectname: projectName,
+      // Enqueue job to openapi-import queue
+      const job = await openapiImportQueue.add('import', {
+        projectName,
+        spec,
         username: req.user.username,
-        invitationCode,
-        members: [req.user.username],
-        isActive: true,
       });
-      await newProject.save();
-      console.log('[DB] Project saved');
 
-      const projectApiHistory = new ProjectApiHistory({
-        projectID: projectId,
-        projectCode: projectId,
-        accessByUsernames: [req.user.username],
-        endpoints: endpointsArray,
-      });
-      await projectApiHistory.save();
-      console.log('[DB] ProjectApiHistory saved');
-
-      console.log('[Queue] Adding create-project job to projectQueue');
-      await projectQueue.add('create-project', { action: 'create', projectId });
-
-      const syncDelay = 5000;
-      let syncJobs = 0;
-      for (const endpoint of endpointsArray) {
-        for (const ver of endpoint.versions) {
-          await mockSyncQueue.add('sync-api', {
-            action: 'set',
-            projectId,
-            versionData: {
-              version: ver.version,
-              method: ver.method,
-              urlPath: ver.urlPath,
-              protocol: ver.protocol,
-              requestBody: ver.requestBody,
-              responseBody: ver.responseBody,
-              statusCode: ver.statusCode,
-            }
-          }, { delay: syncDelay });
-          syncJobs++;
-        }
-      }
-      console.log(`[Queue] Added ${syncJobs} sync-api jobs to mockSyncQueue`);
-
-      res.status(201).json({
-        success: true,
-        projectId,
-        name: projectName,
-        endpoints: endpointsArray.length,
-        message: 'Project created. Container is starting, APIs will be synced shortly.'
+      console.log(`[API] Enqueued import job ${job.id} for project "${projectName}"`);
+      res.status(202).json({
+        jobId: job.id,
+        message: 'Import job queued. Poll /api/import-status/:jobId for progress.'
       });
     } catch (err) {
       console.error('[API] Error in import-openapi:', err);
-      res.status(500).json({ error: 'Failed to import OpenAPI: ' + err.message });
+      res.status(500).json({ error: 'Failed to queue import: ' + err.message });
+    }
+  });
+
+  // ---- IMPORT STATUS ENDPOINT ----
+  app.get('/api/import-status/:jobId', authenticateToken, async (req, res) => {
+    const { jobId } = req.params;
+    console.log(`[API] GET /api/import-status/${jobId} (user: ${req.user.username})`);
+
+    try {
+      const job = await openapiImportQueue.getJob(jobId);
+      if (!job) {
+        console.warn(`[API] Job ${jobId} not found`);
+        return res.status(404).json({ error: 'Job not found' });
+      }
+
+      const state = await job.getState();
+      const progress = job.progress || 0;
+      const result = job.returnvalue;
+
+      let status = 'processing';
+      let message = 'Processing...';
+      let detail = '';
+
+      if (state === 'completed') {
+        status = 'completed';
+        message = '✅ Import completed successfully';
+        detail = result ? `Imported ${result.endpoints} endpoints from ${result.name}` : '';
+      } else if (state === 'failed') {
+        status = 'failed';
+        message = '❌ Import failed';
+        detail = job.failedReason || 'Unknown error';
+      } else if (state === 'waiting' || state === 'active' || state === 'delayed') {
+        status = 'processing';
+        message = `⏳ Import in progress (${Math.round(progress)}%)`;
+        detail = 'The import job is being processed.';
+      } else {
+        status = 'unknown';
+        message = `Job state: ${state}`;
+      }
+
+      res.json({
+        jobId,
+        status,
+        progress,
+        message,
+        detail,
+        result: state === 'completed' ? result : undefined,
+      });
+    } catch (err) {
+      console.error('[API] Error checking status:', err);
+      res.status(500).json({ error: 'Failed to check job status' });
     }
   });
 
@@ -649,7 +644,6 @@ const startServer = async () => {
               version: ver.version,
               label: ver.version,
               latency: totalLatency,
-              // ✅ CRITICAL: Include urlPath so the frontend can query the correct versioned path
               urlPath: ver.urlPath
             };
           });
@@ -758,7 +752,7 @@ const startServer = async () => {
     }
   });
 
-  // ---- ASYNC IMPORT ROUTES ----
+  // ---- ASYNC IMPORT ROUTES (legacy, kept for compatibility) ----
   app.use('/api', importRoutes);
 
   // ================================================================
@@ -861,6 +855,7 @@ const startServer = async () => {
     if (latencyQueue) await latencyQueue.close().catch(() => {});
     if (projectQueue) await projectQueue.close().catch(() => {});
     if (mockSyncQueue) await mockSyncQueue.close().catch(() => {});
+    if (openapiImportQueue) await openapiImportQueue.close().catch(() => {});
 
     console.log('[Redis] Quitting Redis clients...');
     if (pubClient) await pubClient.quit().catch(() => {});
@@ -868,6 +863,7 @@ const startServer = async () => {
     if (mainRedisClient) await mainRedisClient.quit().catch(() => {});
     if (aiSubscriber) await aiSubscriber.quit().catch(() => {});
     if (logSubscriber) await logSubscriber.quit().catch(() => {});
+    if (historySubscriber) await historySubscriber.quit().catch(() => {});
 
     console.log('[Server] Closing HTTP server...');
     server.close(() => {
@@ -892,4 +888,3 @@ startServer().catch((err) => {
   console.error('[Server] ❌ Fatal startup error:', err);
   process.exit(1);
 });
-

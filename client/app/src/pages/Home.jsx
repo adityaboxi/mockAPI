@@ -1,3 +1,4 @@
+// src/pages/Home.jsx
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -13,8 +14,9 @@ function Home() {
   const { theme } = useTheme();
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const { clearProject, selectProject, currentProject } = useProject();
+  const { clearProject, selectProject, currentProject, projects, fetchProjects } = useProject();
 
+  // ---- Sidebar toggles (persisted in localStorage) ----
   const [isProjectListOpen, setIsProjectListOpen] = useState(() => {
     const saved = localStorage.getItem("isProjectListOpen");
     return saved !== null ? JSON.parse(saved) : true;
@@ -28,6 +30,7 @@ function Home() {
   const currentProjectId = currentProject?.id || "";
   const isWhiteTheme = theme === "white";
 
+  // ---- Persist toggles ----
   useEffect(() => {
     localStorage.setItem("isProjectListOpen", JSON.stringify(isProjectListOpen));
   }, [isProjectListOpen]);
@@ -36,6 +39,37 @@ function Home() {
     localStorage.setItem("isApiHistoryOpen", JSON.stringify(isApiHistoryOpen));
   }, [isApiHistoryOpen]);
 
+  // ---- Auto‑select first project on login ----
+  useEffect(() => {
+    const autoSelectFirstProject = async () => {
+      if (!user) return;                     // not logged in
+      if (currentProject) return;            // already selected
+
+      // If we have projects in context, use the first one
+      if (projects && projects.length > 0) {
+        const first = projects[0];
+        selectProject(first.projectname, first.id, first.invitationCode);
+        return;
+      }
+
+      // Otherwise, fetch projects if context provides a fetch function
+      if (fetchProjects) {
+        try {
+          const fetched = await fetchProjects();
+          if (fetched && fetched.length > 0) {
+            const first = fetched[0];
+            selectProject(first.projectname, first.id, first.invitationCode);
+          }
+        } catch (err) {
+          console.error("[Home] Failed to auto‑select project:", err);
+        }
+      }
+    };
+
+    autoSelectFirstProject();
+  }, [user, projects, currentProject, selectProject, fetchProjects]);
+
+  // ---- Handlers ----
   const toggleProjectList = () => setIsProjectListOpen((prev) => !prev);
   const toggleApiHistory = () => setIsApiHistoryOpen((prev) => !prev);
 
@@ -56,6 +90,7 @@ function Home() {
   const displayName = user?.username || "Guest";
   const userRole = user?.role || "guest";
 
+  // ---- Header (unchanged) ----
   const Header = () => (
     <div
       className={`h-10 shrink-0 flex items-center px-4 border-b justify-between ${
@@ -120,6 +155,7 @@ function Home() {
     </div>
   );
 
+  // ---- Main render ----
   return (
     <div
       className={`h-screen w-full font-sans flex flex-col overflow-hidden text-sm selection:bg-blue-500/30 ${
@@ -131,9 +167,10 @@ function Home() {
         {isProjectListOpen && (
           <ProjectList user={user} onProjectSelect={handleProjectSelect} theme={theme} />
         )}
-        <MainContent />
+        {/* ✅ Pass projectId to all child components that need it */}
+        <MainContent projectId={currentProjectId} />
         <ApiHistory isApiHistoryOpen={isApiHistoryOpen} projectId={currentProjectId} />
-        <ApiLog />
+        <ApiLog projectId={currentProjectId} />
       </div>
       <Footer />
     </div>
