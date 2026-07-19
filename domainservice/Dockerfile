@@ -10,4 +10,3 @@ COPY maintenance-client.html /usr/share/nginx/html/maintenance-client.html
 EXPOSE 80 443
 
 HEALTHCHECK --interval=30s --timeout=3s CMD nginx -t || exit 1
-

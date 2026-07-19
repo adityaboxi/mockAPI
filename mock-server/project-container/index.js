@@ -11,8 +11,6 @@ const app = express();
 app.set('trust proxy', true);
 
 
-
-
 // ✅ Comprsssion – reduces bandwidth
 app.use(express.json());
 app.use(cookieParser());
