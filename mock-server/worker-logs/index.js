@@ -4,10 +4,12 @@ const Redis = require('ioredis');
 const nodemailer = require('nodemailer');
 const { Worker } = require('bullmq');
 
-// Models (only those that exist in this container)
+// ---------- MODELS ----------
 const ApiCallLog = require('./models/ApiCallLog');
 const BlockedIP = require('./models/BlockedIP');
 const TeamLatency = require('./models/TeamLatency');
+const Project = require('./models/Project');
+const User = require('./models/User');
 
 // Redis client for caching (used by latency worker)
 const redisInternal = require('./config/redisInternal');
@@ -22,20 +24,19 @@ mongoose.connect(process.env.MONGO_URI)
     process.exit(1);
   });
 
-// ---------- Redis connection for raw list consumer ----------
+// ---------- Redis connection for raw consumers ----------
 const redis = new Redis(process.env.INTERNAL_REDIS_URL, {
   lazyConnect: true,
   retryStrategy: times => Math.min(times * 100, 3000)
 });
 
-// Wait for Redis to be ready before starting the consumer
 async function waitForRedis() {
   console.log('[worker-logs] ⏳ Waiting for Redis to be ready...');
   let attempts = 0;
   while (attempts < 30) {
     try {
       await redis.ping();
-      console.log('[worker-logs] ✅ Redis ready for raw consumer');
+      console.log('[worker-logs] ✅ Redis ready for raw consumers');
       return true;
     } catch (err) {
       attempts++;
@@ -62,20 +63,18 @@ transporter.verify()
   .catch(err => console.warn('[worker-logs] ⚠️ Email transporter not ready:', err.message));
 
 // ============================================================
-// CUSTOM CONSUMER: reads raw JSON from Redis list
+// CUSTOM CONSUMER: API logs (from bullmq:bullmq-api-logs:wait)
 // ============================================================
-const QUEUE_KEY = 'bullmq:bullmq-api-logs:wait';
-const DEAD_LETTER_KEY = 'bullmq:bullmq-api-logs:dead';
+const API_QUEUE_KEY = 'bullmq:bullmq-api-logs:wait';
+const API_DEAD_LETTER_KEY = 'bullmq:bullmq-api-logs:dead';
 
 async function processLogEntry(logData) {
   console.log('[api-logs] 📨 Processing log data:', JSON.stringify(logData, null, 2));
 
-  // project_id is already present in the log data
   const project_id = logData.project_id;
-
   if (!project_id) {
-    console.error('[api-logs] ❌ Missing project_id, skipping job:', logData);
-    return; // skip – no fallback needed
+    console.error('[api-logs] ❌ Missing project_id, skipping:', logData);
+    return;
   }
 
   const username = project_id.includes('_') ? project_id.split('_')[0] : null;
@@ -108,16 +107,15 @@ async function processLogEntry(logData) {
     console.log(`[api-logs] ✅ Saved log for ${project_id} | ${doc.method} ${doc.path} | ${doc.total_latency}ms (ID: ${saved._id})`);
   } catch (err) {
     console.error('[api-logs] ❌ MongoDB save error:', err.message);
-    throw err; // re-throw to move to dead-letter
+    throw err;
   }
 }
 
-// Start the consumer loop (called after Redis is ready)
-async function startConsumer() {
-  console.log('[api-logs] 📡 Starting raw list consumer...');
+async function startApiLogConsumer() {
+  console.log('[api-logs] 📡 Starting API log consumer...');
   while (true) {
     try {
-      const result = await redis.blpop(QUEUE_KEY, 0); // block forever
+      const result = await redis.blpop(API_QUEUE_KEY, 0);
       if (result) {
         const [, raw] = result;
         try {
@@ -125,20 +123,15 @@ async function startConsumer() {
           await processLogEntry(logData);
         } catch (parseErr) {
           console.error('[api-logs] ❌ Failed to parse JSON:', raw, parseErr);
-          await redis.rpush(DEAD_LETTER_KEY, raw);
+          await redis.rpush(API_DEAD_LETTER_KEY, raw);
         }
       }
     } catch (err) {
       console.error('[api-logs] ❌ Consumer error:', err);
-      await new Promise(r => setTimeout(r, 1000)); // backoff
+      await new Promise(r => setTimeout(r, 1000));
     }
   }
 }
-
-// Wait for Redis readiness, then start consumer
-waitForRedis().then(() => {
-  startConsumer().catch(err => console.error('[api-logs] ❌ Consumer fatal error:', err));
-});
 
 // ============================================================
 // BullMQ workers for email and latency
@@ -148,46 +141,89 @@ const connectionOpts = {
   connection: { url: process.env.INTERNAL_REDIS_URL },
 };
 
-// Email worker
+// ---------- Email worker (handles general emails + DoS alerts) ----------
 const emailWorker = new Worker(
   'bullmq-email-jobs',
   async (job) => {
     const data = job.data || {};
     console.log('[email] 📨 Received:', data);
-    try {
-      await transporter.sendMail({
-        from: '"mockAPI Security" <no-reply@mockapi.info>',
-        to: data.to,
-        subject: data.subject || 'Security Alert',
-        text: data.body,
-      });
-      console.log(`[email] ✅ Sent to ${data.to}`);
-    } catch (err) {
-      console.error('[email] ❌ Send failed:', err.message);
-      throw err;
-    }
-    if (data.project_id && data.ip && data.is_private) {
+
+    const { project_id, ip, is_private, path, method, username } = data;
+
+    // ---- Check if this is a DoS alert ----
+    if (project_id && ip && is_private === true) {
       try {
+        // 1. Find project in MongoDB
+        const project = await Project.findOne({ id: project_id });
+        if (!project) {
+          console.error(`[email] ❌ Project ${project_id} not found in MongoDB`);
+          return;
+        }
+
+        // 2. Get all members (owner + members array)
+        const memberUsernames = [project.username, ...(project.members || [])];
+        const uniqueMembers = [...new Set(memberUsernames)];
+
+        // 3. Fetch emails for all members
+        const users = await User.find({ username: { $in: uniqueMembers } });
+        const emails = users.map(u => u.email).filter(e => e);
+
+        if (emails.length === 0) {
+          console.warn(`[email] ⚠️ No emails found for project ${project_id}`);
+          return;
+        }
+
+        const subject = `🔴 DoS Alert – ${project.projectname} (${project_id})`;
+        const body = `Your project "${project.projectname}" (${project_id}) received over 100 private requests/sec from IP ${ip}. The IP has been banned for 24 hours.\n\nRequest path: ${path || 'N/A'}\nTime: ${new Date().toISOString()}\n\nThis is an automated security notification.`;
+
+        // 4. Send email to each member
+        for (const email of emails) {
+          await transporter.sendMail({
+            from: '"mockAPI Security" <no-reply@mockapi.info>',
+            to: email,
+            subject,
+            text: body,
+          });
+          console.log(`[email] ✅ DoS alert sent to ${email}`);
+        }
+
+        // 5. Save blocked IP in BlockedIP collection (if not already)
         const existing = await BlockedIP.findOne({
-          project_id: data.project_id,
-          ip: data.ip,
+          project_id,
+          ip,
           expiresAt: { $gt: new Date() }
         });
         if (!existing) {
           await BlockedIP.create({
-            project_id: data.project_id,
-            ip: data.ip,
+            project_id,
+            ip,
             reason: 'DoS protection',
             blockedAt: new Date(),
             expiresAt: new Date(Date.now() + 24*60*60*1000),
-            requestPath: data.path || '',
-            requestMethod: data.method || 'GET',
+            requestPath: path || '',
+            requestMethod: method || 'GET',
             isPrivate: true,
           });
-          console.log(`[email] ✅ Blocked IP ${data.ip}`);
+          console.log(`[email] ✅ Blocked IP ${ip} saved in DB`);
         }
       } catch (err) {
-        console.error('[email] ❌ Block save error:', err.message);
+        console.error('[email] ❌ DoS processing error:', err.message);
+        throw err; // retry later
+      }
+    } else {
+      // ---- Regular email (signup, password reset, etc.) ----
+      try {
+        await transporter.sendMail({
+          from: '"mockAPI" <no-reply@mockapi.info>',
+          to: data.to,
+          subject: data.subject || 'Notification',
+          text: data.body,
+          html: data.html, // optional
+        });
+        console.log(`[email] ✅ General email sent to ${data.to}`);
+      } catch (err) {
+        console.error('[email] ❌ General email send failed:', err.message);
+        throw err;
       }
     }
   },
@@ -201,7 +237,7 @@ const emailWorker = new Worker(
   }
 );
 
-// Latency worker
+// ---------- Latency worker ----------
 const latencyWorker = new Worker(
   'bullmq-latency-store',
   async (job) => {
@@ -249,6 +285,13 @@ emailWorker.on('completed', job => console.log(`[email] ✅ Completed ${job.id}`
 emailWorker.on('failed', (job, err) => console.error(`[email] ❌ Failed ${job.id}:`, err.message));
 latencyWorker.on('completed', job => console.log(`[latency] ✅ Completed ${job.id}`));
 latencyWorker.on('failed', (job, err) => console.error(`[latency] ❌ Failed ${job.id}:`, err.message));
+
+// ============================================================
+// Start all consumers
+// ============================================================
+waitForRedis().then(() => {
+  startApiLogConsumer().catch(err => console.error('[api-logs] ❌ Fatal error:', err));
+});
 
 // Graceful shutdown
 async function shutdown() {
