@@ -50,6 +50,14 @@ class ChartCache {
 
 const chartCache = new ChartCache();
 
+// Helper to build full path including version prefix
+const buildFullPath = (ver, api) => {
+  const base = ver.urlPath || api.path || '';
+  // Ensure base starts with '/'
+  const normalizedBase = base.startsWith('/') ? base : `/${base}`;
+  return `/${ver.version}${normalizedBase}`;
+};
+
 // ---------- Memoized VersionItem ----------
 const VersionItem = memo(
   ({ ver, api, projectId, isActive, onSelect, onHover }) => (
@@ -151,16 +159,17 @@ function Dashboard() {
         setExpandedProjects(newExpProj);
         setExpandedApis(newExpApi);
 
+        // 🔥 Auto-select the first version with FULL path
         const firstProj = projs[0];
         const firstApi = firstProj?.apis?.[0];
         const firstVer = firstApi?.versions?.[0];
         if (firstProj && firstApi && firstVer) {
-          const path = firstVer.urlPath || firstApi.path;
-          console.log('[Dashboard] 🎯 Auto‑selecting first version:', firstVer.label, 'with path:', path);
+          const fullPath = buildFullPath(firstVer, firstApi);
+          console.log('[Dashboard] 🎯 Auto‑selecting first version:', firstVer.label, 'with fullPath:', fullPath);
           setSelectedVersion({
             projectId: firstProj.id,
             apiId: firstApi.id,
-            path: path,
+            path: fullPath,
             method: firstApi.method,
             version: firstVer.version,
             label: firstVer.label,
@@ -356,13 +365,14 @@ function Dashboard() {
 
   // ---------- Prefetch on hover ----------
   const prefetchVersion = useCallback((ver, projId, api) => {
-    const path = ver.urlPath || api.path;
-    const cacheKey = `stats:${projId}:${path}:${api.method}:${timeRange}`;
+    // 🔥 Use full path for cache key and API call
+    const fullPath = buildFullPath(ver, api);
+    const cacheKey = `stats:${projId}:${fullPath}:${api.method}:${timeRange}`;
     if (chartCache.has(cacheKey)) {
       console.log('[Dashboard] 👆 Prefetch SKIP (already cached):', cacheKey);
       return;
     }
-    console.log('[Dashboard] 👆 Prefetch START:', ver.label, 'for', projId, path);
+    console.log('[Dashboard] 👆 Prefetch START:', ver.label, 'for', projId, fullPath);
 
     if (prefetchAbortControllerRef.current) {
       prefetchAbortControllerRef.current.abort();
@@ -371,7 +381,7 @@ function Dashboard() {
     prefetchAbortControllerRef.current = controller;
     const { signal } = controller;
 
-    const url = `${API_BASE}/api/latency-stats?project_id=${projId}&path=${encodeURIComponent(path)}&method=${api.method}&range=${timeRange}`;
+    const url = `${API_BASE}/api/latency-stats?project_id=${projId}&path=${encodeURIComponent(fullPath)}&method=${api.method}&range=${timeRange}`;
     fetch(url, { credentials: 'include', signal })
       .then(res => res.json())
       .then(data => {
@@ -390,12 +400,13 @@ function Dashboard() {
 
   // ---------- Version selection ----------
   const handleVersionSelect = useCallback((ver, projId, api) => {
-    const path = ver.urlPath || api.path;
-    console.log('[Dashboard] 🎯 Version selected:', ver.label, 'for', projId, path);
+    // 🔥 Use full path
+    const fullPath = buildFullPath(ver, api);
+    console.log('[Dashboard] 🎯 Version selected:', ver.label, 'for', projId, fullPath);
     setSelectedVersion({
       projectId: projId,
       apiId: api.id,
-      path: path,
+      path: fullPath,
       method: api.method,
       version: ver.version,
       label: ver.label,
