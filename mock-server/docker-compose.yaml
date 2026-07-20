@@ -48,6 +48,19 @@ services:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
+  worker-health:
+    build:
+      context: ./worker-health
+      dockerfile: Dockerfile
+    container_name: worker-health
+    env_file:
+      - .env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - orch-net
+      - shared-net
+    restart: unless-stopped
   # ======================== OPENRESTY (API Gateway) ========================
   openresty:
     build: ./openresty

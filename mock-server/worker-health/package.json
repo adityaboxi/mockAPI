@@ -1,0 +1,21 @@
+{
+  "name": "worker-health",
+  "version": "1.0.0",
+  "description": "Daily health worker for MockAPI – checks Redis ↔ Docker consistency and recovers project containers",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "bullmq": "^5.34.3",
+    "cron": "^3.1.7",
+    "dockerode": "^4.0.2",
+    "dotenv": "^16.4.5",
+    "ioredis": "^5.6.0",
+    "mongoose": "^8.9.5",
+    "nodemailer": "^6.9.16"
+  }
+}
+
