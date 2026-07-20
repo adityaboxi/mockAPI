@@ -47,6 +47,23 @@ console.log(`[worker-server] 📌 Pool size: ${POOL_SIZE}, Worker concurrency: $
 
 const containerNameFor = (projectId) => `proj-${projectId}`;
 
+// ---------- Helper: ensure network exists ----------
+async function ensureNetwork(networkName) {
+  try {
+    const networks = await docker.listNetworks({ filters: { name: [networkName] } });
+    if (networks.length === 0) {
+      console.log(`[worker-server] 🔨 Creating network: ${networkName} (bridge)`);
+      await docker.createNetwork({ Name: networkName, Driver: 'bridge' });
+      console.log(`[worker-server] ✅ Network ${networkName} created.`);
+    } else {
+      console.log(`[worker-server] ✅ Network ${networkName} already exists.`);
+    }
+  } catch (err) {
+    console.error(`[worker-server] ❌ Failed to ensure network ${networkName}:`, err.message);
+    throw err;
+  }
+}
+
 // ---------- HELPERS ----------
 async function getRoute(projectId) {
   console.log(`[route] 🔍 Getting route for project ${projectId}`);
@@ -112,7 +129,6 @@ async function syncProjectContainer(containerName, timeout = 30000) {
   const start = Date.now();
   let healthOk = false;
 
-  // Wait for health endpoint
   while (Date.now() - start < timeout) {
     try {
       const controller = new AbortController();
@@ -133,7 +149,6 @@ async function syncProjectContainer(containerName, timeout = 30000) {
     return false;
   }
 
-  // Now trigger sync
   try {
     console.log(`[sync] 📡 Calling /internal/sync on ${containerName}`);
     const syncRes = await fetch(`${baseUrl}/internal/sync`, { method: 'POST' });
@@ -152,27 +167,21 @@ async function syncProjectContainer(containerName, timeout = 30000) {
 
 /**
  * HELPER: Wait for container health check (simple, no sync)
- * Only checks if container is responsive, doesn't sync APIs
  */
 async function waitForHealth(containerName, timeout = 30000) {
   console.log(`[health] 🏥 Checking health of ${containerName}...`);
   const baseUrl = `http://${containerName}:3000`;
   const start = Date.now();
-
   while (Date.now() - start < timeout) {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 2000);
       const res = await fetch(`${baseUrl}/health`, { signal: controller.signal });
       clearTimeout(timeoutId);
-      if (res.ok) {
-        console.log(`[health] ✅ ${containerName} is healthy`);
-        return true;
-      }
-    } catch (_) { /* ignore */ }
+      if (res.ok) return true;
+    } catch (_) {}
     await new Promise(r => setTimeout(r, 500));
   }
-
   console.error(`[health] ❌ ${containerName} health check failed after ${timeout}ms`);
   return false;
 }
@@ -185,13 +194,11 @@ async function ensureProjectContainerRunning(projectId) {
   console.log(`[ensureRunning] 🏃 Ensuring project ${projectId} is running (no re-sync)...`);
   const name = containerNameFor(projectId);
   const info = await getContainerInfo(name);
-  
   if (!info) {
     console.log(`[ensureRunning] ❌ Container ${name} does not exist`);
     return false;
   }
 
-  // If paused, unpause (no sync)
   if (info.isPaused) {
     console.log(`[ensureRunning] ⏸️ Container ${name} is paused – unpausing (no re-sync)`);
     await info.container.unpause();
@@ -200,9 +207,7 @@ async function ensureProjectContainerRunning(projectId) {
       console.error(`[ensureRunning] ❌ Container ${name} failed health check`);
       return false;
     }
-  }
-  // If stopped, start (no sync)
-  else if (!info.isRunning) {
+  } else if (!info.isRunning) {
     console.log(`[ensureRunning] ⏹️ Container ${name} is stopped – starting (no re-sync)`);
     await info.container.start();
     const healthy = await waitForHealth(name);
@@ -210,9 +215,7 @@ async function ensureProjectContainerRunning(projectId) {
       console.error(`[ensureRunning] ❌ Container ${name} failed health check`);
       return false;
     }
-  }
-  // If already running, just health check
-  else {
+  } else {
     console.log(`[ensureRunning] ✅ Container ${name} already running – health check only`);
     const healthy = await waitForHealth(name);
     if (!healthy) {
@@ -229,6 +232,7 @@ async function ensureProjectContainerRunning(projectId) {
 /**
  * Ensure container exists and is in desired state (active or inactive)
  * Idempotent – no re‑sync when resuming.
+ * Uses PAUSE/UNPAUSE for existing containers to preserve in‑memory routes.
  */
 async function ensureProjectContainer(projectId, isActive) {
   console.log(`[ensureContainer] 📦 Ensuring container for project ${projectId}, active=${isActive}`);
@@ -242,23 +246,25 @@ async function ensureProjectContainer(projectId, isActive) {
   // ============== INACTIVE REQUEST ==============
   if (!desiredActiveState) {
     console.log(`[ensureContainer] ⏸️ User requested: INACTIVE`);
-    
+
     if (!info) {
       console.log(`[ensureContainer] ✅ Container doesn't exist – already inactive`);
       return true;
     }
 
-    if (info.isRunning) {
-      console.log(`[ensureContainer] ⏹️ Container ${name} is running – stopping (no re-sync)`);
-      await info.container.stop();
-      await setRoute(projectId, { containerName: name, status: 'stopped' });
-      console.log(`[ensureContainer] ✅ Container ${name} stopped – data preserved`);
+    // If running, PAUSE (not stop)
+    if (info.isRunning && !info.isPaused) {
+      console.log(`[ensureContainer] ⏸️ Container ${name} is running – pausing (data preserved)`);
+      await info.container.pause();
+      await setRoute(projectId, { containerName: name, status: 'paused' });
+      console.log(`[ensureContainer] ✅ Container ${name} paused – radix tree data preserved`);
       return true;
     }
 
+    // If already paused or stopped, nothing to do
     if (info.isPaused || !info.isRunning) {
-      console.log(`[ensureContainer] ✅ Container ${name} already inactive (stopped/paused)`);
-      await setRoute(projectId, { containerName: name, status: 'stopped' });
+      console.log(`[ensureContainer] ✅ Container ${name} already inactive (${info.isPaused ? 'paused' : 'stopped'})`);
+      await setRoute(projectId, { containerName: name, status: info.isPaused ? 'paused' : 'stopped' });
       return true;
     }
 
@@ -268,8 +274,8 @@ async function ensureProjectContainer(projectId, isActive) {
   // ============== ACTIVE REQUEST ==============
   console.log(`[ensureContainer] ▶️ User requested: ACTIVE`);
 
+  // ---- Container does not exist – create new (first time only) ----
   if (!info) {
-    // ============== CREATE NEW (first time only) ==============
     console.log(`[ensureContainer] 🆕 Container ${name} does not exist – creating NEW`);
     const locked = await lockProject(projectId);
     if (!locked) throw new Error(`Project ${projectId} locked`);
@@ -286,7 +292,11 @@ async function ensureProjectContainer(projectId, isActive) {
         container = await docker.createContainer({
           Image: IMAGE,
           name,
-          Env: [`PROJECT_ID=${projectId}`, `INTERNAL_REDIS_URL=${internalRedisUrl}`],
+          Env: [
+            `PROJECT_ID=${projectId}`,
+            `INTERNAL_REDIS_URL=${internalRedisUrl}`,
+            `FALLBACK_REDIS_URL=redis://host.docker.internal:6379`,
+          ],
           HostConfig: {
             NetworkMode: NETWORK,
             RestartPolicy: { Name: "no" },
@@ -297,7 +307,7 @@ async function ensureProjectContainer(projectId, isActive) {
         await container.start();
         console.log(`[ensureContainer] ✅ Container ${name} started`);
       }
-      
+
       // SYNC ONLY ON FIRST CREATION
       const synced = await syncProjectContainer(name);
       if (!synced) {
@@ -306,7 +316,7 @@ async function ensureProjectContainer(projectId, isActive) {
         await container.remove().catch(() => {});
         throw new Error(`Sync failed for container ${name}`);
       }
-      
+
       await setRoute(projectId, { containerName: name, status: 'running' });
       replenishPool().catch(() => {});
       console.log(`[ensureContainer] ✅ Project ${projectId} created, synced, and running`);
@@ -316,35 +326,42 @@ async function ensureProjectContainer(projectId, isActive) {
     }
   }
 
-  // Container exists – check if it needs to be resumed
-  if (info.isRunning) {
+  // ---- Container exists – handle pause/unpause ----
+  if (info.isRunning && !info.isPaused) {
     console.log(`[ensureContainer] ✅ Container ${name} already running – no action needed`);
     await setRoute(projectId, { containerName: name, status: 'running' });
     return true;
   }
 
   if (info.isPaused) {
-    console.log(`[ensureContainer] ⏸️ Container ${name} is paused – unpausing (no re-sync, data preserved)`);
+    console.log(`[ensureContainer] ▶️ Container ${name} is paused – unpausing (data preserved)`);
     await info.container.unpause();
     const healthy = await waitForHealth(name);
     if (!healthy) {
       console.error(`[ensureContainer] ❌ Container ${name} failed health check after unpause`);
       return false;
     }
-    console.log(`[ensureContainer] ✅ Container ${name} unpaused and healthy`);
+    console.log(`[ensureContainer] ✅ Container ${name} unpaused and healthy – routes are intact`);
     await setRoute(projectId, { containerName: name, status: 'running' });
     return true;
   }
 
+  // If stopped (rare because we use pause, but handle it)
   if (!info.isRunning) {
-    console.log(`[ensureContainer] ⏹️ Container ${name} is stopped – starting (no re-sync, data preserved)`);
+    console.log(`[ensureContainer] ⏹️ Container ${name} is stopped – starting (routes lost, re‑sync needed)`);
     await info.container.start();
     const healthy = await waitForHealth(name);
     if (!healthy) {
       console.error(`[ensureContainer] ❌ Container ${name} failed health check after start`);
       return false;
     }
-    console.log(`[ensureContainer] ✅ Container ${name} started and healthy`);
+    console.log(`[ensureContainer] 🔄 Re‑syncing routes after start`);
+    const synced = await syncProjectContainer(name);
+    if (!synced) {
+      console.error(`[ensureContainer] ❌ Sync failed for ${name}`);
+      return false;
+    }
+    console.log(`[ensureContainer] ✅ Container ${name} started and synced`);
     await setRoute(projectId, { containerName: name, status: 'running' });
     return true;
   }
@@ -414,7 +431,11 @@ async function acquirePoolContainer(targetName, projectId) {
     const newContainer = await docker.createContainer({
       Image: IMAGE,
       name: targetName,
-      Env: [`PROJECT_ID=${projectId}`, `INTERNAL_REDIS_URL=${internalRedisUrl}`],
+      Env: [
+        `PROJECT_ID=${projectId}`,
+        `INTERNAL_REDIS_URL=${internalRedisUrl}`,
+        `FALLBACK_REDIS_URL=redis://host.docker.internal:6379`,
+      ],
       HostConfig: {
         NetworkMode: NETWORK,
         RestartPolicy: { Name: "no" },
@@ -463,7 +484,11 @@ async function replenishPool() {
       const container = await docker.createContainer({
         Image: IMAGE,
         name,
-        Env: [`PROJECT_ID=pool-replenish-${i}`, `INTERNAL_REDIS_URL=${internalRedisUrl}`],
+        Env: [
+          `PROJECT_ID=pool-replenish-${i}`,
+          `INTERNAL_REDIS_URL=${internalRedisUrl}`,
+          `FALLBACK_REDIS_URL=redis://host.docker.internal:6379`,
+        ],
         HostConfig: {
           NetworkMode: NETWORK,
           RestartPolicy: { Name: "no" },
@@ -496,7 +521,7 @@ const projectWorker = new Worker(
     if (action === 'create') {
       console.log(`[projectQueue] 🆕 Create action for project ${projectId}`);
       await job.updateProgress(10);
-      
+
       const existingRoute = await getRoute(projectId);
       if (existingRoute && existingRoute.status === 'running') {
         console.log(`[projectQueue] ⏭️ Project ${projectId} already running`);
@@ -533,7 +558,11 @@ const projectWorker = new Worker(
           container = await docker.createContainer({
             Image: IMAGE,
             name,
-            Env: [`PROJECT_ID=${projectId}`, `INTERNAL_REDIS_URL=${internalRedisUrl}`],
+            Env: [
+              `PROJECT_ID=${projectId}`,
+              `INTERNAL_REDIS_URL=${internalRedisUrl}`,
+              `FALLBACK_REDIS_URL=redis://host.docker.internal:6379`,
+            ],
             HostConfig: {
               NetworkMode: NETWORK,
               RestartPolicy: { Name: "no" },
@@ -558,7 +587,7 @@ const projectWorker = new Worker(
         }
         await setRoute(projectId, { containerName: name, status: 'running' });
         await job.updateProgress(90);
-        
+
         replenishPool().catch(() => {});
         console.log(`[projectQueue] ✅ Project ${projectId} created and running`);
         await job.updateProgress(100);
@@ -571,19 +600,19 @@ const projectWorker = new Worker(
     if (action === 'update') {
       console.log(`[projectQueue] 🔄 Update action for project ${projectId}, active=${isActive}`);
       await job.updateProgress(30);
-      
+
       const currentRoute = await getRoute(projectId);
       const currentStatus = currentRoute?.status || 'unknown';
-      const desiredStatus = (isActive === true || isActive === 'true') ? 'running' : 'stopped';
-      
+      const desiredStatus = (isActive === true || isActive === 'true') ? 'running' : 'paused';
+
       console.log(`[projectQueue] 📊 Current status: ${currentStatus}, Desired status: ${desiredStatus}`);
-      
+
       if (currentStatus === desiredStatus) {
         console.log(`[projectQueue] ✅ Project ${projectId} already in desired state (${desiredStatus}) – no action needed`);
         await job.updateProgress(100);
         return;
       }
-      
+
       const locked = await lockProject(projectId);
       if (!locked) throw new Error(`Project ${projectId} locked`);
       try {
@@ -601,7 +630,7 @@ const projectWorker = new Worker(
     if (action === 'delete') {
       console.log(`[projectQueue] 🗑️ Delete action for project ${projectId}`);
       await job.updateProgress(30);
-      
+
       const locked = await lockProject(projectId);
       if (!locked) throw new Error(`Project ${projectId} locked`);
       try {
@@ -656,7 +685,7 @@ const mockSyncWorker = new Worker(
     if (route && route.status !== 'running') {
       console.log(`[mockSyncQueue] ⏰ Waking up sleeping container for project ${projectId}...`);
       await job.updateProgress(20);
-      
+
       const started = await ensureProjectContainerRunning(projectId);
       if (!started) throw new Error(`Failed to wake up container for ${projectId}`);
       route = await getRoute(projectId);
@@ -690,7 +719,7 @@ const mockSyncWorker = new Worker(
     } else {
       throw new Error(`unknown mockSyncQueue action: ${action}`);
     }
-    
+
     await job.updateProgress(100);
     return result;
   },
@@ -732,7 +761,7 @@ const latencyWorker = new Worker(
 );
 
 // ================================================================
-// WORKER 4: OPENAPI IMPORT (with real-time publish & human‑readable project ID)
+// WORKER 4: OPENAPI IMPORT
 // ================================================================
 console.log('[worker-server] 📡 Creating openapi-import worker...');
 const importWorker = new Worker(
@@ -744,41 +773,30 @@ const importWorker = new Worker(
 
     await job.updateProgress(10);
 
-    // 🔥 Generate human‑readable project ID: username_sanitizedProjectName
+    // Generate human‑readable project ID: username_sanitizedProjectName
     const sanitized = projectName.replace(/[^a-zA-Z0-9]/g, '_');
-    const projectId = `${username}_${sanitized}`;
+    let projectId = `${username}_${sanitized}`;
     console.log(`[openapi-import] 📌 Generated project ID: ${projectId}`);
 
     const existingProject = await Project.findOne({ username, projectname: projectName });
     let isNewProject = false;
 
+    // Determine if we need to use existing project ID
     if (existingProject) {
-      // If project exists, use its ID (could be different from our generated one)
-      // To be safe, we should use the existing project ID, not regenerate.
-      // But we want consistent IDs, so we'll check if the project exists with the generated ID.
-      // For simplicity, we'll look for the project with the generated ID.
-      let projectDoc = await Project.findOne({ id: projectId });
+      const projectDoc = await Project.findOne({ id: projectId });
       if (!projectDoc) {
-        // If no project with that ID, but the user has a project with that name, update its ID? That's messy.
-        // Better: use the existing project ID if found, else create new with generated ID.
-        // We'll search by username+projectname, and if found, use its ID.
-        if (existingProject) {
-          projectId = existingProject.id; // override with existing ID
-          console.log(`[openapi-import] 📂 Project exists with ID: ${projectId} – updating`);
-        }
+        projectId = existingProject.id;
+        console.log(`[openapi-import] 📂 Project exists with ID: ${projectId} – updating`);
       } else {
-        // Project exists with the generated ID, update it.
         console.log(`[openapi-import] 📂 Project exists with ID: ${projectId} – updating`);
       }
     }
 
-    // Now ensure we have a final projectId
     let finalProjectId = projectId;
     let isNew = false;
 
     let projectDoc = await Project.findOne({ id: finalProjectId });
     if (!projectDoc) {
-      // Create new
       const invitationCode = Math.random().toString(36).substring(2, 8).toUpperCase();
       console.log(`[openapi-import] 🆕 Creating new project "${projectName}" with ID ${finalProjectId}`);
       const newProject = new Project({
@@ -797,9 +815,6 @@ const importWorker = new Worker(
       console.log(`[openapi-import] 📂 Project "${projectName}" exists (ID: ${finalProjectId}) – updating`);
     }
 
-    // For backward compatibility, if we used existing project ID, we set isNewProject appropriately.
-    // We'll use isNew to know if we need to create ProjectApiHistory from scratch.
-
     await job.updateProgress(30);
 
     const basePath = spec.basePath || '';
@@ -808,7 +823,7 @@ const importWorker = new Worker(
     Object.keys(spec.paths).forEach(rawPath => {
       const fullPath = basePath + rawPath;
       const pathObj = spec.paths[rawPath];
-      
+
       Object.keys(pathObj).forEach(method => {
         if (!['get', 'post', 'put', 'delete', 'patch', 'options'].includes(method)) return;
         const operation = pathObj[method];
@@ -816,10 +831,10 @@ const importWorker = new Worker(
         if (!endpointsMap[fullPath]) {
           endpointsMap[fullPath] = { baseUrlPath: fullPath, versions: [] };
         }
-        
+
         const version = 'v1';
         const versionedPath = `/${version}${fullPath}`;
-        
+
         endpointsMap[fullPath].versions.push({
           method: method.toUpperCase(),
           urlPath: versionedPath,
@@ -847,7 +862,6 @@ const importWorker = new Worker(
       await projectApiHistory.save();
       console.log(`[openapi-import] ✅ ProjectApiHistory saved for new project`);
     } else {
-      // Update existing
       const history = await ProjectApiHistory.findOne({ projectID: finalProjectId });
       if (history) {
         history.endpoints = endpointsArray;
@@ -903,10 +917,10 @@ const importWorker = new Worker(
     // ---------- Queue container and sync jobs ----------
     const projectQueue = new Queue('projectQueue', { connection: connectionOpts });
     console.log(`[openapi-import] 🏗️ Adding ${isNew ? 'create' : 'update'} project job to queue for ${finalProjectId}`);
-    await projectQueue.add('create-project', { 
+    await projectQueue.add('create-project', {
       action: isNew ? 'create' : 'update',
       projectId: finalProjectId,
-      isActive: true 
+      isActive: true
     });
 
     await job.updateProgress(85);
@@ -1102,9 +1116,12 @@ async function startup() {
     }
   }
   if (!externalReady) {
-    console.error('[Startup] ❌ Extenal Redis not ready – exiting');
+    console.error('[Startup] ❌ External Redis not ready – exiting');
     process.exit(1);
   }
+
+  // ---------- ENSURE NETWORK EXISTS ----------
+  await ensureNetwork(NETWORK);
 
   await ensureProjectImage();
 
@@ -1161,5 +1178,3 @@ async function gracefulShutdown() {
 
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
-
-

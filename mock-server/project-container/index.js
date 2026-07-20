@@ -7,11 +7,10 @@ const Router = require('find-my-way');
 
 const app = express();
 
-// 🔒 SECURITY: Trustt the first   proxy (OpenResty) to get real client IP
+// Trust the first proxy (OpenResty) to get real client IP
 app.set('trust proxy', true);
 
-
-// ✅ Comprsssion – reduces bandwidth
+// Compression
 app.use(express.json());
 app.use(cookieParser());
 app.use(compression({
@@ -19,23 +18,47 @@ app.use(compression({
   threshold: 1024,
 }));
 
-
 // ---------- Configuration ----------
 const PROJECT_ID = process.env.PROJECT_ID;
 if (!PROJECT_ID) {
-  // Fatal error – silent exit (no console log)
   process.exit(1);
 }
 const PORT = process.env.PORT || 3000;
 
-// Redis – with resilience (used for rate limiting)
+// ---------- Redis – lazy connect, graceful fallback ----------
 const REDIS_URL = process.env.INTERNAL_REDIS_URL || process.env.REDIS_URL || 'redis://redis-internal:6379';
+
+// Local fallback for rate limiting (if Redis is down)
+const localRateLimitStore = new Map();
+let redisWasDown = false; // tracks if Redis was previously unavailable
+
 const redis = new IORedis(REDIS_URL, {
+  lazyConnect: true,
+  retryStrategy: (times) => {
+    if (times > 10) {
+      return null; // stop retrying after 10 attempts
+    }
+    return Math.min(times * 100, 5000);
+  },
+  enableReadyCheck: false,
   maxRetriesPerRequest: 0,
-  retryStrategy: (times) => Math.min(times * 100, 5000),
-  enableReadyCheck: true,
 });
-// No error/warning logging
+redis.on('error', (err) => {
+  if (err.code === 'ENOTFOUND') {
+    if (!redis._notfoundLogged) {
+      console.warn('[Redis] Hostname not found – rate limiting disabled until Redis becomes available.');
+      redis._notfoundLogged = true;
+    }
+    redisWasDown = true;
+  } else {
+    console.error('[Redis] Error:', err);
+  }
+});
+
+// Helper to check if Redis is ready
+function isRedisReady() {
+  return redis.status === 'ready';
+}
 
 // ---------- Radix Tree Router ----------
 const router = Router({
@@ -43,7 +66,6 @@ const router = Router({
   maxParamLength: 500,
 });
 
-// In‑memory route storage
 const routeDefinitions = new Map();
 const registeredKeys = new Set();
 
@@ -85,7 +107,7 @@ function unregisterRoute(method, fullPath) {
   return true;
 }
 
-// ---------- Rate Limiting ----------
+// ---------- Rate Limiting (Redis or local fallback) ----------
 const rateLimitScript = `
   local key = KEYS[1]
   local limit = tonumber(ARGV[1])
@@ -107,26 +129,61 @@ async function checkRateLimit(routeKey, clientId, limit, windowMs = 60000) {
   const redisKey = `rate:${PROJECT_ID}:${routeKey}:${clientId}`;
   const windowSec = Math.ceil(windowMs / 1000);
 
-  try {
-    const [count, ttl] = await redis.eval(rateLimitScript, 1, redisKey, limit, windowSec);
-    if (count > limit) {
-      return {
-        allowed: false,
-        resetSeconds: Math.max(1, ttl),
-        remaining: 0
-      };
+  // If Redis is ready, use it
+  if (isRedisReady()) {
+    // If Redis was previously down, clear the local store and reset the flag
+    if (redisWasDown) {
+      localRateLimitStore.clear();
+      redisWasDown = false;
+      console.log('[Redis] Connection restored – cleared local fallback store.');
     }
-    return {
-      allowed: true,
-      remaining: limit - count,
-      resetSeconds: Math.max(1, ttl)
-    };
-  } catch (_) {
-    return { allowed: true };
+    try {
+      const [count, ttl] = await redis.eval(rateLimitScript, 1, redisKey, limit, windowSec);
+      if (count > limit) {
+        return {
+          allowed: false,
+          resetSeconds: Math.max(1, ttl),
+          remaining: 0
+        };
+      }
+      return {
+        allowed: true,
+        remaining: limit - count,
+        resetSeconds: Math.max(1, ttl)
+      };
+    } catch (_) {
+      // fallback to local if Redis fails (rare)
+      redisWasDown = true;
+    }
   }
+
+  // Fallback: local in‑memory rate limiter (per‑instance, not distributed)
+  const localKey = `${PROJECT_ID}:${routeKey}:${clientId}`;
+  const now = Date.now();
+  const windowStart = now - windowMs;
+  const entry = localRateLimitStore.get(localKey) || { count: 0, resetTime: now + windowMs };
+  // Reset if window expired
+  if (now > entry.resetTime) {
+    entry.count = 0;
+    entry.resetTime = now + windowMs;
+  }
+  entry.count++;
+  localRateLimitStore.set(localKey, entry);
+  if (entry.count > limit) {
+    return {
+      allowed: false,
+      resetSeconds: Math.max(1, Math.ceil((entry.resetTime - now) / 1000)),
+      remaining: 0
+    };
+  }
+  return {
+    allowed: true,
+    remaining: limit - entry.count,
+    resetSeconds: Math.max(1, Math.ceil((entry.resetTime - now) / 1000))
+  };
 }
 
-// ---------- Faker Helpers (cache limit: clear all when reaching 200) ----------
+// ---------- Faker Helpers ----------
 const fakerCache = new Map();
 const MAX_FAKER_CACHE = 200;
 
@@ -197,7 +254,7 @@ function generateFakeResponse(responseBody) {
   return responseBody;
 }
 
-// ---------- Validation Helpers ----------
+// ---------- Validation Helpers (unchanged) ----------
 function validateQueryParams(req, definition) {
   const queryParams = definition.queryParams || [];
   for (const qp of queryParams) {
@@ -372,10 +429,12 @@ app.delete('/internal/apis', (req, res) => {
   const removed = unregisterRoute(methodUpper, fullPath);
   if (!removed) return res.status(500).json({ error: 'Failed to remove route from router' });
 
-  // Clean up rate-limit keys (fire‑and‑forget)
-  redis.keys(`rate:${PROJECT_ID}:${methodUpper}:${fullPath}:*`).then(keys => {
-    if (keys.length > 0) redis.del(...keys).catch(() => {});
-  }).catch(() => {});
+  // Clean up rate-limit keys (only if Redis is ready)
+  if (isRedisReady()) {
+    redis.keys(`rate:${PROJECT_ID}:${methodUpper}:${fullPath}:*`).then(keys => {
+      if (keys.length > 0) redis.del(...keys).catch(() => {});
+    }).catch(() => {});
+  }
 
   res.json({ deleted: true, routeKey });
 });
@@ -394,7 +453,7 @@ app.get('/internal/apis', (req, res) => {
   res.json(routes);
 });
 
-// ---------- Health & Sync Endpoints ----------
+// ---------- Health & Sync ----------
 app.get('/health', (req, res) => res.json({
   status: 'OK',
   routes: registeredKeys.size,
@@ -418,7 +477,7 @@ app.all('*', async (req, res) => {
   const definition = route.store;
   const params = route.params || {};
 
-  // Caching – only for non‑AI GET/HEAD
+  // Caching headers
   if (definition.aiResponse === false && (req.method === 'GET' || req.method === 'HEAD')) {
     res.set('X-Accel-Expires', '600');
     res.set('Cache-Control', 'public, max-age=600');
@@ -439,7 +498,7 @@ app.all('*', async (req, res) => {
     });
   }
 
-  // ---- LATENCY: apply 300ms deduction ----
+  // Latency simulation
   const configuredLatency = definition.latency || 0;
   const effectiveLatency = Math.max(0, configuredLatency - 300);
   if (effectiveLatency > 0) {
@@ -483,7 +542,6 @@ app.all('*', async (req, res) => {
     });
   });
 
-  // ---- Apply latency delay ----
   if (effectiveLatency > 0) {
     await new Promise(resolve => setTimeout(resolve, effectiveLatency));
   }
@@ -493,7 +551,6 @@ app.all('*', async (req, res) => {
 
 // ---------- Error Handler ----------
 app.use((err, req, res, next) => {
-  // No logging – silent error
   res.status(500).json({ error: 'Internal server error' });
 });
 
@@ -501,6 +558,8 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {});
 
 process.on('SIGTERM', async () => {
-  await redis.quit();
+  if (isRedisReady()) {
+    await redis.quit();
+  }
   process.exit(0);
 });

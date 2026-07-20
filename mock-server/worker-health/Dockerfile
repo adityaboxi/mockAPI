@@ -9,6 +9,7 @@ RUN npm ci --only=production
 
 COPY . .
 
-USER node
+# Run as root to access the Docker socket
+USER root
 
 CMD ["node", "index.js"]

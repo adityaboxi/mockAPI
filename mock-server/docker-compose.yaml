@@ -48,6 +48,7 @@ services:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
+  # ✅ Corrected worker-health
   worker-health:
     build:
       context: ./worker-health
@@ -60,7 +61,10 @@ services:
     networks:
       - orch-net
       - shared-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
+
   # ======================== OPENRESTY (API Gateway) ========================
   openresty:
     build: ./openresty
@@ -75,7 +79,7 @@ services:
       - EXTERNAL_REDIS_PORT=${EXTERNAL_REDIS_PORT}
     networks:
       - orch-net
-      - shared-net   # required to reach redis-external
+      - shared-net
     depends_on:
       - redis-internal
     restart: unless-stopped
