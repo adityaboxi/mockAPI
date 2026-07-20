@@ -20,28 +20,37 @@ function ApiHistory({ isApiHistoryOpen, projectId: propProjectId }) {
   const [error, setError] = useState(null);
   const [expanded, setExpanded] = useState({});
   const abortControllerRef = useRef(null);
+  const debounceTimerRef = useRef(null);
+  const prevDataRef = useRef([]);
+  const isFirstLoad = useRef(true);
 
   const projectId = propProjectId || currentProject?.id;
 
-  const fetchHistory = useCallback(async () => {
+  // ---------- Fetch history (with optional background flag) ----------
+  const fetchHistory = useCallback(async (isBackground = false) => {
     const username = user?.username;
     if (!projectId) return;
     if (!username || username === "Guest") {
-      setError("Pleease log in to seee API history.");
+      setError("Please log in to see API history.");
       return;
     }
+
+    // Cancel ongoing request
     abortControllerRef.current?.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
-    setLoading(true);
+
+    // Only show loading spinner on initial (non‑background) fetches
+    if (!isBackground) setLoading(true);
     setError(null);
+
     try {
-      // Use dedicated environment variable for API history
       const url = `${import.meta.env.VITE_API_URL_API_HISTORY}?projectId=${encodeURIComponent(projectId)}`;
       const res = await fetch(url, { signal: controller.signal, credentials: "include" });
       if (!res.ok) throw new Error(await res.text());
       let data = await res.json();
-      // Normalize if backendstill returns old format
+
+      // Normalize if backend returns old format
       if (data.length && !data[0].versions && data[0].actualFullUrls) {
         data = data.map(ep => ({
           baseUrlPath: ep.baseUrlPath,
@@ -51,33 +60,56 @@ function ApiHistory({ isApiHistoryOpen, projectId: propProjectId }) {
           }))
         }));
       }
-      if (!controller.signal.aborted) setHistoryData(data);
+
+      if (!controller.signal.aborted) {
+        // Only update state if data actually changed
+        const newData = data;
+        if (JSON.stringify(newData) !== JSON.stringify(prevDataRef.current)) {
+          prevDataRef.current = newData;
+          setHistoryData(newData);
+        }
+      }
     } catch (err) {
       if (err.name !== "AbortError") setError(err.message);
     } finally {
-      if (!controller.signal.aborted) setLoading(false);
+      if (!controller.signal.aborted) {
+        setLoading(false);
+        if (isFirstLoad.current) isFirstLoad.current = false;
+      }
     }
   }, [projectId, user?.username]);
 
+  // ---------- Initial load ----------
   useEffect(() => {
-    fetchHistory();
-    return () => abortControllerRef.current?.abort();
+    fetchHistory(false); // initial load with spinner
+    return () => {
+      abortControllerRef.current?.abort();
+    };
   }, [fetchHistory]);
 
-  // Socket.IO real‑time updates using shared socket
+  // ---------- Socket.IO real‑time updates (with debounce) ----------
   useEffect(() => {
     if (!currentProject?.id) return;
 
-    const handleNewLog = () => fetchHistory();
+    const handleNewLog = () => {
+      // Debounce: wait 300ms before fetching; if new logs arrive, reset timer
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = setTimeout(() => {
+        fetchHistory(true); // background fetch – no loading spinner
+      }, 300);
+    };
+
     socket.on("new_api_log", handleNewLog);
     socket.emit("join_project", currentProject.id);
 
     return () => {
       socket.emit("leave_project", currentProject.id);
       socket.off("new_api_log", handleNewLog);
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     };
   }, [currentProject?.id, fetchHistory, socket]);
 
+  // ---------- Handlers (unchanged) ----------
   const toggleExpand = (idx) => setExpanded(prev => ({ ...prev, [idx]: !prev[idx] }));
 
   const handleVersionClick = async (endpoint, version, fullUrl) => {
@@ -90,6 +122,7 @@ function ApiHistory({ isApiHistoryOpen, projectId: propProjectId }) {
     await loadVersion(pid, username, baseurlpath, version);
   };
 
+  // ---------- Render helpers (unchanged) ----------
   const cardClass = isWhiteTheme ? "bg-gray-50 border-gray-200 text-gray-500" : "bg-[#1e1f22] border-zinc-700/50 text-gray-400";
   const buttonClass = isWhiteTheme ? "text-gray-400 hover:text-gray-700" : "text-zinc-500 hover:text-gray-200";
 
@@ -138,5 +171,3 @@ function ApiHistory({ isApiHistoryOpen, projectId: propProjectId }) {
 }
 
 export default React.memo(ApiHistory);
-
-
