@@ -53,7 +53,6 @@ class ChartCache {
 
 const chartCache = new ChartCache();
 
-// Helper to build full path including version prefix
 const buildFullPath = (ver, api) => {
   const base = ver.urlPath || api.path || '';
   const normalizedBase = base.startsWith('/') ? base : `/${base}`;
@@ -152,7 +151,6 @@ function Dashboard() {
         if (!mountedRef.current) return;
         const projs = data.projects || [];
         console.log('[Dashboard] ✅ Projects loaded:', projs.length, 'projects');
-        console.log('[Dashboard] 📊 Projects data:', projs);
         setProjects(projs);
 
         const newExpProj = {};
@@ -166,7 +164,6 @@ function Dashboard() {
         setExpandedProjects(newExpProj);
         setExpandedApis(newExpApi);
 
-        // Auto-select the first version with full path
         const firstProj = projs[0];
         const firstApi = firstProj?.apis?.[0];
         const firstVer = firstApi?.versions?.[0];
@@ -332,7 +329,7 @@ function Dashboard() {
     };
   }, [autoRefresh, selectedVersion, timeRange, fetchChartData]);
 
-  // ---------- WebSocket listener ----------
+  // ---------- WebSocket listener (only for charts) ----------
   useEffect(() => {
     if (!socket) {
       console.warn('[Dashboard] ⚠️ Socket not available');
@@ -683,22 +680,19 @@ function Dashboard() {
     );
   }
 
-  // Determine current project name from selectedVersion
   const currentProjectName = selectedVersion
     ? projects.find(p => p.id === selectedVersion.projectId)?.name || 'Project'
     : 'No Project';
 
-  // Theme classes for header
   const headerBg = isWhiteTheme ? 'bg-white border-gray-200' : 'bg-zinc-900 border-zinc-800';
   const headerText = isWhiteTheme ? 'text-gray-800' : 'text-white';
 
   return (
     <div className="h-screen flex flex-col bg-zinc-950 text-zinc-300 overflow-hidden">
-      {/* ========== TOP HEADER ========== */}
       <header className={`h-12 shrink-0 flex items-center px-4 border-b ${headerBg}`}>
         <div className="flex items-center gap-4">
           <button
-            onClick={() => navigate('/setting')} // 👈 Navigates to Settings page
+            onClick={() => navigate('/setting')}
             className={`flex items-center gap-2 text-sm transition-colors ${
               isWhiteTheme ? 'text-gray-600 hover:text-gray-900' : 'text-zinc-400 hover:text-white'
             }`}
@@ -719,9 +713,7 @@ function Dashboard() {
         </div>
       </header>
 
-      {/* ========== SIDEBAR + MAIN CONTENT ========== */}
       <div className="flex flex-1 min-h-0">
-        {/* Sidebar */}
         <div className="w-72 bg-zinc-900 border-r border-zinc-800 flex flex-col flex-shrink-0">
           <div className="p-4 border-b border-zinc-800 text-xs font-semibold text-zinc-500 uppercase flex justify-between">
             <span>📂 Explorer</span>
@@ -750,7 +742,6 @@ function Dashboard() {
           </div>
         </div>
 
-        {/* Main content */}
         <div className="flex-1 flex flex-col overflow-hidden p-6">
           <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
             <h1 className="text-xl font-medium text-white truncate">
@@ -809,4 +800,3 @@ function Dashboard() {
 }
 
 export default Dashboard;
-

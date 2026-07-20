@@ -20,37 +20,33 @@ function ApiHistory({ isApiHistoryOpen, projectId: propProjectId }) {
   const [error, setError] = useState(null);
   const [expanded, setExpanded] = useState({});
   const abortControllerRef = useRef(null);
-  const debounceTimerRef = useRef(null);
-  const prevDataRef = useRef([]);
-  const isFirstLoad = useRef(true);
+
+  // Keep a ref to the latest historyData so we can compare in fetch without re‑creating the callback
+  const historyDataRef = useRef(historyData);
+  useEffect(() => {
+    historyDataRef.current = historyData;
+  }, [historyData]);
 
   const projectId = propProjectId || currentProject?.id;
 
-  // ---------- Fetch history (with optional background flag) ----------
-  const fetchHistory = useCallback(async (isBackground = false) => {
+  const fetchHistory = useCallback(async () => {
     const username = user?.username;
     if (!projectId) return;
     if (!username || username === "Guest") {
-      setError("Please log in to see API history.");
+      setError("Pleease log in to seee API history.");
       return;
     }
-
-    // Cancel ongoing request
     abortControllerRef.current?.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
-
-    // Only show loading spinner on initial (non‑background) fetches
-    if (!isBackground) setLoading(true);
+    setLoading(true);
     setError(null);
-
     try {
       const url = `${import.meta.env.VITE_API_URL_API_HISTORY}?projectId=${encodeURIComponent(projectId)}`;
       const res = await fetch(url, { signal: controller.signal, credentials: "include" });
       if (!res.ok) throw new Error(await res.text());
       let data = await res.json();
-
-      // Normalize if backend returns old format
+      // Normalize if backend still returns old format
       if (data.length && !data[0].versions && data[0].actualFullUrls) {
         data = data.map(ep => ({
           baseUrlPath: ep.baseUrlPath,
@@ -61,55 +57,43 @@ function ApiHistory({ isApiHistoryOpen, projectId: propProjectId }) {
         }));
       }
 
-      if (!controller.signal.aborted) {
-        // Only update state if data actually changed
-        const newData = data;
-        if (JSON.stringify(newData) !== JSON.stringify(prevDataRef.current)) {
-          prevDataRef.current = newData;
-          setHistoryData(newData);
-        }
+      // ----- NEW LOGIC: compare with current data -----
+      const currentData = historyDataRef.current;
+      const newData = data;
+      // Shallow/deep compare using JSON.stringify (works for this structure)
+      if (JSON.stringify(newData) === JSON.stringify(currentData)) {
+        // Data unchanged – keep UI as-is and just hide loading
+        if (!controller.signal.aborted) setLoading(false);
+        return;
       }
+      // Data changed – update
+      if (!controller.signal.aborted) setHistoryData(newData);
     } catch (err) {
       if (err.name !== "AbortError") setError(err.message);
     } finally {
-      if (!controller.signal.aborted) {
-        setLoading(false);
-        if (isFirstLoad.current) isFirstLoad.current = false;
-      }
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [projectId, user?.username]);
 
-  // ---------- Initial load ----------
   useEffect(() => {
-    fetchHistory(false); // initial load with spinner
-    return () => {
-      abortControllerRef.current?.abort();
-    };
+    fetchHistory();
+    return () => abortControllerRef.current?.abort();
   }, [fetchHistory]);
 
-  // ---------- Socket.IO real‑time updates (with debounce) ----------
+  // Socket.IO real‑time updates using shared socket
   useEffect(() => {
     if (!currentProject?.id) return;
 
-    const handleNewLog = () => {
-      // Debounce: wait 300ms before fetching; if new logs arrive, reset timer
-      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = setTimeout(() => {
-        fetchHistory(true); // background fetch – no loading spinner
-      }, 300);
-    };
-
+    const handleNewLog = () => fetchHistory();
     socket.on("new_api_log", handleNewLog);
     socket.emit("join_project", currentProject.id);
 
     return () => {
       socket.emit("leave_project", currentProject.id);
       socket.off("new_api_log", handleNewLog);
-      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
     };
   }, [currentProject?.id, fetchHistory, socket]);
 
-  // ---------- Handlers (unchanged) ----------
   const toggleExpand = (idx) => setExpanded(prev => ({ ...prev, [idx]: !prev[idx] }));
 
   const handleVersionClick = async (endpoint, version, fullUrl) => {
@@ -122,7 +106,6 @@ function ApiHistory({ isApiHistoryOpen, projectId: propProjectId }) {
     await loadVersion(pid, username, baseurlpath, version);
   };
 
-  // ---------- Render helpers (unchanged) ----------
   const cardClass = isWhiteTheme ? "bg-gray-50 border-gray-200 text-gray-500" : "bg-[#1e1f22] border-zinc-700/50 text-gray-400";
   const buttonClass = isWhiteTheme ? "text-gray-400 hover:text-gray-700" : "text-zinc-500 hover:text-gray-200";
 

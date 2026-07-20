@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useTheme } from "../../context/ThemeContext";
 
 const API_PROJECTS = import.meta.env.VITE_API_URL_PROJECTS;
@@ -7,9 +7,11 @@ const API_VERIFY_INVITE_OTP = import.meta.env.VITE_API_URL_VERIFY_INVITE_OTP;
 const API_UPDATE_PROJECT_STATUS = import.meta.env.VITE_API_UPDATE_PROJECT_STATUS;
 const API_DELETE_PROJECT = import.meta.env.VITE_API_URL_DELETEPROJECT;
 
-function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvitationCodeUpdated}) {
+function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvitationCodeUpdated }) {
   const { theme } = useTheme();
   const isDarkTheme = theme === "dark";
+
+  // ---- State ----
   const [showOtpSection, setShowOtpSection] = useState(false);
   const [timer, setTimer] = useState(0);
   const [otpCode, setOtpCode] = useState("");
@@ -21,6 +23,7 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
 
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [statusSuccess, setStatusSuccess] = useState(false);
+  const [statusError, setStatusError] = useState(null);
   const [successTarget, setSuccessTarget] = useState(null);
 
   const [inviteCopied, setInviteCopied] = useState(false);
@@ -32,9 +35,20 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
   const intervalRef = useRef(null);
   const successTimeoutRef = useRef(null);
 
+  // ---- Timer cleanup ----
+  useEffect(() => {
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
+      if (inviteTimeoutRef.current) clearTimeout(inviteTimeoutRef.current);
+    };
+  }, []);
+
+  // ---- Fetch fresh members/createdAt when modal opens ----
   useEffect(() => {
     if (!isOpen || !project?.id) return;
     setLocalInvitationCode(project.invitationCode);
+    // Fetch fresh data for members and createdAt
     fetch(API_PROJECTS, { credentials: "include" })
       .then((r) => r.json())
       .then((data) => {
@@ -46,6 +60,7 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
       .catch(console.error);
   }, [isOpen, project?.id]);
 
+  // ---- Timer countdown ----
   useEffect(() => {
     if (timer > 0) {
       intervalRef.current = setInterval(() => {
@@ -57,14 +72,8 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
     return () => clearInterval(intervalRef.current);
   }, [timer]);
 
-  useEffect(() => {
-    return () => {
-      if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
-      if (inviteTimeoutRef.current) clearTimeout(inviteTimeoutRef.current);
-    };
-  }, []);
-
-  const handleResetCode = async () => {
+  // ---- Handlers (memoized) ----
+  const handleResetCode = useCallback(async () => {
     setIsLoading(true);
     setOtpError(null);
     try {
@@ -86,9 +95,9 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [project.id, project._id, project.projectname]);
 
-  const handleVerifyOtp = async () => {
+  const handleVerifyOtp = useCallback(async () => {
     if (!otpCode) return;
     setIsLoading(true);
     setOtpError(null);
@@ -114,11 +123,12 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [otpCode, project.id, project._id, onInvitationCodeUpdated, onClose]);
 
-  const handleStatusChange = async (newStatus, target) => {
+  const handleStatusChange = useCallback(async (newStatus, target) => {
     if (statusUpdating) return;
     setStatusUpdating(true);
+    setStatusError(null);
     const projectId = project.id || project._id;
     try {
       const res = await fetch(`${API_UPDATE_PROJECT_STATUS}/${projectId}/status`, {
@@ -138,16 +148,16 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
         }, 2000);
       } else {
         const err = await res.json();
-        alert(err.error || "Failed to update status");
+        setStatusError(err.error || "Failed to update status");
       }
     } catch (e) {
-      // silent, mirrors original behavior
+      setStatusError("Network error");
     } finally {
       setStatusUpdating(false);
     }
-  };
+  }, [project.id, project._id, statusUpdating, onStatusChange]);
 
-  const copyInvitationCode = async () => {
+  const copyInvitationCode = useCallback(async () => {
     if (!localInvitationCode) return;
 
     const showCopied = () => {
@@ -166,7 +176,7 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
       }
     }
 
-    // Fallback for non-secure contexts / older browsers
+    // Fallback
     const textarea = document.createElement("textarea");
     textarea.value = localInvitationCode;
     textarea.style.position = "fixed";
@@ -181,22 +191,17 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
     } finally {
       document.body.removeChild(textarea);
     }
-  };
+  }, [localInvitationCode]);
 
-  const handleDeleteProject = async () => {
+  const handleDeleteProject = useCallback(async () => {
     if (isDeleting) return;
-
-    // ✅ Use local state if available, else fallback to prop
     const invitationCode = localInvitationCode || project?.invitationCode;
-
     if (!invitationCode) {
       setDeleteError("Missing invitation code - cannot delete project");
       return;
     }
-
     setIsDeleting(true);
     setDeleteError(null);
-
     try {
       const response = await fetch(API_DELETE_PROJECT, {
         method: "DELETE",
@@ -204,27 +209,31 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
         credentials: "include",
         body: JSON.stringify({ invitationCode }),
       });
-
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.error || errorData.message || "Failed to delete project");
       }
-
-      const result = await response.json();
       onClose();
     } catch (err) {
       setDeleteError(err.message);
-      console.error("❌ Deleeete error:", err);
+      console.error("Delete error:", err);
     } finally {
       setIsDeleting(false);
     }
-  };
+  }, [isDeleting, localInvitationCode, project?.invitationCode, onClose]);
 
+  const handleClose = useCallback(() => {
+    onClose();
+  }, [onClose]);
+
+  // ---- Render ----
   if (!isOpen) return null;
+
   const displayMembers = members.length > 0 ? members : ["No members yet"];
+  const isActive = project.isActive !== false;
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/40 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/40 backdrop-blur-sm" onClick={handleClose}>
       <div
         className={`rounded-xl border shadow-xl p-4 space-y-4 w-80 ${
           isDarkTheme ? "bg-[#18181b] text-white border-zinc-800" : "bg-white text-zinc-900"
@@ -233,7 +242,7 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
       >
         <div className="flex justify-between items-center border-b pb-2">
           <h3 className="text-xs font-bold">Workspace Configuration</h3>
-          <button onClick={onClose}>✕</button>
+          <button onClick={handleClose}>✕</button>
         </div>
 
         <div className="space-y-1 text-xs">
@@ -269,13 +278,13 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
           </div>
           <div className="flex justify-between">
             <span>Status:</span>
-            <span className={project.isActive !== false ? "text-emerald-400" : "text-red-400"}>
-              {project.isActive !== false ? "Active" : "Inactive"}
+            <span className={isActive ? "text-emerald-400" : "text-red-400"}>
+              {isActive ? "Active" : "Inactive"}
             </span>
           </div>
           <div className="flex justify-between">
             <span>Time created:</span>
-            <code className="text-indigo-400 font-mono font-bold">{project.createdAt || "N/A"}</code>
+            <code className="text-indigo-400 font-mono font-bold">{createdAt}</code>
           </div>
 
           <div className="flex justify-between items-center">
@@ -311,7 +320,7 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
         <div className="flex gap-2 pt-2 border-t">
           <button
             onClick={() => handleStatusChange(true, "active")}
-            disabled={project.isActive === true || statusUpdating}
+            disabled={isActive || statusUpdating}
             className={`flex-1 py-1 text-xs rounded text-white transition-colors flex items-center justify-center gap-1 ${
               statusSuccess && successTarget === "active" ? "bg-emerald-600" : "bg-emerald-600 hover:bg-emerald-500"
             } disabled:opacity-40`}
@@ -329,7 +338,7 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
           </button>
           <button
             onClick={() => handleStatusChange(false, "inactive")}
-            disabled={project.isActive === false || statusUpdating}
+            disabled={!isActive || statusUpdating}
             className={`flex-1 py-1 text-xs rounded text-white transition-colors flex items-center justify-center gap-1 ${
               statusSuccess && successTarget === "inactive" ? "bg-red-600" : "bg-red-600 hover:bg-red-500"
             } disabled:opacity-40`}
@@ -346,6 +355,7 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
             )}
           </button>
         </div>
+        {statusError && <p className="text-red-400 text-xs text-center">{statusError}</p>}
 
         <div className="border-t pt-3">
           <button
@@ -387,7 +397,3 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
 }
 
 export default React.memo(ProjectDetailsModal);
-
-
-
-

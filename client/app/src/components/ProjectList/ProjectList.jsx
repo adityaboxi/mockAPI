@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import ProjectItem from "./ProjectItem";
 import CreateJoinSection from "./CreateJoinSection";
 import { useSocket } from "../../context/SocketContext";
@@ -13,6 +13,10 @@ function ProjectList({ user, onProjectSelect, theme }) {
   const hasInitialFetch = useRef(false);
   const joinedRooms = useRef(new Set());
 
+  // ---------- Memoize project IDs (for joining) ----------
+  const projectIds = useMemo(() => projects.map(p => p.id), [projects]);
+
+  // ---------- Fetch projects (once) ----------
   const fetchProjects = useCallback(async () => {
     if (!user?.username || user?.role === 'guest') return;
     if (hasInitialFetch.current) return;
@@ -28,93 +32,103 @@ function ProjectList({ user, onProjectSelect, theme }) {
       const projectsData = Array.isArray(data) ? data : [];
       setProjects(projectsData);
       hasInitialFetch.current = true;
-      if (socket) {
-        projectsData.forEach(project => {
-          if (project.id && !joinedRooms.current.has(project.id)) {
-            socket.emit("join_project", project.id);
-            joinedRooms.current.add(project.id);
-          }
-        });
-      }
+      // Join rooms for all projects (handled in separate effect)
     } catch (error) {
       console.error(error);
       setProjects([]);
     } finally {
       setIsLoading(false);
     }
-  }, [user?.username, user?.role, socket]);
+  }, [user?.username, user?.role]);
 
+  // ---------- Initial fetch ----------
+  useEffect(() => {
+    fetchProjects();
+  }, [fetchProjects]);
+
+  // ---------- Socket: join rooms and listen for updates ----------
   useEffect(() => {
     if (!socket || !user?.username) return;
+
+    // Join user room (once)
     const userRoom = `user_${user.username}`;
     if (!joinedRooms.current.has(userRoom)) {
       socket.emit("join_room", userRoom);
       joinedRooms.current.add(userRoom);
     }
-    projects.forEach(project => {
-      if (project.id && !joinedRooms.current.has(project.id)) {
-        socket.emit("join_project", project.id);
-        joinedRooms.current.add(project.id);
+
+    // Join project rooms (only if not already joined)
+    projectIds.forEach(projectId => {
+      if (projectId && !joinedRooms.current.has(projectId)) {
+        socket.emit("join_project", projectId);
+        joinedRooms.current.add(projectId);
       }
     });
+
+    // ---------- Socket event: join approved ----------
     const handleJoinApproved = (data) => {
       if (!data?.project) return;
+      const newProject = data.project;
       setProjects((prev) => {
-        const exists = prev.some((p) => p.id === data.project.id);
+        const exists = prev.some((p) => p.id === newProject.id);
         if (exists) return prev;
-        if (socket && !joinedRooms.current.has(data.project.id)) {
-          socket.emit("join_project", data.project.id);
-          joinedRooms.current.add(data.project.id);
+        // Join the new project room if not already
+        if (socket && newProject.id && !joinedRooms.current.has(newProject.id)) {
+          socket.emit("join_project", newProject.id);
+          joinedRooms.current.add(newProject.id);
         }
-        return [data.project, ...prev];
+        return [newProject, ...prev];
       });
     };
+
+    // ---------- Socket event: status changed ----------
     const handleStatusChanged = ({ projectId, isActive }) => {
       setProjects((prev) =>
         prev.map((p) => (p.id === projectId ? { ...p, isActive } : p))
       );
     };
+
     socket.on("join_request_approved", handleJoinApproved);
     socket.on("project_status_changed", handleStatusChanged);
+
     return () => {
       socket.off("join_request_approved", handleJoinApproved);
       socket.off("project_status_changed", handleStatusChanged);
     };
-  }, [socket, user?.username, projects]);
+  }, [socket, user?.username, projectIds]); // ✅ projectIds instead of projects to avoid stale joins
 
-  useEffect(() => {
-    fetchProjects();
-  }, [fetchProjects]);
-
-  const handleProjectCreated = (response) => {
+  // ---------- Handlers (memoized) ----------
+  const handleProjectCreated = useCallback((response) => {
     if (!response?.project) return;
     const newProject = response.project;
     setProjects((prev) => [newProject, ...prev]);
+    // Socket join is handled inside the listener (handleJoinApproved) – but we also do it here for immediate join
     if (socket && newProject.id && !joinedRooms.current.has(newProject.id)) {
       socket.emit("join_project", newProject.id);
       joinedRooms.current.add(newProject.id);
     }
     handleProjectClick(newProject);
-  };
+  }, [socket]); // handleProjectClick defined below
 
-  const handleStatusChange = (projectId, newStatus) => {
+  const handleStatusChange = useCallback((projectId, newStatus) => {
     setProjects((prev) =>
       prev.map((p) => (p.id === projectId ? { ...p, isActive: newStatus } : p))
     );
-  };
+  }, []);
 
-  const handleProjectUpdate = (projectId, updates) => {
+  const handleProjectUpdate = useCallback((projectId, updates) => {
     setProjects((prev) =>
       prev.map((p) => (p.id === projectId ? { ...p, ...updates } : p))
     );
-  };
+  }, []);
 
-  const handleProjectClick = (project) => {
+  const handleProjectClick = useCallback((project) => {
     setSelectedProjectId(project.id);
     setSelectedProjectName(project.projectname);
     onProjectSelect(project);
-  };
+  }, [onProjectSelect]);
 
+  // ---------- Render ----------
   return (
     <aside
       className={`w-72 shrink-0 border-r flex flex-col ${
