@@ -1102,7 +1102,7 @@ async function startup() {
     }
   }
   if (!externalReady) {
-    console.error('[Startup] ❌ External Redis not ready – exiting');
+    console.error('[Startup] ❌ Extenal Redis not ready – exiting');
     process.exit(1);
   }
 
