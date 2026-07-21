@@ -880,7 +880,7 @@ const startServer = async () => {
 
   const PORT = process.env.PORT || 3000;
   server.listen(PORT, () => {
-    console.log(`[Server] ✅ Listening on port ${PORT}`);
+    console.log(`[Server] ✅ Lis tening on port ${PORT}`);
   });
 };
 
@@ -888,3 +888,5 @@ startServer().catch((err) => {
   console.error('[Server] ❌ Fatal startup error:', err);
   process.exit(1);
 });
+
+

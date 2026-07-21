@@ -35,7 +35,9 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// ---------- Helper: get container info ----------
+
+
+// ---------- Helper: get   container info ----------
 async function getContainerInfo(containerName) {
   try {
     const containers = await docker.listContainers({ all: true, filters: { name: [containerName] } });
