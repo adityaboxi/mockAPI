@@ -80,3 +80,4 @@ async function sendOTPEmail(email, otp, username) {
 }
 
 module.exports = { sendOTPEmail };
+

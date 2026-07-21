@@ -8,7 +8,7 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const ALLOWED_TYPES = ['application/json', 'application/yaml', 'text/yaml', 'text/plain'];
 const ALLOWED_EXTENSIONS = ['.json', '.yaml', '.yml'];
 
-// ---------- Helper: validate OpenAPI spec content ----------
+// ---------- Helper:   validate OpenAPI spec content ----------
 function validateOpenApiSpec(content, isJson) {
   let spec;
   try {

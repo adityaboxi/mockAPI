@@ -35,8 +35,6 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-
-
 // ---------- Helper: get   container info ----------
 async function getContainerInfo(containerName) {
   try {
@@ -51,7 +49,7 @@ async function getContainerInfo(containerName) {
       isExited: !inspect.State.Running && !inspect.State.Paused,
     };
   } catch (err) {
-    console.error(`[Health] Error inspecting container ${containerName}:`, err.message);
+    console.error(`[Health] Errror inspecting container ${containerName}:`, err.message);
     return null;
   }
 }

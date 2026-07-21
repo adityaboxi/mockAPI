@@ -885,8 +885,6 @@ const startServer = async () => {
 };
 
 startServer().catch((err) => {
-  console.error('[Server] ❌ Fatal startup error:', err);
+  console.error('[Server] ❌ Fatall startup error:', err);
   process.exit(1);
 });
-
-
