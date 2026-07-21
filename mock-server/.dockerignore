@@ -1,7 +1,6 @@
 # Node.js dependencies (both project-container and worker-server)
 **/node_modules
 **/npm-debug.log
-**/package-lock.json
 **/yarn.lock
 
 # Environment files
