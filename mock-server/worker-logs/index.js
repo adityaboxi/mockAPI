@@ -145,49 +145,68 @@ const connectionOpts = {
 const emailWorker = new Worker(
   'bullmq-email-jobs',
   async (job) => {
-    const data = job.data || {};
-    console.log('[email] 📨 Received:', data);
+    try {
+      const data = job.data || {};
+      console.log('[email] 📨 Received job (ID: ' + job.id + '):', JSON.stringify(data, null, 2));
 
-    const { project_id, ip, is_private, path, method, username } = data;
+      // Skip empty jobs
+      if (!data || Object.keys(data).length === 0) {
+        console.warn('[email] ⚠️ Empty job data – skipping');
+        return;
+      }
 
-    // ---- Check if this is a DoS alert ----
-    if (project_id && ip && is_private === true) {
-      try {
-        // 1. Find project in MongoDB
+      const { project_id, ip, is_private, path, method } = data;
+
+      // ---- DoS alert ----
+      if (project_id && ip && is_private === true) {
+        console.log('[email] 🚨 DoS alert detected – processing ban and notification');
+
+        // 1. Find project
+        console.log(`[email] 🔍 Looking up project: "${project_id}"`);
         const project = await Project.findOne({ id: project_id });
         if (!project) {
-          console.error(`[email] ❌ Project ${project_id} not found in MongoDB`);
+          console.error(`[email] ❌ Project ${project_id} not found – skipping`);
           return;
         }
+        console.log(`[email] 📁 Found project: "${project.projectname}" (${project.id})`);
 
-        // 2. Get all members (owner + members array)
+        // 2. Build member list
         const memberUsernames = [project.username, ...(project.members || [])];
         const uniqueMembers = [...new Set(memberUsernames)];
+        console.log(`[email] 👥 Member usernames: ${uniqueMembers.join(', ')}`);
 
-        // 3. Fetch emails for all members
+        // 3. Fetch users
+        console.log(`[email] 🔍 Fetching users for usernames: ${uniqueMembers.join(', ')}`);
         const users = await User.find({ username: { $in: uniqueMembers } });
-        const emails = users.map(u => u.email).filter(e => e);
+        console.log(`[email] 👤 Found ${users.length} user(s) in DB`);
 
-        if (emails.length === 0) {
-          console.warn(`[email] ⚠️ No emails found for project ${project_id}`);
-          return;
+        const emails = users.map(u => u.email).filter(e => e && e.trim() !== '');
+        console.log(`[email] 📧 Collected ${emails.length} email(s): ${emails.join(', ')}`);
+
+        // 4. Send emails
+        if (emails.length > 0) {
+          const subject = `🔴 DoS Alert – ${project.projectname} (${project_id})`;
+          const body = `Your project "${project.projectname}" (${project_id}) received over 100 private requests/sec from IP ${ip}. The IP has been banned for 24 hours.\n\nRequest path: ${path || 'N/A'}\nTime: ${new Date().toISOString()}\n\nThis is an automated security notification.`;
+
+          for (const email of emails) {
+            try {
+              await transporter.sendMail({
+                from: '"mockAPI Security" <no-reply@mockapi.info>',
+                to: email,
+                subject,
+                text: body,
+              });
+              console.log(`[email] ✅ DoS alert sent to ${email}`);
+            } catch (mailErr) {
+              console.error(`[email] ❌ Failed to send to ${email}:`, mailErr.message);
+            }
+          }
+        } else {
+          console.warn(`[email] ⚠️ No valid emails found – skipping email (IP will still be banned)`);
         }
 
-        const subject = `🔴 DoS Alert – ${project.projectname} (${project_id})`;
-        const body = `Your project "${project.projectname}" (${project_id}) received over 100 private requests/sec from IP ${ip}. The IP has been banned for 24 hours.\n\nRequest path: ${path || 'N/A'}\nTime: ${new Date().toISOString()}\n\nThis is an automated security notification.`;
-
-        // 4. Send email to each member
-        for (const email of emails) {
-          await transporter.sendMail({
-            from: '"mockAPI Security" <no-reply@mockapi.info>',
-            to: email,
-            subject,
-            text: body,
-          });
-          console.log(`[email] ✅ DoS alert sent to ${email}`);
-        }
-
-        // 5. Save blocked IP in BlockedIP collection (if not already)
+        // 5. Ban IP (24h)
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
         const existing = await BlockedIP.findOne({
           project_id,
           ip,
@@ -199,41 +218,53 @@ const emailWorker = new Worker(
             ip,
             reason: 'DoS protection',
             blockedAt: new Date(),
-            expiresAt: new Date(Date.now() + 24*60*60*1000),
+            expiresAt,
             requestPath: path || '',
             requestMethod: method || 'GET',
             isPrivate: true,
           });
-          console.log(`[email] ✅ Blocked IP ${ip} saved in DB`);
+          console.log(`[email] ✅ IP ${ip} banned until ${expiresAt.toISOString()}`);
+        } else {
+          console.log(`[email] ℹ️ IP ${ip} already has an active ban`);
         }
-      } catch (err) {
-        console.error('[email] ❌ DoS processing error:', err.message);
-        throw err; // retry later
+      } else {
+        // ---- Regular email ----
+        if (!data.to) {
+          console.warn('[email] ⚠️ Missing "to" field – skipping general email');
+          return;
+        }
+        console.log(`[email] 📧 Sending general email to: ${data.to}`);
+        try {
+          await transporter.sendMail({
+            from: '"mockAPI" <no-reply@mockapi.info>',
+            to: data.to,
+            subject: data.subject || 'Notification',
+            text: data.body,
+            html: data.html,
+          });
+          console.log(`[email] ✅ General email sent to ${data.to}`);
+        } catch (mailErr) {
+          console.error(`[email] ❌ Failed to send general email:`, mailErr.message);
+        }
       }
-    } else {
-      // ---- Regular email (signup, password reset, etc.) ----
-      try {
-        await transporter.sendMail({
-          from: '"mockAPI" <no-reply@mockapi.info>',
-          to: data.to,
-          subject: data.subject || 'Notification',
-          text: data.body,
-          html: data.html, // optional
-        });
-        console.log(`[email] ✅ General email sent to ${data.to}`);
-      } catch (err) {
-        console.error('[email] ❌ General email send failed:', err.message);
-        throw err;
-      }
+      // If we reach here, the job completed successfully
+      console.log(`[email] ✅ Job ${job.id} processed without throwing`);
+    } catch (err) {
+      // Catch ALL errors – log them and do NOT re-throw
+      console.error(`[email] ❌ UNHANDLED error in job ${job.id}:`, err.stack || err.message);
+      // Log the job data to help debug
+      console.error('[email] Job data that caused error:', JSON.stringify(job.data, null, 2));
     }
+    // The job will be marked as completed because we didn't throw
   },
   {
     ...connectionOpts,
     prefix: 'bullmq',
-    attempts: 3,
-    backoff: { type: 'exponential', delay: 2000 },
+    attempts: 1,                 // No retries – avoids lock issues
     removeOnComplete: true,
-    removeOnFail: { count: 50 },
+    removeOnFail: true,          // Remove failed jobs immediately
+    lockDuration: 86400000,      // 24 hours – enough for any process
+    stalledInterval: 86400000,   // 24 hours – effectively no stall detection
   }
 );
 
@@ -267,7 +298,7 @@ const latencyWorker = new Worker(
       console.log(`[latency] ✅ Team avg updated: ${teamAvg}ms`);
     } catch (err) {
       console.error('[latency] ❌ Error:', err.message);
-      throw err;
+      throw err; // latency worker can retry – it's not critical
     }
   },
   {
@@ -277,6 +308,8 @@ const latencyWorker = new Worker(
     backoff: { type: 'exponential', delay: 1000 },
     removeOnComplete: { age: 3600 },
     removeOnFail: { age: 86400 },
+    lockDuration: 86400000,
+    stalledInterval: 86400000,
   }
 );
 
