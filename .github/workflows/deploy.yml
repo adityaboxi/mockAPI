@@ -35,7 +35,7 @@ jobs:
 
             # ---- Force a clean state (restore deleted files, discard local changes) ----
             git fetch origin main
-            git reset --hard origin main
+            git reset --hard FETCH_HEAD   # <-- FIXED: use FETCH_HEAD
 
             # ---------- Write .env files from secrets (always overwrite) ----------
             echo "${{ secrets.SERVER_ENV }}" > server/.env
@@ -117,7 +117,7 @@ jobs:
             # ---------- Health Checks (only for deployed services) ----------
             echo "⏳ Verifying deployed services..."
 
-            # 🆕 Health check for telemetry (container running, not port)
+            # Health check for telemetry (container running, not port)
             if [ "$DEPLOY_TELEMETRY" = "true" ]; then
               echo "🔍 Checking telemetry-server container status..."
               for i in {1..30}; do
