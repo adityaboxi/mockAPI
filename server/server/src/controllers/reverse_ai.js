@@ -1,4 +1,6 @@
 // controllers/reverse_ai.js
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 const { redisClient } = require('../config/redis');
 const crypto = require('crypto');
 

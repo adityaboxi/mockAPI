@@ -28,6 +28,7 @@ await emailQueue.add('sendOTP', {
 module.exports = { sendotp };*/
 
 
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 
 const { redisClient } = require('../config/redis');
 const { emailQueue } = require('../queues/emailQueue');

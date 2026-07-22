@@ -1,4 +1,6 @@
 // models/TeamLatency.js
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 const mongoose = require('mongoose');
 
 const teamLatencySchema = new mongoose.Schema({

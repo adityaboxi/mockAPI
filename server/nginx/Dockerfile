@@ -1,9 +1,13 @@
-FROM nginx:alpine
+FROM openresty/openresty:alpine
 
-RUN rm /etc/nginx/conf.d/default.conf
+# Install Perl and curl (required for opm)
+RUN apk add --no-cache perl curl
 
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# Install lua-resty-http
+RUN opm install ledgetech/lua-resty-http
 
-EXPOSE 80
+# Copy your Lua module
+COPY log_buffer.lua /usr/local/openresty/lualib/log_buffer.lua
 
-CMD ["nginx", "-g", "daemon off;"]
+# Copy your nginx config
+COPY nginx.conf /usr/local/openresty/nginx/conf/nginx.conf

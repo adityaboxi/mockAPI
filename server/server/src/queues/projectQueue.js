@@ -1,3 +1,5 @@
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 const { Queue } = require('bullmq');
 
 const projectQueue = new Queue('projectQueue', {

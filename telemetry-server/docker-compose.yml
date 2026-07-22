@@ -1,0 +1,13 @@
+services:
+  telemetry-server:
+    build: .
+    container_name: telemetry-server
+    restart: unless-stopped
+    env_file:
+      - .env                     # <-- Loads all environment variables from .env
+    networks:
+      - shared-net
+
+networks:
+  shared-net:
+    external: true

@@ -1,6 +1,8 @@
 
 const nodemailer = require('nodemailer');
 require('dotenv').config();
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 
 // Read environment variables
 const SMTP_HOST = process.env.SMTP_HOST || 'smtp.gmail.com';

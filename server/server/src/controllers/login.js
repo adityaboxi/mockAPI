@@ -1,3 +1,5 @@
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 

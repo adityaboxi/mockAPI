@@ -1,3 +1,4 @@
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 
 
 const { redisClient } = require('../config/redis');

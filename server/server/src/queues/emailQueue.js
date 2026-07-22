@@ -1,4 +1,7 @@
 const { Queue, Worker } = require('bullmq');
+
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 const { sendOTPEmail } = require('../services/emailService');
 const { redisClient } = require('../config/redis');
 

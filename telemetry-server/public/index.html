@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard</title>
+  <style>
+    body { background: #1e1e2e; color: #cdd6f4; font-family: system-ui, sans-serif; padding: 20px; }
+    header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #45475a; padding-bottom: 10px; }
+    h1 { color: #89b4fa; margin: 0; }
+    .status { font-size: 14px; }
+    .status .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #a6da95; margin-right: 6px; }
+    .status .dot.off { background: #f38ba8; }
+    .stats { display: flex; gap: 20px; margin: 20px 0; }
+    .stat { background: #313244; padding: 10px 20px; border-radius: 8px; border-left: 4px solid #89b4fa; }
+    .stat span { font-size: 28px; font-weight: bold; display: block; }
+    .filters { display: flex; gap: 10px; margin: 10px 0; }
+    .filters select { background: #313244; color: #cdd6f4; border: 1px solid #45475a; padding: 6px 12px; border-radius: 6px; }
+    table { width: 100%; border-collapse: collapse; background: #11111b; border-radius: 8px; overflow: hidden; }
+    th { background: #313244; text-align: left; padding: 10px; }
+    td { padding: 8px 10px; border-bottom: 1px solid #45475a; }
+    .level { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+    .level.INFO { background: rgba(137,180,250,0.2); color: #89b4fa; }
+    .level.ERROR { background: rgba(243,139,168,0.2); color: #f38ba8; }
+    .level.WARN { background: rgba(249,226,175,0.2); color: #f9e2af; }
+    button { background: #f38ba8; color: #1e1e2e; border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; }
+    .empty { text-align: center; padding: 40px; color: #a6adc8; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>📊 Telemetry</h1>
+    <div>
+      <span class="status"><span class="dot" id="statusDot"></span><span id="statusText">Connected</span></span>
+      <button onclick="logout()" style="margin-left: 20px;">Logout</button>
+    </div>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><span id="totalLogs">0</span> Total Logs</div>
+    <div class="stat" style="border-left-color:#f38ba8;"><span id="totalErrors">0</span> Errors</div>
+  </div>
+
+  <div class="filters">
+    <select id="levelFilter" onchange="renderLogs()">
+      <option value="">All Levels</option>
+      <option value="INFO">Info</option>
+      <option value="WARN">Warn</option>
+      <option value="ERROR">Error</option>
+    </select>
+    <select id="limitFilter" onchange="renderLogs()">
+      <option value="20">20</option>
+      <option value="50" selected>50</option>
+      <option value="100">100</option>
+    </select>
+  </div>
+
+  <div id="logContainer">
+    <table>
+      <thead><tr><th>Time</th><th>Level</th><th>Message</th><th>Service</th></tr></thead>
+      <tbody id="logBody"></tbody>
+    </table>
+    <div id="emptyMsg" class="empty">No logs yet.</div>
+  </div>
+
+  <script>
+    let logs = [];
+    let ws = null;
+
+    function formatTime(ts) {
+      return new Date(ts).toLocaleTimeString() + '.' + String(new Date(ts).getMilliseconds()).padStart(3,'0');
+    }
+
+    function renderLogs() {
+      const level = document.getElementById('levelFilter').value;
+      const limit = parseInt(document.getElementById('limitFilter').value);
+      let filtered = level ? logs.filter(l => l.level === level) : logs;
+      const displayed = filtered.slice(0, limit);
+      const tbody = document.getElementById('logBody');
+      tbody.innerHTML = '';
+      const empty = document.getElementById('emptyMsg');
+      if (displayed.length === 0) {
+        empty.style.display = 'block';
+        return;
+      }
+      empty.style.display = 'none';
+      displayed.forEach(log => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${formatTime(log.timestamp)}</td>
+          <td><span class="level ${log.level || 'INFO'}">${log.level || 'INFO'}</span></td>
+          <td>${log.message || ''}</td>
+          <td>${log.container || '-'}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+      document.getElementById('totalLogs').textContent = logs.length;
+      document.getElementById('totalErrors').textContent = logs.filter(l => l.level === 'ERROR' || l.level === 'FATAL').length;
+    }
+
+    function connectWebSocket() {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}${window.location.pathname}`;
+      ws = new WebSocket(wsUrl);
+      ws.onopen = () => {
+        document.getElementById('statusDot').classList.remove('off');
+        document.getElementById('statusText').textContent = 'Connected';
+      };
+      ws.onmessage = (e) => {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'log') {
+          logs.unshift(msg.data);
+          if (logs.length > 10000) logs.pop();
+          renderLogs();
+        }
+      };
+      ws.onclose = () => {
+        document.getElementById('statusDot').classList.add('off');
+        document.getElementById('statusText').textContent = 'Disconnected';
+        setTimeout(connectWebSocket, 3000);
+      };
+      ws.onerror = () => ws.close();
+    }
+
+    async function loadLogs() {
+      try {
+        const res = await fetch('logs?limit=100');
+        if (res.ok) {
+          const data = await res.json();
+          logs = data.logs || [];
+          renderLogs();
+        }
+      } catch (e) { console.error(e); }
+    }
+
+    async function logout() {
+      if (confirm('Logout?')) {
+        await fetch('logout', { method: 'POST' });
+        window.location.href = 'login';
+      }
+    }
+
+    window.addEventListener('load', () => {
+      loadLogs();
+      connectWebSocket();
+      setInterval(renderLogs, 5000);
+    });
+  </script>
+</body>
+</html>

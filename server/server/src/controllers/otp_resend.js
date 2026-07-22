@@ -1,3 +1,5 @@
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 const { redisClient } = require('../config/redis');
 const { emailQueue } = require('../queues/emailQueue');
 async function otp_resend(req, res) {

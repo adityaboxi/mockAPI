@@ -1,4 +1,6 @@
 require('dotenv').config();
+require('./opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');

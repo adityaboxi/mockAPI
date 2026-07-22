@@ -46,6 +46,7 @@ module.exports = { authenticateToken, requireAuth, requireAdmin };*/
 
 
 
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 
 
 const jwt = require('jsonwebtoken');

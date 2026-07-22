@@ -1,3 +1,5 @@
+
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 const User = require('../models/User');
 const { redisClient } = require('../config/redis');
 const { sendotp } = require('./sendotp');

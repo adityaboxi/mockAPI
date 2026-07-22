@@ -1,3 +1,5 @@
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 async function logout(req, res) {
   res.clearCookie('token', {
     httpOnly: true,

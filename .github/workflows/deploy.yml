@@ -33,20 +33,33 @@ jobs:
 
             cd mockAPI
 
-            # Write .env files from secrets (always overwrite)
+            # ---- Force a clean state (restore deleted files, discard local changes) ----
+            git fetch origin main
+            git reset --hard origin main
+
+            # ---------- Write .env files from secrets (always overwrite) ----------
             echo "${{ secrets.SERVER_ENV }}" > server/.env
             echo "${{ secrets.CLIENT_ENV }}" > client/.env
             echo "${{ secrets.MOCK_SERVER_ENV }}" > mock-server/.env
 
-            # ---- Force a clean state (restore deleted files, discard local changes) ----
-            git fetch origin main
-            git reset --hard origin/main
+            # --- Telemetry .env (fallback if secret not set) ---
+            if [ -n "${{ secrets.TELEMETRY_ENV }}" ]; then
+              echo "${{ secrets.TELEMETRY_ENV }}" > telemetry-server/.env
+            else
+              mkdir -p telemetry-server
+              echo "NODE_ENV=production" > telemetry-server/.env
+              echo "PORT=3003" >> telemetry-server/.env
+              echo "DASHBOARD_USER=myusername" >> telemetry-server/.env
+              echo "DASHBOARD_PASS=mypassword" >> telemetry-server/.env
+              echo "SESSION_SECRET=some-strong-random-string" >> telemetry-server/.env
+            fi
 
             # ---------- Determine what to deploy ----------
             DEPLOY_SERVER=false
             DEPLOY_MOCK=false
             DEPLOY_CLIENT=false
             DEPLOY_DOMAIN=false
+            DEPLOY_TELEMETRY=false
 
             # Helper function to check if folder exists and has content
             folder_exists() {
@@ -56,6 +69,7 @@ jobs:
             # If manual trigger or fresh clone – deploy ALL services (if folders exist)
             if [ "${{ github.event_name }}" == "workflow_dispatch" ] || [ "$CLONED" == "true" ]; then
               echo "🔄 Manual trigger or fresh clone – deploying existing services"
+              folder_exists "telemetry-server" && DEPLOY_TELEMETRY=true
               folder_exists "server" && DEPLOY_SERVER=true
               folder_exists "mock-server" && DEPLOY_MOCK=true
               folder_exists "client" && DEPLOY_CLIENT=true
@@ -71,6 +85,9 @@ jobs:
               echo "Changed files: $CHANGED_FILES"
 
               # Only set deploy flags if folder exists and files changed inside it
+              if folder_exists "telemetry-server" && echo "$CHANGED_FILES" | grep -q "^telemetry-server/"; then
+                DEPLOY_TELEMETRY=true
+              fi
               if folder_exists "server" && echo "$CHANGED_FILES" | grep -q "^server/"; then
                 DEPLOY_SERVER=true
               fi
@@ -85,13 +102,13 @@ jobs:
               fi
 
               # If no service folder changed, skip deployment
-              if [ "$DEPLOY_SERVER" = false ] && [ "$DEPLOY_MOCK" = false ] && [ "$DEPLOY_CLIENT" = false ] && [ "$DEPLOY_DOMAIN" = false ]; then
+              if [ "$DEPLOY_SERVER" = false ] && [ "$DEPLOY_MOCK" = false ] && [ "$DEPLOY_CLIENT" = false ] && [ "$DEPLOY_DOMAIN" = false ] && [ "$DEPLOY_TELEMETRY" = false ]; then
                 echo "ℹ️ No service folder changed – skipping deployment."
                 exit 0
               fi
             fi
 
-            export DEPLOY_SERVER DEPLOY_MOCK DEPLOY_CLIENT DEPLOY_DOMAIN
+            export DEPLOY_SERVER DEPLOY_MOCK DEPLOY_CLIENT DEPLOY_DOMAIN DEPLOY_TELEMETRY
 
             # Make deploy.sh executable and run it
             chmod +x deploy.sh
@@ -99,6 +116,18 @@ jobs:
 
             # ---------- Health Checks (only for deployed services) ----------
             echo "⏳ Verifying deployed services..."
+
+            # 🆕 Health check for telemetry (container running, not port)
+            if [ "$DEPLOY_TELEMETRY" = "true" ]; then
+              echo "🔍 Checking telemetry-server container status..."
+              for i in {1..30}; do
+                if docker ps --filter "name=telemetry-server" --filter "status=running" | grep -q telemetry-server; then
+                  echo "✅ Telemetry server container is running"
+                  break
+                fi
+                sleep 1
+              done
+            fi
 
             if [ "$DEPLOY_SERVER" = "true" ] || [ "$DEPLOY_MOCK" = "true" ]; then
               # Health check for server (port 8081)
@@ -144,6 +173,3 @@ jobs:
             fi
 
             echo "✅ Deployment complete!"
-
-
-            

@@ -1,3 +1,5 @@
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 const { Queue } = require('bullmq');
 const queueConnection = { connection: { url: process.env.REDIS_URL } };
 

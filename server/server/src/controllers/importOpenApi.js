@@ -1,3 +1,5 @@
+
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 const multer = require('multer');
 const yaml = require('js-yaml');
 const { Queue } = require('bullmq');

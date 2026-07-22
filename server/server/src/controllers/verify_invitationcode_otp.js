@@ -1,3 +1,4 @@
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 const Project = require('../models/Project');
 const ProjectApiHistory = require('../models/ProjectApiHistory');
 const { redisClient } = require('../config/redis');

@@ -1,17 +1,28 @@
 #!/bin/bash
 set -e
 
-# Check if any deployment flag is set (including DOMAIN)
-if [ -z "$DEPLOY_SERVER" ] && [ -z "$DEPLOY_MOCK" ] && [ -z "$DEPLOY_CLIENT" ] && [ -z "$DEPLOY_DOMAIN" ]; then
+# Check if any deployment flag is set (including DOMAIN and TELEMETRY)
+if [ -z "$DEPLOY_SERVER" ] && [ -z "$DEPLOY_MOCK" ] && [ -z "$DEPLOY_CLIENT" ] && [ -z "$DEPLOY_DOMAIN" ] && [ -z "$DEPLOY_TELEMETRY" ]; then
   echo "No deployment flags set - skipping."
   exit 0
 fi
 
-# Create networks if   they don't exist (idempotent)
+# Create networks if they don't exist (idempotent)
 docker network create orch-net 2>/dev/null || true
 docker network create shared-net 2>/dev/null || true
 
-# ---- 1. SERVER (deploys first; forces mock‑server) ----
+# ---- 1. TELEMETRY SERVER (deploys first) ----
+if [ "$DEPLOY_TELEMETRY" = "true" ]; then
+  echo "🚀 Deploying telemetry server..."
+  (
+    cd telemetry-server
+    docker-compose down
+    docker rmi telemetry-server:latest 2>/dev/null || true
+    docker-compose up -d --build
+  )
+fi
+
+# ---- 2. SERVER (deploys second; forces mock‑server) ----
 if [ "$DEPLOY_SERVER" = "true" ]; then
   echo "🚀 Deploying server..."
   (
@@ -24,7 +35,7 @@ if [ "$DEPLOY_SERVER" = "true" ]; then
   DEPLOY_MOCK=true
 fi
 
-# ---- 2. MOCK‑SERVER (deploys second) ----
+# ---- 3. MOCK‑SERVER (deploys third) ----
 if [ "$DEPLOY_MOCK" = "true" ]; then
   echo "🚀 Deploying mock-server..."
   (
@@ -35,7 +46,7 @@ if [ "$DEPLOY_MOCK" = "true" ]; then
   )
 fi
 
-# ---- 3. CLIENT (deploys third) ----
+# ---- 4. CLIENT (deploys fourth) ----
 if [ "$DEPLOY_CLIENT" = "true" ]; then
   echo "🚀 Deploying client..."
   (
@@ -46,7 +57,7 @@ if [ "$DEPLOY_CLIENT" = "true" ]; then
   )
 fi
 
-# ---- 4. DOMAIN SERVICE (Standalone Nginx) ----
+# ---- 5. DOMAIN SERVICE (Standalone Nginx) ----
 if [ "$DEPLOY_DOMAIN" = "true" ]; then
   echo "🔄 Deploying Domain Service (Nginx reverse proxy)..."
 
@@ -73,6 +84,7 @@ if [ "$DEPLOY_DOMAIN" = "true" ]; then
   # Run the new container (ports 80 & 443, mount SSL certs)
   docker run -d \
     --name domain-proxy \
+    --network shared-net \              # <-- Attach to shared-net (NEW)
     -p 80:80 \
     -p 443:443 \
     -v /etc/letsencrypt:/etc/letsencrypt:ro \

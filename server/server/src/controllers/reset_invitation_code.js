@@ -94,6 +94,7 @@ module.exports = reset_invitation_code;
 */
 
 
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 
 const crypto = require('crypto');
 const Project = require('../models/Project');

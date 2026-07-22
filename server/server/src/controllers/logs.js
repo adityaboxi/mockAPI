@@ -1,3 +1,5 @@
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 const SystemEventLog = require('../models/SystemEventLog');
 
 async function logs(req, res) {

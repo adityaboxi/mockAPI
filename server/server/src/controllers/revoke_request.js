@@ -1,3 +1,5 @@
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 const RequestJoinProject = require('../models/RequestJoinProject');
 
 async function revoke_request(req, res) {

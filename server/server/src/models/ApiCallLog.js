@@ -1,4 +1,6 @@
 // models/ApiCallLog.js
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 const mongoose = require('mongoose');
 
 const apiCallLogSchema = new mongoose.Schema({

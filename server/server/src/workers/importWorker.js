@@ -1,4 +1,6 @@
 require('dotenv').config();
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 const { Worker, Queue } = require('bullmq');
 const { v4: uuidv4 } = require('uuid');
 const Project = require('../models/Project');

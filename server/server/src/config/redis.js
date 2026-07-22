@@ -1,3 +1,4 @@
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 const redis = require('redis');
 const REDIS_URL = process.env.REDIS_URL;
 if (!REDIS_URL) throw new Error('REDIS_URL env is not set');
