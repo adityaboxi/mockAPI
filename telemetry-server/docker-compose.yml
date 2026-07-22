@@ -4,7 +4,7 @@ services:
     container_name: telemetry-server
     restart: unless-stopped
     env_file:
-      - .env                     # <-- Loads all environment variables from .env
+      - .env                  
     networks:
       - shared-net
 
