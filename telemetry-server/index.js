@@ -54,7 +54,7 @@ app.post('/login', (req, res) => {
         console.error('Session save error:', err);
         return res.status(500).json({ error: 'Session save failed' });
       }
-      return res.json({ success: true, redirect: '/' });
+      return res.json({ success: true, redirect: '/telemetry/' });
     });
   } else {
     return res.status(401).json({ error: 'Invalid credentials' });
