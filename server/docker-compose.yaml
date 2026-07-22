@@ -35,7 +35,6 @@ services:
     depends_on:
       - redis-external
     restart: unless-stopped
-    # ---------- ADD THIS BLOCK ----------
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -47,17 +46,26 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  # ---------- REMOVE app-3 COMPLETELY ----------
+  # app-3:
+  #   <<: *app-base
+  #   container_name: mockapi-app-3
+  #   environment:
+  #     - CONTAINER_NAME=mockapi-app-3
+  #   extra_hosts:
+  #     - "host.docker.internal:host-gateway"
+
   bullmq-worker:
     build:
       context: ./bullmq-worker
       dockerfile: Dockerfile
     container_name: bullmq-worker
     env_file:
-      - ./.env   # loads from the root directory (mockAPI/.env)
+      - ./.env
     environment:
       - CONTAINER_NAME=bullmq-worker
     networks:
-      - shared-net   # or orch-net – same as Redis
+      - shared-net
     depends_on:
       - redis-external
     restart: unless-stopped
@@ -73,13 +81,11 @@ services:
     depends_on:
       - app
       - app-2
-      - app-3
     networks:
       - backend
       - orch-net
       - shared-net
     env_file:
-    - .env
+      - .env
     environment:
-    - CONTAINER_NAME=mockapi-nginx          # Already existed
-   
+      - CONTAINER_NAME=mockapi-nginx
