@@ -24,15 +24,6 @@ services:
     networks:
       - client-net
 
-  # ======================== REACT APP INSTANCE 3 ========================
-  react-app-3:
-    image: mockapi-react:latest
-    container_name: react-app-3
-    restart: unless-stopped
-    env_file: .env
-    networks:
-      - client-net
-
   # ======================== NGINX LOAD BALANCER (client) ========================
   nginx:
     build:
@@ -43,15 +34,14 @@ services:
       - "8082:80"
     depends_on:
       - react-app-1
-      - react-app-2
-      - react-app-3
+      - react-app-2                 # only two instances now
     networks:
       - client-net
-      - shared-net           # to reach the server load balancer
+      - shared-net                   # to reach the server load balancer
     restart: unless-stopped
 
 networks:
   client-net:
     driver: bridge
   shared-net:
-    external: true           # must already exist
+    external: true                   # must already exist
