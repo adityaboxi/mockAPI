@@ -81,10 +81,10 @@ if [ "$DEPLOY_DOMAIN" = "true" ]; then
   cd domainservice
   docker build -t domainservice:latest .
 
-  # Run the new container (ports 80 & 443, mount SSL certs)
+  # Run the new container (attach to shared-net for telemetry access)
   docker run -d \
     --name domain-proxy \
-    --network shared-net \              # <-- Attach to shared-net (NEW)
+    --network shared-net \
     -p 80:80 \
     -p 443:443 \
     -v /etc/letsencrypt:/etc/letsencrypt:ro \

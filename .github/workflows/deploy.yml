@@ -35,7 +35,7 @@ jobs:
 
             # ---- Force a clean state (restore deleted files, discard local changes) ----
             git fetch origin main
-            git reset --hard FETCH_HEAD   # <-- FIXED: use FETCH_HEAD
+            git reset --hard FETCH_HEAD
 
             # ---------- Write .env files from secrets (always overwrite) ----------
             echo "${{ secrets.SERVER_ENV }}" > server/.env
@@ -117,7 +117,7 @@ jobs:
             # ---------- Health Checks (only for deployed services) ----------
             echo "⏳ Verifying deployed services..."
 
-            # Health check for telemetry (container running, not port)
+            # Health check for telemetry (container running)
             if [ "$DEPLOY_TELEMETRY" = "true" ]; then
               echo "🔍 Checking telemetry-server container status..."
               for i in {1..30}; do
@@ -163,10 +163,20 @@ jobs:
             fi
 
             if [ "$DEPLOY_DOMAIN" = "true" ]; then
+              echo "🔍 Checking domain-proxy container status..."
               for i in {1..30}; do
-                if curl -s -f http://localhost/ > /dev/null; then
-                  echo "✅ Domain service (Nginx) healthy"
-                  break
+                # Check if container is running and responds with 200 or 301 (redirect)
+                if docker ps --filter "name=domain-proxy" --filter "status=running" | grep -q domain-proxy; then
+                  # Also check HTTP response (allow 200 or 301)
+                  STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/ || echo "000")
+                  if [ "$STATUS" = "200" ] || [ "$STATUS" = "301" ]; then
+                    echo "✅ Domain service healthy (HTTP $STATUS)"
+                    break
+                  else
+                    echo "⏳ Domain service responding with $STATUS, waiting..."
+                  fi
+                else
+                  echo "⏳ Domain service container not running yet..."
                 fi
                 sleep 1
               done
