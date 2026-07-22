@@ -47,14 +47,6 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
-  app-3:
-    <<: *app-base
-    container_name: mockapi-app-3
-    environment:
-      - CONTAINER_NAME=mockapi-app-3
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
   bullmq-worker:
     build:
       context: ./bullmq-worker
