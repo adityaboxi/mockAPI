@@ -7,6 +7,7 @@ local cjson = require("cjson")
 
 local _M = {}
 
+
 -- ---------- CONFIGURATION ----------
 local LOG_SERVER_URL = os.getenv("LOG_SERVER_URL") or "http://telemetry-server:3003/v1/logs"
 local CONTAINER_NAME = os.getenv("CONTAINER_NAME") or "nginx-gateway"

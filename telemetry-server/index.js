@@ -8,12 +8,15 @@ const path = require('path');
 
 const app = express();
 
+
+
+
 // ---------- Environment configuration ----------
 const DASHBOARD_USER = process.env.DASHBOARD_USER || 'admin';
 const DASHBOARD_PASS = process.env.DASHBOARD_PASS || 'password';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'my-super-secret-key';
 
-// ---------- Session middleware (in‑memory) ----------
+// ---------- Session   middleware (in‑memory) ----------
 app.use(cookieParser());
 const sessionParser = session({
   secret: SESSION_SECRET,

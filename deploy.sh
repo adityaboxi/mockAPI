@@ -61,23 +61,19 @@ fi
 if [ "$DEPLOY_DOMAIN" = "true" ]; then
   echo "🔄 Deploying Domain Service (Nginx reverse proxy)..."
 
-  # Check if the domainservice folder exists
   if [ ! -d "domainservice" ]; then
     echo "❌ domainservice folder not found – skipping."
     exit 1
   fi
 
-  # Optional: Check if SSL certificates exist (warn but continue)
   if [ ! -f "/etc/letsencrypt/live/api.mockapi.info/fullchain.pem" ]; then
     echo "⚠️ SSL certificate not found at /etc/letsencrypt/live/api.mockapi.info/fullchain.pem"
     echo "⚠️ The container may fail to start if certificates are missing."
   fi
 
-  # Stop and remove the old container (if it exists)
   docker stop domain-proxy 2>/dev/null || true
   docker rm domain-proxy 2>/dev/null || true
 
-  # Build the new image from the domainservice folder
   cd domainservice
   docker build -t domainservice:latest .
 
@@ -92,7 +88,7 @@ if [ "$DEPLOY_DOMAIN" = "true" ]; then
     --restart unless-stopped \
     domainservice:latest
 
-  cd ..  # Go back to root
+  cd ..
   echo "✅ Domain Service container started"
 fi
 
