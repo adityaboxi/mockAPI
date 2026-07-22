@@ -8,15 +8,12 @@ const path = require('path');
 
 const app = express();
 
-
-
-
 // ---------- Environment configuration ----------
 const DASHBOARD_USER = process.env.DASHBOARD_USER || 'admin';
 const DASHBOARD_PASS = process.env.DASHBOARD_PASS || 'password';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'my-super-secret-key';
 
-// ---------- Session   middleware (in‑memory) ----------
+// ---------- Session middleware (in‑memory) ----------
 app.use(cookieParser());
 const sessionParser = session({
   secret: SESSION_SECRET,
@@ -80,8 +77,8 @@ function requireAuth(req, res, next) {
   if (req.path.startsWith('/api/') || req.path === '/logs' || req.path === '/errors' || req.path === '/traces') {
     return res.status(401).json({ error: 'Unauthorized' });
   }
-  // Redirect to login for page requests
-  res.redirect('/login');
+  // Redirect to login page (with proxy prefix)
+  res.redirect('/telemetry/login');
 }
 
 app.use(requireAuth);
@@ -121,10 +118,8 @@ app.get('/errors', (req, res) => {
   res.json({ total: errors.length, logs: sorted.slice(0, 100) });
 });
 
-// ---------- ADDED: /traces endpoint (dummy for now) ----------
+// ---------- Dummy /traces endpoint ----------
 app.get('/traces', (req, res) => {
-  const limit = parseInt(req.query.limit) || 50;
-  // You can later add real trace storage. For now, return empty array.
   res.json({ total: 0, traces: [] });
 });
 
