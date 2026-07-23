@@ -10,7 +10,7 @@ const app = express();
 // Trust the first proxy (OpenResty) to get real client IP
 app.set('trust proxy', true);
 
-// Compression
+// Compressionnn
 app.use(express.json());
 app.use(cookieParser());
 app.use(compression({
