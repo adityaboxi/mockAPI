@@ -13,7 +13,9 @@ const blockedIPSchema = new mongoose.Schema({
   isPrivate: { type: Boolean, default: false },
 }, { timestamps: true });
 
-// Compound index for active block lookups
+
+
+// Compound  index for active block lookups
 blockedIPSchema.index({ project_id: 1, ip: 1, expiresAt: 1 });
 
 // TTL index: automatically delete documents after expiresAt
