@@ -12,6 +12,8 @@ const Setting = () => {
   const isSubscribed = user?.subscribe === true;
   const [isProcessing, setIsProcessing] = useState(false);
 
+
+  
   const handleLogin = () => navigate("/login");
   const handleManageAccountClick = () => navigate("/manageaccount");
 

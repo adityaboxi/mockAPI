@@ -160,5 +160,5 @@ server.listen(PORT, () => {
   console.log(`🚀 Telemetry server running on port ${PORT}`);
   console.log(`📊 Dashboard: http://localhost:${PORT}`);
   console.log(`📝 Logs endpoint: POST http://localhost:${PORT}/ingest`);
-  console.log(`========================================\n`);
+  console.log(`=====================================\n`);
 });

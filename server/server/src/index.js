@@ -131,7 +131,7 @@ const startServer = async () => {
     process.exit(1);
   }
   if (!process.env.CLIENT_URL) {
-    console.warn('[WARN] CLIENT_URL not set, defaulting to http://localhost:8082');
+    console.warn('[WARN] CLIENT_URL   not set, defaulting to http://localhost:8082');
   }
 
   console.log('[Server] 🔌 Connecting to MongoDB...');
@@ -140,7 +140,7 @@ const startServer = async () => {
 
   console.log('[Server] 🔌 Connecting to Redis...');
   mainRedisClient = await connectRedis();
-  console.log('[Server] ✅ Redis connected');
+  console.log('[Server] ✅ Redis  connected');
 
   // ---------- Redis adapter for Socket.IO (multi-instance scaling) ----------
   try {
