@@ -15,9 +15,7 @@ const BlockedIP = require('./models/BlockedIP');
 
 
 
-
-
-// ---------- Config ----------
+// ---------- Config ------------
 const REDIS_URL = process.env.INTERNAL_REDIS_URL || 'redis://redis-internal:6379';
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://mongo:27017/mockapi';
 const DOCKER_SOCKET = process.env.DOCKER_SOCKET || '/var/run/docker.sock';

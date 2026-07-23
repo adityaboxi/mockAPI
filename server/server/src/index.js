@@ -142,7 +142,7 @@ const startServer = async () => {
   mainRedisClient = await connectRedis();
   console.log('[Server] ✅ Redis  connected');
 
-  // ---------- Redis adapter for Socket.IO (multi-instance scaling) ----------
+  // -------------- Redis adapter for Socket.IO (multi-instance scaling) ----------
   try {
     console.log('[Socket] Setting up Redis adapter...');
     pubClient = createClient({ url: process.env.REDIS_URL });
