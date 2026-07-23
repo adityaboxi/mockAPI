@@ -14,7 +14,6 @@ const blockedIPSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 
-
 // Compound  index for active block lookups
 blockedIPSchema.index({ project_id: 1, ip: 1, expiresAt: 1 });
 

@@ -3,6 +3,7 @@ require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 
 const mongoose = require('mongoose');
 
+
 const blockedIPSchema = new mongoose.Schema({
   project_id: { type: String, required: true, index: true },
   ip: { type: String, required: true, index: true },
