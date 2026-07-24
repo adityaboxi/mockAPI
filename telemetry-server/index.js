@@ -123,6 +123,8 @@ app.get('/traces', (req, res) => {
   res.json({ total: 0, traces: [] });
 });
 
+
+
 // ---------- WebSocket server ----------
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ noServer: true });
