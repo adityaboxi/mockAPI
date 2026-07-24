@@ -118,7 +118,7 @@ app.get('/errors', (req, res) => {
   res.json({ total: errors.length, logs: sorted.slice(0, 100) });
 });
 
-// ---------- Dummy /traces endpoint ----------
+// ------------ Dummy /traces endpoint ----------
 app.get('/traces', (req, res) => {
   res.json({ total: 0, traces: [] });
 });
