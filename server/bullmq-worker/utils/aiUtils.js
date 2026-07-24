@@ -10,7 +10,6 @@ function sortObjectKeys(obj) {
   }, {});
 }
 
-
 function getCacheKey(payload) {
   const sortedPayload = sortObjectKeys(payload);
   const jsonStr = JSON.stringify(sortedPayload);

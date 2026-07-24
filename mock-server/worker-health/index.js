@@ -303,7 +303,7 @@ async function start() {
   console.log('[Health] ✅ Health worker started, waiting for next scheduled run...');
 }
 
-// ---------- Graceful Shutdown ----------
+// ---------- Graceful Shutdown ------------
 async function shutdown() {
   console.log('[Health] 🔴 Shuttingg down...');
   await mongoose.disconnect();

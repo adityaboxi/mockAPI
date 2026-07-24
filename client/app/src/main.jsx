@@ -10,7 +10,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { ApiVersionProvider } from './context/ApiVersionContext';
 import { SocketProvider } from './context/SocketContext';
 
-// ===== GLOBAL FETCH OVERRIDE =====
+// ===== GLOBAL FETCH  OVERRIDE ====
 const originalFetch = window.fetch;
 window.fetch = function (url, options) {
   options = options || {};

@@ -141,6 +141,7 @@ function cleanupAndFlush() {
   flushLogs();
 }
 
+
 process.on('beforeExit', cleanupAndFlush);
 process.on('SIGTERM', () => { cleanupAndFlush(); process.exit(0); });
 process.on('SIGINT', () => { cleanupAndFlush(); process.exit(0); });

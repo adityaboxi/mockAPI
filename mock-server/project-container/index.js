@@ -362,6 +362,7 @@ function sanitizeDefinition(definition) {
     }
   }
 
+
   if (definition.statusCode !== undefined) {
     const sc = Number(definition.statusCode);
     if (!Number.isInteger(sc) || sc < 100 || sc > 599) return 'statusCode must be 100-599';
@@ -387,7 +388,7 @@ function sanitizeDefinition(definition) {
   return null;
 }
 
-// ---------- Internal API Endpoints ----------
+// -------- Internal API Endpoints ----------
 app.post('/internal/apis', (req, res) => {
   const { version, method, urlpath, definition } = req.body || {};
   if (!version || !method || !urlpath || !definition) {

@@ -124,7 +124,6 @@ app.get('/traces', (req, res) => {
 });
 
 
-
 // ---------- WebSocket server ----------
 const server = http.createServer(app);
 const wss = new WebSocket.Server({ noServer: true });
