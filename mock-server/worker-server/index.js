@@ -11,7 +11,7 @@ const Project = require('./models/Project');
 const ProjectApiHistory = require('./models/ProjectApiHistory');
 const SystemEventLog = require('./models/SystemEventLog');
 
-// --------- CONFIG ----------
+// ---------- CONFIG ----------
 const docker = new Docker({ socketPath: '/var/run/docker.sock' });
 const NETWORK = process.env.DOCKER_NETWORK || 'orch-net';
 const IMAGE = process.env.PROJECT_IMAGE || 'project-container:latest';
@@ -737,49 +737,17 @@ const mockSyncWorker = new Worker(
 );
 
 // ================================================================
-// WORKER 3: LATENCY STORE (CORRECTED – matches OpenResty keys)
+// WORKER 3: LATENCY STORE (Internal Redis)
 // ================================================================
 console.log('[worker-server] 📡 Creating latency-store worker...');
 const latencyWorker = new Worker(
   'latency-store',
   async (job) => {
     console.log(`[latency-store] 📨 Received job ${job.id}:`, JSON.stringify(job.data, null, 2));
-
-    const { project_id, username, teamLatency, userLatency, rtt } = job.data;
-
-    // If we have both team and user latencies, store them individually.
-    // Otherwise, fallback to using the single `rtt` value for both (backward compatibility).
-    let finalTeam = teamLatency;
-    let finalUser = userLatency;
-    if (finalTeam === undefined && finalUser === undefined && rtt !== undefined) {
-      finalTeam = rtt;
-      finalUser = rtt;
-    }
-
-    // Write to internal Redis with TTL (1 hour) – keys match OpenResty's expectations.
-    const ttlSeconds = 3600; // 1 hour
-
-    const teamKey = `team:latency:${project_id}`;
-    const userKey = `user:latency:${project_id}:${username}`;
-
-    // Write both keys if values are provided (or fallback to rtt)
-    if (finalTeam !== undefined) {
-      await internalRedis.set(teamKey, finalTeam, 'EX', ttlSeconds);
-      console.log(`[latency-store] ✅ Saved team latency: ${finalTeam}ms for project ${project_id}`);
-    }
-    if (finalUser !== undefined) {
-      await internalRedis.set(userKey, finalUser, 'EX', ttlSeconds);
-      console.log(`[latency-store] ✅ Saved user latency: ${finalUser}ms for project ${project_id}:${username}`);
-    }
-
-    // Optionally also store the raw RTT for analytics (with a different key)
-    if (rtt !== undefined) {
-      const rawKey = `latency:${project_id}:${username}`;
-      await internalRedis.set(rawKey, rtt, 'EX', ttlSeconds);
-      console.log(`[latency-store] ✅ Saved raw RTT: ${rtt}ms (for analytics)`);
-    }
-
-    return { success: true };
+    const { project_id, username, rtt } = job.data;
+    const key = `latency:${project_id}:${username}`;
+    await internalRedis.set(key, rtt);
+    console.log(`[latency-store] ✅ Saved ${username} RTT: ${rtt}ms for project ${project_id}`);
   },
   {
     connection: connectionOpts,
@@ -1016,7 +984,7 @@ importWorker.on('failed', (job, err) => {
 console.log('[worker-server] Workers started:');
 console.log('  - projectQueue (container management)');
 console.log('  - mockSyncQueue (API sync)');
-console.log('  - latency-store (RTT storage – CORRECTED keys)');
+console.log('  - latency-store (RTT storage)');
 console.log('  - openapi-import (OpenAPI spec import)');
 
 // ---------- Route Resolver ----------
