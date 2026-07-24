@@ -156,9 +156,11 @@ app.get('*', (req, res) => {
 // ---------- Start server ----------
 const PORT = process.env.PORT || 3003;
 server.listen(PORT, () => {
-  console.log(`\n========================================`);
+  console.log(`\n================================`);
   console.log(`🚀 Telemetry server running on port ${PORT}`);
   console.log(`📊 Dashboard: http://localhost:${PORT}`);
   console.log(`📝 Logs endpoint: POST http://localhost:${PORT}/ingest`);
-  console.log(`=====================================\n`);
+  console.log(`==================================\n`);
 });
+
+
