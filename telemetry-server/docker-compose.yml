@@ -14,18 +14,16 @@ services:
     build: ./server
     container_name: telemetry-server
     restart: unless-stopped
-    env_file:
-      - ./.env
     environment:
-      - PORT=3003
-      - SESSION_SECRET=${SESSION_SECRET:-change-me}
-      - REDIS_URL=redis://telemetry-redis:6379
+      - PORT=${PORT:-3003}
+      - SESSION_SECRET=${SESSION_SECRET}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
       - DASHBOARD_USER=${DASHBOARD_USER:-admin}
       - DASHBOARD_PASS=${DASHBOARD_PASS:-password}
-      - CLIENT_ORIGIN=${CLIENT_ORIGIN:-https://api.mockapi.info}
+      - CLIENT_ORIGIN=${CLIENT_ORIGIN}
       - NODE_ENV=${NODE_ENV:-production}
     ports:
-      - "3003:3003"   # API & WebSocket (only if needed externally)
+      - "${PORT:-3003}:3003"   # Expose for external monitoring if needed
     depends_on:
       - redis
     networks:
@@ -35,13 +33,11 @@ services:
     build:
       context: ./client
       args:
-        - VITE_API_BASE_URL=${VITE_API_BASE_URL:-https://api.mockapi.info/telemetry}
-        - VITE_WS_URL=${VITE_WS_URL:-wss://api.mockapi.info/telemetry}
+        - VITE_API_BASE_URL=${VITE_API_BASE_URL}
+        - VITE_WS_URL=${VITE_WS_URL}
     container_name: telemetry-client
     restart: unless-stopped
-    # ⚠️ No ports exposed to the host – only accessible via nginx reverse proxy
-    # ports:
-    #   - "5173:80"   # ← comment this out in production
+    # No host ports exposed – only accessed via domain service
     depends_on:
       - server
     networks:

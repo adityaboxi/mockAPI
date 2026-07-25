@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { DataSet } from 'vis-data';
-import { NODE_DEFS, FIXED_EDGES } from '../diagramData';
+import { NODE_DEFS, FIXED_EDGES } from './diagramData';
 
 const DYNAMIC_EDGES_FROM_OPENRESTY = { from: 'openresty-nginx', label: 'proxy' };
 const DYNAMIC_EDGES_TO_BACKEND = [

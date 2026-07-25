@@ -1,13 +1,10 @@
 const express = require('express');
 const session = require('express-session');
-const RedisStore = require('connect-redis');
-const { createClient } = require('redis');
 const cookieParser = require('cookie-parser');
 const http = require('http');
 const WebSocket = require('ws');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
-const compression = require('compression'); // optional, add if needed
 
 const app = express();
 
@@ -21,22 +18,38 @@ const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:5173';
 const REDIS_URL = process.env.REDIS_URL || 'redis://telemetry-redis:6379';
 const NODE_ENV = process.env.NODE_ENV || 'development';
 
-// ─── Redis client ──────────────────────────────────────────────
-const redisClient = createClient({ url: REDIS_URL });
-redisClient.on('error', (err) => console.error('Redis Client Error', err));
-redisClient.connect().catch(console.error);
+// ─── Redis / Session Store ────────────────────────────────────
+let sessionStore;
+let redisClient = null;
 
-// ─── Session (Redis-backed) ──────────────────────────────────
+try {
+  const { createClient } = require('redis');
+  redisClient = createClient({ url: REDIS_URL });
+  redisClient.on('error', (err) => console.error('Redis Client Error', err));
+  redisClient.connect().catch(console.error);
+
+  // Try to load connect-redis (may fail if not installed)
+  const RedisStore = require('connect-redis')(session);
+  sessionStore = new RedisStore({ client: redisClient });
+  console.log('✅ Redis session store enabled');
+} catch (err) {
+  console.warn('⚠️ RedisStore not available – falling back to MemoryStore');
+  console.warn('   Reason:', err.message);
+  sessionStore = new session.MemoryStore();
+  redisClient = null;
+}
+
+// ─── Session middleware ──────────────────────────────────────
 app.use(cookieParser());
 const sessionParser = session({
-  store: new RedisStore({ client: redisClient }),
+  store: sessionStore,
   secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: NODE_ENV === 'production', // true only in production (HTTPS)
+    secure: NODE_ENV === 'production',
     httpOnly: true,
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    maxAge: 7 * 24 * 60 * 60 * 1000,
     sameSite: 'lax',
   },
 });
@@ -49,10 +62,9 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-// ─── Body parsers & compression ──────────────────────────────
+// ─── Body parsers ─────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
-app.use(compression()); // optional – compress responses
 
 // ─── In‑memory storage ──────────────────────────────────────
 let logs = [];
@@ -72,17 +84,10 @@ function verifyToken(token) {
 
 // ─── Auth middleware (session OR JWT) ──────────────────────
 function requireAuth(req, res, next) {
-  // Public paths (no auth)
   if (['/ingest', '/v1/traces', '/v1/logs', '/health', '/login', '/logout', '/check-auth'].includes(req.path)) {
     return next();
   }
-
-  // 1. Check session
-  if (req.session && req.session.user) {
-    return next();
-  }
-
-  // 2. Check JWT (Bearer token)
+  if (req.session && req.session.user) return next();
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.slice(7);
@@ -92,10 +97,8 @@ function requireAuth(req, res, next) {
       return next();
     }
   }
-
   res.status(401).json({ error: 'Unauthorized' });
 }
-
 app.use(requireAuth);
 
 // ─── Public routes ──────────────────────────────────────────
@@ -139,12 +142,10 @@ app.post('/logout', (req, res) => {
 
 // ─── Health ──────────────────────────────────────────────────
 app.get('/health', (req, res) => {
-  res.json({ status: 'ok', traces: traces.length, logs: logs.length, redis: redisClient.isOpen });
+  res.json({ status: 'ok', traces: traces.length, logs: logs.length, redis: !!redisClient?.isOpen });
 });
 
-// ════════════════════════════════════════════════════════════
-//  LOG INGESTION – supports both /ingest and /v1/logs
-// ════════════════════════════════════════════════════════════
+// ─── LOG INGESTION ──────────────────────────────────────────
 app.post('/ingest', (req, res) => {
   const entries = Array.isArray(req.body) ? req.body : [req.body];
   entries.forEach(entry => {
@@ -158,7 +159,6 @@ app.post('/ingest', (req, res) => {
     delete logEntry.time;
     logs.push(logEntry);
     if (logs.length > MAX_LOGS) logs.shift();
-
     wsClients.forEach(client => {
       if (client.readyState === WebSocket.OPEN) {
         client.send(JSON.stringify({ type: 'log', data: logEntry }));
@@ -168,7 +168,6 @@ app.post('/ingest', (req, res) => {
   res.status(200).json({ status: 'ok', count: entries.length });
 });
 
-// Also support /v1/logs (same logic)
 app.post('/v1/logs', (req, res) => {
   const entries = Array.isArray(req.body) ? req.body : [req.body];
   entries.forEach(entry => {
@@ -182,7 +181,6 @@ app.post('/v1/logs', (req, res) => {
     delete logEntry.time;
     logs.push(logEntry);
     if (logs.length > MAX_LOGS) logs.shift();
-
     wsClients.forEach(client => {
       if (client.readyState === WebSocket.OPEN) {
         client.send(JSON.stringify({ type: 'log', data: logEntry }));
@@ -196,7 +194,6 @@ app.post('/v1/logs', (req, res) => {
 app.post('/v1/traces', (req, res) => {
   const contentType = req.headers['content-type'] || '';
   let resourceSpans = [];
-
   if (contentType.includes('application/json')) {
     resourceSpans = req.body.resourceSpans || [];
   } else if (contentType.includes('application/x-protobuf')) {
@@ -205,7 +202,6 @@ app.post('/v1/traces', (req, res) => {
   } else {
     resourceSpans = req.body.resourceSpans || [];
   }
-
   for (const rs of resourceSpans) {
     const resource = rs.resource || {};
     const serviceName = resource.attributes?.find(attr => attr.key === 'service.name')?.value?.stringValue || 'unknown';
@@ -220,7 +216,6 @@ app.post('/v1/traces', (req, res) => {
         const endTimeUnixNano = span.endTimeUnixNano || 0;
         const durationMs = (endTimeUnixNano - startTimeUnixNano) / 1_000_000;
         const attributes = span.attributes || [];
-
         traces.unshift({
           traceId,
           spanId,
@@ -231,18 +226,15 @@ app.post('/v1/traces', (req, res) => {
           attributes: Object.fromEntries(attributes.map(a => [a.key, a.value?.stringValue || a.value?.intValue || a.value?.boolValue || ''])),
           timestamp: Date.now(),
         });
-
         if (traces.length > MAX_TRACES) traces.pop();
       }
     }
   }
-
   wsClients.forEach(client => {
     if (client.readyState === WebSocket.OPEN) {
       client.send(JSON.stringify({ type: 'trace', data: { count: resourceSpans.length } }));
     }
   });
-
   res.status(200).json({ success: true, received: resourceSpans.length });
 });
 
@@ -294,9 +286,9 @@ function shutdown() {
   console.log('Shutting down gracefully...');
   server.close(() => {
     console.log('HTTP server closed.');
-    redisClient.quit().then(() => process.exit(0)).catch(() => process.exit(0));
+    if (redisClient) redisClient.quit().then(() => process.exit(0)).catch(() => process.exit(0));
+    else process.exit(0);
   });
-  // force exit after 5s
   setTimeout(() => { console.log('Forcing exit.'); process.exit(1); }, 5000);
 }
 
@@ -310,8 +302,7 @@ server.listen(PORT, () => {
   console.log(`📊 API: http://localhost:${PORT}`);
   console.log(`📝 Logs ingest: POST ${PORT}/ingest (or /v1/logs)`);
   console.log(`🔭 OTLP traces ingest: POST ${PORT}/v1/traces (JSON)`);
-  console.log(`🔐 Auth: session cookie (Redis) OR JWT (Bearer token)`);
-  console.log(`🔒 Redis session store: ${REDIS_URL}`);
+  console.log(`🔐 Auth: session cookie (${sessionStore.constructor.name}) OR JWT`);
   console.log(`🌐 Environment: ${NODE_ENV}`);
   console.log(`==================================\n`);
 });

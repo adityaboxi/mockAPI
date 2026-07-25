@@ -42,16 +42,23 @@ jobs:
             echo "${{ secrets.CLIENT_ENV }}" > client/.env
             echo "${{ secrets.MOCK_SERVER_ENV }}" > mock-server/.env
 
-            # --- Telemetry .env (fallback if secret not set) ---
+            # --- Telemetry .env (ensure folder exists) ---
+            mkdir -p telemetry-server
             if [ -n "${{ secrets.TELEMETRY_ENV }}" ]; then
               echo "${{ secrets.TELEMETRY_ENV }}" > telemetry-server/.env
             else
-              mkdir -p telemetry-server
-              echo "NODE_ENV=production" > telemetry-server/.env
-              echo "PORT=3003" >> telemetry-server/.env
-              echo "DASHBOARD_USER=myusername" >> telemetry-server/.env
-              echo "DASHBOARD_PASS=mypassword" >> telemetry-server/.env
-              echo "SESSION_SECRET=some-strong-random-string" >> telemetry-server/.env
+              # Proper production defaults (no hardcoded values)
+              cat > telemetry-server/.env <<'EOF'
+            PORT=3003
+            SESSION_SECRET=your-strong-secret
+            REDIS_URL=redis://redis:6379
+            DASHBOARD_USER=admin
+            DASHBOARD_PASS=password
+            CLIENT_ORIGIN=https://api.mockapi.info
+            NODE_ENV=production
+            VITE_API_BASE_URL=/telemetry/api
+            VITE_WS_URL=/telemetry/api
+            EOF
             fi
 
             # ---------- Determine what to deploy ----------
@@ -117,12 +124,20 @@ jobs:
             # ---------- Health Checks (only for deployed services) ----------
             echo "⏳ Verifying deployed services..."
 
-            # Health check for telemetry (container running)
+            # Health check for telemetry (container and API)
             if [ "$DEPLOY_TELEMETRY" = "true" ]; then
               echo "🔍 Checking telemetry-server container status..."
               for i in {1..30}; do
                 if docker ps --filter "name=telemetry-server" --filter "status=running" | grep -q telemetry-server; then
                   echo "✅ Telemetry server container is running"
+                  # Check /health endpoint
+                  for j in {1..10}; do
+                    if curl -s -f http://localhost:3003/health > /dev/null; then
+                      echo "✅ Telemetry server health check passed"
+                      break
+                    fi
+                    sleep 1
+                  done
                   break
                 fi
                 sleep 1
@@ -167,7 +182,6 @@ jobs:
               for i in {1..30}; do
                 # Check if container is running and responds with 200 or 301 (redirect)
                 if docker ps --filter "name=domain-proxy" --filter "status=running" | grep -q domain-proxy; then
-                  # Also check HTTP response (allow 200 or 301)
                   STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/ || echo "000")
                   if [ "$STATUS" = "200" ] || [ "$STATUS" = "301" ]; then
                     echo "✅ Domain service healthy (HTTP $STATUS)"
