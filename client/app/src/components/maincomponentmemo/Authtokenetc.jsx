@@ -19,12 +19,32 @@ const Authtokenetc = ({
     setter(isNaN(parsed) || parsed < 0 ? 0 : parsed);
   };
 
+  const isWhiteTheme = w;
+  const borderColor = isWhiteTheme ? "border-gray-200" : "border-zinc-800";
+  const bgInput = isWhiteTheme ? "bg-white" : "bg-zinc-900";
+  const textInput = isWhiteTheme ? "text-gray-800" : "text-zinc-200";
+  const placeholderInput = isWhiteTheme ? "placeholder-gray-400" : "placeholder-zinc-500";
+  const focusRing = "focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500";
+
   return (
-    <div className="flex items-center gap-5 flex-wrap">
+    <div className={`flex flex-wrap items-center gap-4 px-4 py-2.5 rounded-lg border ${borderColor} ${isWhiteTheme ? "bg-gray-50/80" : "bg-zinc-900/60"}`}>
+      {/* Auth toggle button */}
       <button
         type="button"
         onClick={() => setIsAuthEnabled?.(!isAuthEnabled)}
-        className="flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition-colors border bg-blue-600 text-white border-blue-600 hover:bg-blue-500"
+        className={`
+          flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold
+          transition-all duration-200
+          ${isAuthEnabled
+            ? "bg-blue-600 hover:bg-blue-500 text-white shadow-sm"
+            : isWhiteTheme
+              ? "bg-gray-200 hover:bg-gray-300 text-gray-700"
+              : "bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
+          }
+          focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1
+          ${isWhiteTheme ? "focus:ring-offset-white" : "focus:ring-offset-zinc-900"}
+          active:scale-95
+        `}
       >
         {isAuthEnabled ? (
           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -38,48 +58,67 @@ const Authtokenetc = ({
         <span>{isAuthEnabled ? "Auth Required" : "Public Access"}</span>
       </button>
 
+      {/* Auth scheme selector (only when auth enabled) */}
       {isAuthEnabled && (
         <div className="flex items-center gap-2 animate-fadeIn">
           <span className={`text-xs font-medium ${labelTxt}`}>Strategy:</span>
           <select
             value={authScheme}
             onChange={(e) => setAuthScheme?.(e.target.value)}
-            className={`text-xs px-2 py-0.5 rounded border font-medium outline-none transition-colors ${inp}`}
+            className={`
+              text-xs px-2.5 py-1 rounded border outline-none
+              font-medium transition-all duration-200
+              ${bgInput} ${borderColor} ${textInput}
+              ${focusRing}
+              cursor-pointer
+            `}
           >
-            <option value="BearerAuth">Bearer JWT (Authorization Header)</option>
-            <option value="ApiKeyAuth">X-API-Key (Custom Header)</option>
+            <option value="BearerAuth">Bearer JWT</option>
+            <option value="ApiKeyAuth">X-API-Key</option>
           </select>
         </div>
       )}
 
+      {/* Latency input */}
       <div className="flex items-center gap-2 relative">
         <svg className={`w-3.5 h-3.5 ${latency > 0 ? "text-amber-400" : mutedTxt}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
         </svg>
-        <span className={`text-xs font-medium ${w ? "text-gray-600" : "text-zinc-400"}`}>Latency:</span>
+        <span className={`text-xs font-medium ${isWhiteTheme ? "text-gray-600" : "text-zinc-400"}`}>Latency</span>
         <input
           type="number"
           value={latency || ""}
           onChange={(e) => handleNumericChange(e.target.value, setLatency)}
           placeholder="0"
-          className={`w-16 px-1.5 py-0.5 pr-6 text-xs rounded text-right font-mono focus:outline-none focus:ring-1 ${inp}`}
+          className={`
+            w-16 px-2 py-1 pr-7 text-xs rounded border text-right font-mono outline-none
+            transition-all duration-200
+            ${bgInput} ${borderColor} ${textInput} ${placeholderInput}
+            ${focusRing}
+          `}
         />
-        <span className="absolute right-1.5 bottom-1 text-[10px] text-zinc-500 uppercase pointer-events-none">ms</span>
+        <span className="absolute right-2 bottom-1.5 text-[10px] font-medium text-zinc-500 pointer-events-none">ms</span>
       </div>
 
+      {/* Rate limit input */}
       <div className="flex items-center gap-2 relative">
         <svg className={`w-3.5 h-3.5 ${rateLimit > 0 ? "text-rose-400" : mutedTxt}`} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
         </svg>
-        <span className={`text-xs font-medium ${w ? "text-gray-600" : "text-zinc-400"}`}>Rate Limit:</span>
+        <span className={`text-xs font-medium ${isWhiteTheme ? "text-gray-600" : "text-zinc-400"}`}>Rate</span>
         <input
           type="number"
           value={rateLimit || ""}
           onChange={(e) => handleNumericChange(e.target.value, setRateLimit)}
           placeholder="∞"
-          className={`w-20 px-1.5 py-0.5 pr-9 text-xs rounded text-right font-mono focus:outline-none focus:ring-1 ${inp}`}
+          className={`
+            w-20 px-2 py-1 pr-9 text-xs rounded border text-right font-mono outline-none
+            transition-all duration-200
+            ${bgInput} ${borderColor} ${textInput} ${placeholderInput}
+            ${focusRing}
+          `}
         />
-        <span className="absolute right-1.5 bottom-1 text-[10px] text-zinc-500 pointer-events-none">req/m</span>
+        <span className="absolute right-2 bottom-1.5 text-[10px] font-medium text-zinc-500 pointer-events-none">req/m</span>
       </div>
     </div>
   );

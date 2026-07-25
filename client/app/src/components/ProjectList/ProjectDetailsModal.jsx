@@ -9,7 +9,7 @@ const API_DELETE_PROJECT = import.meta.env.VITE_API_URL_DELETEPROJECT;
 
 function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvitationCodeUpdated }) {
   const { theme } = useTheme();
-  const isDarkTheme = theme === "dark";
+  const isWhiteTheme = theme === "white";
 
   // ---- State ----
   const [showOtpSection, setShowOtpSection] = useState(false);
@@ -48,7 +48,6 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
   useEffect(() => {
     if (!isOpen || !project?.id) return;
     setLocalInvitationCode(project.invitationCode);
-    // Fetch fresh data for members and createdAt
     fetch(API_PROJECTS, { credentials: "include" })
       .then((r) => r.json())
       .then((data) => {
@@ -176,7 +175,6 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
       }
     }
 
-    // Fallback
     const textarea = document.createElement("textarea");
     textarea.value = localInvitationCode;
     textarea.style.position = "fixed";
@@ -232,31 +230,50 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
   const displayMembers = members.length > 0 ? members : ["No members yet"];
   const isActive = project.isActive !== false;
 
+  // ---- Theme‑aware styles ----
+  const modalBg = isWhiteTheme ? "bg-white" : "bg-zinc-900";
+  const borderColor = isWhiteTheme ? "border-gray-200" : "border-zinc-800";
+  const textPrimary = isWhiteTheme ? "text-gray-800" : "text-zinc-100";
+  const textSecondary = isWhiteTheme ? "text-gray-500" : "text-zinc-400";
+  const inputBg = isWhiteTheme ? "bg-white" : "bg-zinc-800";
+  const inputBorder = isWhiteTheme ? "border-gray-300" : "border-zinc-700";
+  const inputFocus = "focus:border-blue-500 focus:ring-1 focus:ring-blue-500";
+
   return (
-    <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/40 backdrop-blur-sm" onClick={handleClose}>
+    <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/50 backdrop-blur-sm" onClick={handleClose}>
       <div
-        className={`rounded-xl border shadow-xl p-4 space-y-4 w-80 ${
-          isDarkTheme ? "bg-[#18181b] text-white border-zinc-800" : "bg-white text-zinc-900"
-        }`}
+        className={`rounded-2xl border shadow-2xl p-6 space-y-5 w-96 max-w-[95vw] max-h-[90vh] overflow-y-auto ${modalBg} ${borderColor} ${textPrimary}`}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex justify-between items-center border-b pb-2">
-          <h3 className="text-xs font-bold">Workspace Configuration</h3>
-          <button onClick={handleClose}>✕</button>
+        {/* Header */}
+        <div className="flex justify-between items-center border-b pb-2.5">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <span className="text-blue-500">⚙️</span> Workspace Settings
+          </h3>
+          <button
+            onClick={handleClose}
+            className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${isWhiteTheme ? "hover:bg-gray-100 text-gray-500" : "hover:bg-zinc-800 text-zinc-400"} focus:outline-none focus:ring-2 focus:ring-blue-500`}
+          >
+            ✕
+          </button>
         </div>
 
-        <div className="space-y-1 text-xs">
-          <div className="flex justify-between items-center">
-            <span>Code:</span>
+        {/* Project details grid */}
+        <div className="space-y-3 text-sm">
+          {/* Invitation code row */}
+          <div className="flex items-center justify-between">
+            <span className={`text-xs font-medium ${textSecondary}`}>Invite Code</span>
             <div className="flex items-center gap-2 cursor-pointer" onClick={copyInvitationCode}>
-              <code className="text-indigo-400 font-mono font-bold">{localInvitationCode}</code>
-              <span className="relative w-3.5 h-3.5 inline-block">
+              <code className={`font-mono text-xs font-bold px-2 py-1 rounded ${isWhiteTheme ? "bg-gray-100 text-indigo-600" : "bg-zinc-800 text-indigo-400"}`}>
+                {localInvitationCode}
+              </code>
+              <span className="relative w-4 h-4 inline-block">
                 <svg
                   key={inviteCopied ? "check" : "copy"}
-                  className={`w-3.5 h-3.5 absolute inset-0 transition-all duration-200 ease-out ${
+                  className={`w-4 h-4 absolute inset-0 transition-all duration-200 ease-out ${
                     inviteCopied
-                      ? "text-green-500 scale-100 opacity-100"
-                      : "text-gray-400 hover:text-gray-300 scale-100 opacity-100"
+                      ? "text-green-500 scale-110 opacity-100"
+                      : `${textSecondary} hover:text-blue-400 scale-100 opacity-100`
                   }`}
                   fill="none"
                   stroke="currentColor"
@@ -276,61 +293,90 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
               </span>
             </div>
           </div>
-          <div className="flex justify-between">
-            <span>Status:</span>
-            <span className={isActive ? "text-emerald-400" : "text-red-400"}>
+
+          {/* Status row */}
+          <div className="flex items-center justify-between">
+            <span className={`text-xs font-medium ${textSecondary}`}>Status</span>
+            <span className={`text-xs font-medium flex items-center gap-1.5 ${isActive ? "text-emerald-400" : "text-amber-400"}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-emerald-400" : "bg-amber-400"}`} />
               {isActive ? "Active" : "Inactive"}
             </span>
           </div>
-          <div className="flex justify-between">
-            <span>Time created:</span>
-            <code className="text-indigo-400 font-mono font-bold">{createdAt}</code>
+
+          {/* Created at */}
+          <div className="flex items-center justify-between">
+            <span className={`text-xs font-medium ${textSecondary}`}>Created</span>
+            <code className={`font-mono text-xs ${textSecondary}`}>{createdAt}</code>
           </div>
 
-          <div className="flex justify-between items-center">
-            <div>Delete project:</div>
+          {/* Delete project */}
+          <div className="flex items-center justify-between border-t pt-3 mt-1">
+            <span className={`text-xs font-medium ${textSecondary}`}>Delete project</span>
             <button
               onClick={handleDeleteProject}
               disabled={isDeleting}
-              className={`bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded ${
-                isDeleting ? "opacity-50 cursor-not-allowed" : ""
-              }`}
+              className={`
+                px-3 py-1 rounded text-xs font-medium transition-all
+                bg-red-600 hover:bg-red-500 text-white
+                disabled:opacity-50 disabled:cursor-not-allowed
+                focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1
+                ${isWhiteTheme ? "focus:ring-offset-white" : "focus:ring-offset-zinc-900"}
+              `}
             >
-              {isDeleting ? "Deleting..." : "Confirm"}
+              {isDeleting ? (
+                <span className="flex items-center gap-1.5">
+                  <svg className="animate-spin h-3 w-3" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  Deleting
+                </span>
+              ) : (
+                "Confirm Delete"
+              )}
             </button>
           </div>
-          {deleteError && <p className="text-red-400 text-xs text-right">{deleteError}</p>}
+          {deleteError && <p className="text-red-400 text-xs text-right -mt-1">{deleteError}</p>}
         </div>
 
-        <div className="border-t pt-2">
-          <div className="flex justify-between items-center mb-1">
-            <span className="text-xs font-semibold">Members</span>
-            <span className="text-[10px] text-zinc-500">{members.length} total</span>
+        {/* Members section */}
+        <div className="border-t pt-3">
+          <div className="flex justify-between items-center mb-2">
+            <span className={`text-xs font-semibold ${textSecondary}`}>👥 Members</span>
+            <span className="text-[10px] font-mono text-zinc-500">{members.length} total</span>
           </div>
-          <div className="max-h-32 overflow-y-auto custom-scrollbar space-y-1">
+          <div className="max-h-32 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
             {displayMembers.map((member, idx) => (
-              <div key={idx} className="flex items-center gap-2 text-xs">
-                <span className="text-indigo-400">👤</span>
+              <div key={idx} className="flex items-center gap-2 text-xs px-1 py-0.5">
+                <span className={`text-blue-400 ${isWhiteTheme ? "text-blue-500" : "text-blue-400"}`}>•</span>
                 <span className="truncate">{member === "No members yet" ? member : `@${member}`}</span>
               </div>
             ))}
           </div>
         </div>
 
+        {/* Status toggle buttons */}
         <div className="flex gap-2 pt-2 border-t">
           <button
             onClick={() => handleStatusChange(true, "active")}
             disabled={isActive || statusUpdating}
-            className={`flex-1 py-1 text-xs rounded text-white transition-colors flex items-center justify-center gap-1 ${
-              statusSuccess && successTarget === "active" ? "bg-emerald-600" : "bg-emerald-600 hover:bg-emerald-500"
-            } disabled:opacity-40`}
+            className={`
+              flex-1 py-1.5 rounded text-xs font-medium transition-all flex items-center justify-center gap-1.5
+              ${statusSuccess && successTarget === "active"
+                ? "bg-emerald-600 text-white"
+                : "bg-emerald-600 hover:bg-emerald-500 text-white"
+              }
+              disabled:opacity-40 disabled:cursor-not-allowed
+              focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1
+              ${isWhiteTheme ? "focus:ring-offset-white" : "focus:ring-offset-zinc-900"}
+            `}
           >
             {statusSuccess && successTarget === "active" ? (
               <>
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                 </svg>
-                <span>Active!</span>
+                Active!
               </>
             ) : (
               "Set Active"
@@ -339,16 +385,23 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
           <button
             onClick={() => handleStatusChange(false, "inactive")}
             disabled={!isActive || statusUpdating}
-            className={`flex-1 py-1 text-xs rounded text-white transition-colors flex items-center justify-center gap-1 ${
-              statusSuccess && successTarget === "inactive" ? "bg-red-600" : "bg-red-600 hover:bg-red-500"
-            } disabled:opacity-40`}
+            className={`
+              flex-1 py-1.5 rounded text-xs font-medium transition-all flex items-center justify-center gap-1.5
+              ${statusSuccess && successTarget === "inactive"
+                ? "bg-amber-600 text-white"
+                : "bg-amber-600 hover:bg-amber-500 text-white"
+              }
+              disabled:opacity-40 disabled:cursor-not-allowed
+              focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-1
+              ${isWhiteTheme ? "focus:ring-offset-white" : "focus:ring-offset-zinc-900"}
+            `}
           >
             {statusSuccess && successTarget === "inactive" ? (
               <>
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
                 </svg>
-                <span>Inactive!</span>
+                Inactive!
               </>
             ) : (
               "Set Inactive"
@@ -357,37 +410,57 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
         </div>
         {statusError && <p className="text-red-400 text-xs text-center">{statusError}</p>}
 
+        {/* Reset code / OTP section */}
         <div className="border-t pt-3">
           <button
             onClick={handleResetCode}
             disabled={isLoading}
-            className="w-full py-1.5 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded disabled:opacity-50"
+            className={`
+              w-full py-1.5 rounded text-xs font-medium transition-all
+              bg-blue-600 hover:bg-blue-500 text-white
+              disabled:opacity-50 disabled:cursor-not-allowed
+              focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1
+              ${isWhiteTheme ? "focus:ring-offset-white" : "focus:ring-offset-zinc-900"}
+            `}
           >
             {isLoading ? "Sending..." : "Reset Invitation Code"}
           </button>
+
           {showOtpSection && (
             <div className="mt-3 space-y-2">
-              <p className="text-xs text-center">Enter OTP sent to your email</p>
+              <p className="text-xs text-center text-zinc-500">Enter OTP sent to your email</p>
               <div className="flex gap-2">
                 <input
                   type="text"
                   value={otpCode}
                   onChange={(e) => setOtpCode(e.target.value)}
                   placeholder="6-digit OTP"
-                  className={`flex-1 px-2 py-1 text-xs rounded border ${
-                    isDarkTheme ? "border-zinc-700 bg-zinc-800 text-white" : "border-gray-300 bg-white text-gray-900"
-                  }`}
+                  className={`
+                    flex-1 px-3 py-1.5 text-xs rounded border outline-none transition-all
+                    ${inputBg} ${inputBorder} ${inputFocus}
+                    ${isWhiteTheme ? "text-gray-800" : "text-zinc-200"}
+                  `}
                 />
                 <button
                   onClick={handleVerifyOtp}
                   disabled={isLoading || !otpCode}
-                  className="px-3 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-500 disabled:opacity-50"
+                  className={`
+                    px-4 py-1.5 rounded text-xs font-medium transition-all
+                    bg-emerald-600 hover:bg-emerald-500 text-white
+                    disabled:opacity-50 disabled:cursor-not-allowed
+                    focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-1
+                    ${isWhiteTheme ? "focus:ring-offset-white" : "focus:ring-offset-zinc-900"}
+                  `}
                 >
                   Verify
                 </button>
               </div>
               {otpError && <p className="text-red-400 text-xs text-center">{otpError}</p>}
-              {timer > 0 && <p className="text-xs text-center text-gray-500">Resend available in {timer}s</p>}
+              {timer > 0 && (
+                <p className="text-xs text-center text-zinc-500">
+                  Resend available in <span className="font-mono">{timer}</span>s
+                </p>
+              )}
             </div>
           )}
         </div>

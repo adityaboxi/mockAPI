@@ -21,7 +21,6 @@ function ApiHistory({ isApiHistoryOpen, projectId: propProjectId }) {
   const [expanded, setExpanded] = useState({});
   const abortControllerRef = useRef(null);
 
-  // Keep a ref to the latest historyData so we can compare in fetch without re‑creating the callback
   const historyDataRef = useRef(historyData);
   useEffect(() => {
     historyDataRef.current = historyData;
@@ -33,7 +32,7 @@ function ApiHistory({ isApiHistoryOpen, projectId: propProjectId }) {
     const username = user?.username;
     if (!projectId) return;
     if (!username || username === "Guest") {
-      setError("Pleease log in to seee API history.");
+      setError("Please log in to see API history.");
       return;
     }
     abortControllerRef.current?.abort();
@@ -46,7 +45,6 @@ function ApiHistory({ isApiHistoryOpen, projectId: propProjectId }) {
       const res = await fetch(url, { signal: controller.signal, credentials: "include" });
       if (!res.ok) throw new Error(await res.text());
       let data = await res.json();
-      // Normalize if backend still returns old format
       if (data.length && !data[0].versions && data[0].actualFullUrls) {
         data = data.map(ep => ({
           baseUrlPath: ep.baseUrlPath,
@@ -57,17 +55,12 @@ function ApiHistory({ isApiHistoryOpen, projectId: propProjectId }) {
         }));
       }
 
-      // ----- NEW LOGIC: compare with current data -----
       const currentData = historyDataRef.current;
-      const newData = data;
-      // Shallow/deep compare using JSON.stringify (works for this structure)
-      if (JSON.stringify(newData) === JSON.stringify(currentData)) {
-        // Data unchanged – keep UI as-is and just hide loading
+      if (JSON.stringify(data) === JSON.stringify(currentData)) {
         if (!controller.signal.aborted) setLoading(false);
         return;
       }
-      // Data changed – update
-      if (!controller.signal.aborted) setHistoryData(newData);
+      if (!controller.signal.aborted) setHistoryData(data);
     } catch (err) {
       if (err.name !== "AbortError") setError(err.message);
     } finally {
@@ -80,7 +73,6 @@ function ApiHistory({ isApiHistoryOpen, projectId: propProjectId }) {
     return () => abortControllerRef.current?.abort();
   }, [fetchHistory]);
 
-  // Socket.IO real‑time updates using shared socket
   useEffect(() => {
     if (!currentProject?.id) return;
 
@@ -106,42 +98,116 @@ function ApiHistory({ isApiHistoryOpen, projectId: propProjectId }) {
     await loadVersion(pid, username, baseurlpath, version);
   };
 
-  const cardClass = isWhiteTheme ? "bg-gray-50 border-gray-200 text-gray-500" : "bg-[#1e1f22] border-zinc-700/50 text-gray-400";
-  const buttonClass = isWhiteTheme ? "text-gray-400 hover:text-gray-700" : "text-zinc-500 hover:text-gray-200";
+  // ─── THEME‑AWARE STYLES ─────────────────────────────────────────
+  const sidebarBg = isWhiteTheme ? "bg-white" : "bg-zinc-900";
+  const borderColor = isWhiteTheme ? "border-gray-200" : "border-zinc-800";
+  const headerBg = isWhiteTheme ? "bg-white/80" : "bg-zinc-900/80";
+  const headerText = isWhiteTheme ? "text-gray-700" : "text-zinc-300";
+  const cardBg = isWhiteTheme
+    ? "bg-gray-50 border-gray-200 hover:bg-gray-100"
+    : "bg-zinc-950/60 border-zinc-800 hover:bg-zinc-800/40";
+  const textMuted = isWhiteTheme ? "text-gray-400" : "text-zinc-500";
+  const pathText = isWhiteTheme ? "text-blue-600" : "text-blue-400";
+  const versionBtnBase = isWhiteTheme
+    ? "text-gray-500 hover:bg-gray-200 hover:text-gray-800"
+    : "text-zinc-400 hover:bg-blue-600/10 hover:text-blue-400";
 
   return (
-    <aside className={`flex shrink-0 overflow-hidden z-10 ${isWhiteTheme ? "bg-white border-l border-gray-200" : "bg-[#2b2d31] border-l border-zinc-700/50"}`}>
-      <div className={`flex flex-col overflow-hidden transition-all duration-300 ${isApiHistoryOpen ? "w-40 border-r" : "w-0 border-r-0"} ${isWhiteTheme ? "border-gray-200" : "border-zinc-700/50"}`}>
-        <div className={`text-xs font-medium border-b p-2 flex justify-center shrink-0 ${isWhiteTheme ? "bg-gray-50 border-gray-200 text-gray-600" : "bg-[#232428] border-zinc-700/50 text-gray-300"}`}>API History</div>
-        <div className="p-3 text-xs flex flex-col gap-3 flex-1 overflow-y-auto overflow-x-auto">
-          {loading && <div className="text-center text-gray-400">Loading...</div>}
-          {error && <div className="text-center text-red-400">{error}</div>}
-          {!loading && !error && historyData.length === 0 && <div className="text-center text-gray-400">No API history found.</div>}
+    <aside className={`flex shrink-0 overflow-hidden z-10 ${sidebarBg} border-l ${borderColor}`}>
+      <div
+        className={`
+          flex flex-col overflow-hidden transition-all duration-300 ease-in-out
+          ${isApiHistoryOpen ? "w-56 border-r" : "w-0 border-r-0"}
+          ${borderColor}
+        `}
+      >
+        {/* Header */}
+        <div className={`flex items-center gap-2 px-4 py-2.5 border-b shrink-0 ${headerBg} ${borderColor} ${headerText}`}>
+          <span className="text-xs font-semibold tracking-wider uppercase flex items-center gap-2">
+            <span>📜</span> History
+          </span>
+          {historyData.length > 0 && !loading && (
+            <span className={`text-[10px] rounded-full px-2 py-0.5 font-medium ${
+              isWhiteTheme ? "bg-gray-200 text-gray-700" : "bg-zinc-700 text-zinc-300"
+            }`}>
+              {historyData.reduce((acc, ep) => acc + (ep.versions?.length || 0), 0)}
+            </span>
+          )}
+        </div>
+
+        {/* Content */}
+        <div
+          className={`
+            flex-1 overflow-y-auto p-3 space-y-2 min-h-0
+            [&::-webkit-scrollbar]:w-1.5
+            [&::-webkit-scrollbar-track]:bg-transparent
+            [&::-webkit-scrollbar-thumb]:rounded-full
+            ${isWhiteTheme
+              ? "[&::-webkit-scrollbar-thumb]:bg-gray-300 hover:[&::-webkit-scrollbar-thumb]:bg-gray-400"
+              : "[&::-webkit-scrollbar-thumb]:bg-zinc-700 hover:[&::-webkit-scrollbar-thumb]:bg-zinc-600"
+            }
+          `}
+        >
+          {loading && (
+            <div className="flex justify-center py-6">
+              <div className={`w-5 h-5 border-2 rounded-full animate-spin ${isWhiteTheme ? "border-gray-300 border-t-gray-600" : "border-zinc-700 border-t-blue-400"}`} />
+            </div>
+          )}
+          {error && <div className="text-center text-red-400 text-xs py-4">{error}</div>}
+          {!loading && !error && historyData.length === 0 && (
+            <div className={`text-center ${textMuted} italic text-xs py-4`}>
+              No API history found.
+            </div>
+          )}
           {!loading && !error && historyData.map((endpoint, idx) => {
             const versions = endpoint.versions || [];
             const isExpanded = expanded[idx];
             const visibleVersions = isExpanded ? versions : versions.slice(0, INITIAL_SHOW);
-            const remaining = versions.length - INITIAL_SHOW;
+            const totalVersions = versions.length;
+            const remaining = totalVersions - INITIAL_SHOW;
+
             return (
-              <div key={idx} className={`border rounded p-3 w-full ${cardClass}`}>
-                <p className="text-blue-400 font-medium mb-1 break-all">{endpoint.baseUrlPath || "unknown"}</p>
-                {visibleVersions.map((v, vIdx) => (
-                  <button
-                    key={vIdx}
-                    onClick={() => handleVersionClick(endpoint, v.version, v.fullUrl)}
-                    className={`block ml-2 text-left w-full whitespace-nowrap ${buttonClass} cursor-pointer hover:text-blue-400 active:text-blue-500 transition-colors`}
-                  >
-                    ↳ {v.version}
-                  </button>
-                ))}
+              <div
+                key={idx}
+                className={`rounded-lg border p-3 transition-all duration-200 ${cardBg} ${borderColor}`}
+              >
+                {/* Endpoint path */}
+                <p className={`text-xs font-mono font-semibold break-all ${pathText}`}>
+                  {endpoint.baseUrlPath || "unknown"}
+                </p>
+
+                {/* Version list */}
+                <div className="mt-1.5 space-y-0.5">
+                  {visibleVersions.map((v, vIdx) => (
+                    <button
+                      key={vIdx}
+                      onClick={() => handleVersionClick(endpoint, v.version, v.fullUrl)}
+                      className={`
+                        block w-full text-left px-2 py-0.5 rounded text-xs font-mono
+                        transition-all duration-150
+                        ${versionBtnBase}
+                      `}
+                    >
+                      <span className="opacity-50 mr-1">↳</span> {v.version}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Expand/Collapse controls */}
                 {!isExpanded && remaining > 0 && (
-                  <button onClick={() => toggleExpand(idx)} className="ml-2 mt-1 text-blue-400 hover:text-blue-300 cursor-pointer">
-                    +{remaining} more...
+                  <button
+                    onClick={() => toggleExpand(idx)}
+                    className="mt-1.5 text-[11px] font-medium text-blue-400 hover:text-blue-300 hover:underline transition-all flex items-center gap-1"
+                  >
+                    + {remaining} more version{remaining > 1 ? 's' : ''}
                   </button>
                 )}
-                {isExpanded && (
-                  <button onClick={() => toggleExpand(idx)} className="ml-2 mt-1 text-blue-400 hover:text-blue-300 cursor-pointer">
-                    show less
+                {isExpanded && totalVersions > INITIAL_SHOW && (
+                  <button
+                    onClick={() => toggleExpand(idx)}
+                    className="mt-1.5 text-[11px] font-medium text-zinc-500 hover:text-zinc-300 hover:underline transition-all flex items-center gap-1"
+                  >
+                    − show less
                   </button>
                 )}
               </div>

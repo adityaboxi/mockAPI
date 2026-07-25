@@ -4,7 +4,7 @@ import { useProject } from "../context/ProjectContext";
 import { useAuth } from "../context/AuthContext";
 import { useSocket } from "../context/SocketContext";
 
-// Color mapping for HTTP methods
+// Color mapping for HTTP methods – kept as is
 const methodColor = {
   GET: "text-green-400",
   POST: "text-blue-400",
@@ -20,7 +20,7 @@ function ApiLog() {
   const { currentProject } = useProject();
   const { user } = useAuth();
   const socket = useSocket();
-  
+
   const isWhiteTheme = theme === "white";
   const [logs, setLogs] = useState([]);
   const [isConnected, setIsConnected] = useState(false);
@@ -34,7 +34,7 @@ function ApiLog() {
     return () => { mountedRef.current = false; };
   }, []);
 
-  // Socket event handlers
+  // Socket event handlers – unchanged logic
   useEffect(() => {
     if (!projectId) {
       setLogs([]);
@@ -71,18 +71,16 @@ function ApiLog() {
       setLogs((prev) => {
         const exists = prev.some((log) => log._id === newLog._id);
         if (exists) return prev;
-        return [newLog, ...prev].slice(0, 100); // Keep only last 100 logs
+        return [newLog, ...prev].slice(0, 100);
       });
     };
 
-    // Attach event listeners
     socket.on("connect", onConnect);
     socket.on("connect_error", onConnectError);
     socket.on("disconnect", onDisconnect);
     socket.on("initial_logs", onInitialLogs);
     socket.on("new_api_log", onNewApiLog);
 
-    // If socket already connected, join project immediately
     if (socket.connected) {
       onConnect();
     }
@@ -97,7 +95,7 @@ function ApiLog() {
     };
   }, [projectId]);
 
-  // Format timestamp for display
+  // Format timestamp – unchanged
   const formatDate = (dateString) => {
     if (!dateString) return "N/A";
     try {
@@ -107,70 +105,97 @@ function ApiLog() {
     }
   };
 
-  // Conditional styles based on theme
-  const cardClass = isWhiteTheme
-    ? "bg-gray-50 border-gray-200 text-gray-500"
-    : "bg-[#1e1f22] border-zinc-700/50 text-gray-400";
+  // Theme-aware styles
+  const borderColor = isWhiteTheme ? "border-gray-200" : "border-zinc-800";
+  const bgHeader = isWhiteTheme ? "bg-white/80" : "bg-zinc-900/80";
+  const textHeader = isWhiteTheme ? "text-gray-700" : "text-zinc-300";
+  const bgLogEntry = isWhiteTheme
+    ? "bg-white border-gray-200 hover:bg-gray-50"
+    : "bg-zinc-900/60 border-zinc-800 hover:bg-zinc-800/60";
+  const textMuted = isWhiteTheme ? "text-gray-400" : "text-zinc-500";
+  const badgeBg = isWhiteTheme ? "bg-gray-200 text-gray-700" : "bg-zinc-700 text-zinc-300";
 
   return (
     <div
-      className={`w-40 flex flex-col shrink-0 border-l h-full ${
-        isWhiteTheme ? "border-gray-200" : "border-zinc-700/50"
-      }`}
+      className={`
+        w-56 flex flex-col shrink-0 border-l h-full
+        ${isWhiteTheme ? "bg-gray-50/50" : "bg-zinc-950/50"}
+        ${borderColor}
+      `}
     >
+      {/* Header */}
       <div
-        className={`text-xs font-medium border-b p-2 flex justify-between items-center shrink-0 ${
-          isWhiteTheme
-            ? "bg-gray-50 border-gray-200 text-gray-600"
-            : "bg-[#232428] border-zinc-700/50 text-gray-300"
-        }`}
+        className={`
+          flex items-center justify-between px-4 py-2.5 border-b shrink-0
+          ${bgHeader} ${borderColor} ${textHeader}
+        `}
       >
-        <span>Action Logs</span>
+        <span className="text-xs font-semibold tracking-wider uppercase flex items-center gap-2">
+          <span>📋</span> Logs
+        </span>
         <div className="flex items-center gap-2">
           {logs.length > 0 && (
-            <span
-              className={`text-[10px] rounded px-1.5 py-0.5 ${
-                isWhiteTheme
-                  ? "bg-gray-200 text-gray-700"
-                  : "bg-zinc-700 text-zinc-300"
-              }`}
-            >
+            <span className={`text-[10px] rounded-full px-2 py-0.5 font-medium ${badgeBg}`}>
               {logs.length}
             </span>
           )}
           {!isConnected && projectId && (
-            <span className="text-[10px] text-red-400">⚠️ offline</span>
+            <span className="text-[10px] text-red-400 animate-pulse">● offline</span>
+          )}
+          {isConnected && projectId && (
+            <span className="text-[10px] text-green-400">● live</span>
           )}
         </div>
       </div>
 
-      <div className="p-3 text-xs flex flex-col gap-3 overflow-y-auto flex-1 min-h-0">
+      {/* Logs container */}
+      <div
+        className={`
+          flex-1 overflow-y-auto p-3 space-y-2 min-h-0
+          [&::-webkit-scrollbar]:w-1.5
+          [&::-webkit-scrollbar-track]:bg-transparent
+          [&::-webkit-scrollbar-thumb]:rounded-full
+          ${isWhiteTheme
+            ? "[&::-webkit-scrollbar-thumb]:bg-gray-300 hover:[&::-webkit-scrollbar-thumb]:bg-gray-400"
+            : "[&::-webkit-scrollbar-thumb]:bg-zinc-700 hover:[&::-webkit-scrollbar-thumb]:bg-zinc-600"
+          }
+        `}
+      >
         {socketError && (
-          <p className="text-center text-red-400 italic">{socketError}</p>
+          <div className="text-center text-red-400 italic text-xs py-4">{socketError}</div>
         )}
         {!socketError && !isConnected && projectId && (
-          <p className="text-center text-yellow-400 italic">Connecting…</p>
+          <div className="text-center text-yellow-400 italic text-xs py-4">Connecting…</div>
         )}
         {isConnected && logs.length === 0 && (
-          <p className="text-center text-zinc-500 mt-4 italic">
+          <div className={`text-center ${textMuted} italic text-xs py-4`}>
             No logs yet. Create or update an API to see activity.
-          </p>
+          </div>
         )}
         {logs.map((log) => (
-          <div key={log._id} className={`border rounded p-3 w-full ${cardClass}`}>
-            <p
-              className={`font-medium mb-1 break-words ${
-                methodColor[log.method] || "text-gray-400"
-              }`}
-            >
-              {log.method} {log.url}
+          <div
+            key={log._id}
+            className={`
+              rounded-lg border p-3 transition-all duration-200
+              ${bgLogEntry} ${borderColor}
+            `}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <span className={`text-xs font-mono font-semibold truncate ${methodColor[log.method] || "text-gray-400"}`}>
+                {log.method}
+              </span>
+              <span className="text-[10px] font-mono text-zinc-500 truncate max-w-[60%]">
+                {log.version && `v${log.version}`}
+              </span>
+            </div>
+            <p className="text-xs font-mono mt-1 break-words text-current">
+              {log.url}
             </p>
-            <p className="ml-2 text-zinc-500">↳ {log.action}</p>
-            {log.version && (
-              <p className="ml-2 text-zinc-500">↳ version {log.version}</p>
-            )}
-            <p className="ml-2 text-zinc-500">↳ {formatDate(log.createdAt)}</p>
-            <p className="ml-2 text-zinc-500">↳ by {log.username}</p>
+            <div className="mt-1.5 flex flex-col gap-0.5 text-[11px] text-zinc-400">
+              <span>↳ {log.action}</span>
+              <span>↳ {log.username}</span>
+              <span>↳ {formatDate(log.createdAt)}</span>
+            </div>
           </div>
         ))}
       </div>

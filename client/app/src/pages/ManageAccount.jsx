@@ -116,7 +116,7 @@ function ManageAccount() {
     };
 
     const handleNewApiLog = (log) => {
-      fetchSettingsData(); // always refresh on any API log event
+      fetchSettingsData();
     };
 
     socket.on("incoming_join_request", handleIncomingJoinRequest);
@@ -176,17 +176,14 @@ function ManageAccount() {
       });
 
       if (response.ok) {
-        // Optimistically remove the version from UI
         setUserProjects((prev) =>
           prev.map((project) => {
             if (project.projectId !== projectId) return project;
             const updatedApis = project.apis.map((api) => {
               if (api.apiId !== apiId) return api;
-              // Filter using the correct identifier (_id)
               const filteredVersions = api.versions.filter((v) => v._id !== versionId);
               return { ...api, versions: filteredVersions };
             });
-            // Remove the API entirely if it has no versions left
             return { ...project, apis: updatedApis.filter((api) => api.versions.length > 0) };
           })
         );
@@ -204,149 +201,161 @@ function ManageAccount() {
   // Loading state
   if (loading && !receivedRequests.length && !userProjects.length) {
     return (
-      <div className={`w-full min-h-screen flex items-center justify-center ${w ? "bg-white" : "bg-zinc-950"}`}>
+      <div className={`w-full min-h-screen flex items-center justify-center transition-colors duration-200 ${w ? "bg-gray-50" : "bg-zinc-950"}`}>
         <div
-          className={`animate-spin h-5 w-5 border-2 rounded-full border-t-transparent ${
-            w ? "border-blue-600" : "border-blue-400"
-          }`}
+          className={`animate-spin h-5 w-5 border-2 rounded-full border-t-transparent ${w ? "border-blue-600" : "border-blue-400"}`}
         ></div>
       </div>
     );
   }
 
-  // Style helpers (white theme kept, dark uses zinc palette)
-  const mainWrapperBg = w ? "bg-white text-gray-800" : "bg-zinc-950 text-zinc-300";
-  const headerBorder = w ? "border-gray-200 bg-gray-50" : "border-zinc-800 bg-zinc-950";
-  const dividerLine = w ? "border-gray-200" : "border-zinc-800";
-  const cardBg = w ? "bg-gray-50/50 border border-gray-200" : "bg-zinc-900 border border-zinc-800";
-  const innerCardBg = w ? "bg-white border border-gray-200/60" : "bg-zinc-950 border border-zinc-800/40";
-  const headerTxt = w ? "text-gray-900" : "text-white";
-  const mutedTxt = w ? "text-gray-500" : "text-zinc-400";
-  const miniMutedTxt = w ? "text-gray-400" : "text-zinc-500";
-  const highlightTxt = w ? "text-blue-600" : "text-blue-400";
-
-  // Unified blue button for approve/revoke
-  const blueBtn = "bg-blue-600 hover:bg-blue-500 text-white px-2.5 py-1.5 rounded text-xs font-medium transition-colors select-none shrink-0 disabled:opacity-50";
-
-  // Red button for delete (previous style)
-  const dangerBtn = w
-    ? "text-rose-600 hover:bg-rose-50 border border-transparent text-xs font-semibold px-2 py-1 rounded transition-colors select-none"
-    : "text-rose-400 hover:bg-rose-500/10 border border-transparent text-xs font-medium px-2 py-1 rounded transition-colors select-none";
+  // ─── Theme-aware styles ──────────────────────────────────────────
+  const pageBg = w ? "bg-gray-50" : "bg-zinc-950";
+  const textPrimary = w ? "text-gray-800" : "text-zinc-200";
+  const textMuted = w ? "text-gray-500" : "text-zinc-400";
+  const textMini = w ? "text-gray-400" : "text-zinc-500";
+  const borderColor = w ? "border-gray-200" : "border-zinc-800";
+  const headerBg = w ? "bg-white" : "bg-zinc-900";
+  const cardBg = w ? "bg-white border-gray-200" : "bg-zinc-900 border-zinc-800";
+  const innerCardBg = w ? "bg-gray-50 border-gray-200" : "bg-zinc-800/50 border-zinc-700";
+  const highlight = w ? "text-blue-600" : "text-blue-400";
+  const buttonPrimary = "bg-blue-600 hover:bg-blue-500 text-white";
+  const buttonDanger = w
+    ? "text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200"
+    : "text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/30";
 
   return (
-    <div className={`w-full min-h-screen flex flex-col transition-colors duration-150 ${mainWrapperBg}`}>
-      <div className={`w-full h-12 flex items-center px-6 border-b shrink-0 ${headerBorder}`}>
+    <div className={`w-full min-h-screen flex flex-col transition-colors duration-200 ${pageBg} ${textPrimary}`}>
+      {/* Header */}
+      <div className={`w-full h-12 flex items-center px-6 border-b shrink-0 ${headerBg} ${borderColor}`}>
         <button
           type="button"
           onClick={() => navigate("/setting")}
-          className={`text-xs font-semibold flex items-center gap-1.5 transition-colors focus:outline-none ${
-            w ? "text-gray-500 hover:text-gray-900" : "text-zinc-400 hover:text-white"
-          }`}
+          className={`text-xs font-semibold flex items-center gap-1.5 transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded px-2 py-1 ${textMuted} hover:${textPrimary} ${w ? "focus:ring-offset-white" : "focus:ring-offset-zinc-900"}`}
         >
-          <span>←</span> Back to Settings
+          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          <span>Back</span>
         </button>
-        <h1 className="flex-1 text-center text-xs font-bold tracking-wide select-none">Account Identity Core</h1>
+        <h1 className="flex-1 text-center text-xs font-bold tracking-wider select-none">Account Identity Core</h1>
         <div className="w-24" />
       </div>
 
+      {/* Main content */}
       <div className="flex-1 w-full max-w-5xl mx-auto p-6 space-y-8">
-
+        {/* Received & Sent requests - two columns */}
         <div className="flex flex-col md:grid md:grid-cols-2 gap-6 min-h-0">
+          {/* Received */}
           <div className="space-y-3 flex flex-col">
             <div className="flex flex-col select-none">
-              <h2 className={`text-xs font-bold tracking-wider uppercase flex items-center gap-2 ${miniMutedTxt}`}>
-                <span>Request Received</span>
+              <div className="flex items-center gap-2">
+                <h2 className={`text-xs font-bold tracking-wider uppercase ${textMini}`}>Received</h2>
                 {receivedRequests.length > 0 && (
-                  <span className="px-1.5 py-0.5 text-[9px] font-mono rounded bg-blue-500 text-white animate-pulse">
-                    {receivedRequests.length} Pending
+                  <span className="px-2 py-0.5 text-[9px] font-mono rounded-full bg-blue-500 text-white animate-pulse">
+                    {receivedRequests.length} pending
                   </span>
                 )}
-              </h2>
-              <p className={`text-[11px] ${mutedTxt}`}>Manage permission streams targeting your active assets.</p>
+              </div>
+              <p className={`text-[11px] ${textMuted}`}>Manage permission streams targeting your active assets.</p>
             </div>
-            <div className="space-y-2 flex-1 overflow-y-auto max-h-75 pr-1 custom-scrollbar">
+            <div className="space-y-2 flex-1 overflow-y-auto max-h-72 pr-1 custom-scrollbar">
               {receivedRequests.map((req) => (
-                <div key={req.id} className={`flex items-center justify-between p-3.5 rounded shadow-sm gap-2 ${cardBg}`}>
+                <div key={req.id} className={`flex items-center justify-between p-3.5 rounded-xl border shadow-sm gap-2 ${cardBg}`}>
                   <div className="space-y-0.5 min-w-0">
-                    <div className={`text-xs font-semibold truncate ${headerTxt}`}>{req.projectName}</div>
-                    <div className={`text-[11px] ${mutedTxt} truncate`}>
-                      by : <span className={`font-semibold ${highlightTxt}`}>@{req.requestedBy}</span>
+                    <div className={`text-xs font-semibold truncate ${textPrimary}`}>{req.projectName}</div>
+                    <div className={`text-[11px] ${textMuted} truncate`}>
+                      by <span className={`font-semibold ${highlight}`}>@{req.requestedBy}</span>
                     </div>
                   </div>
-                  <button type="button" onClick={() => handleAcceptRequest(req.id)} className={blueBtn}>Approve</button>
+                  <button
+                    type="button"
+                    onClick={() => handleAcceptRequest(req.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${buttonPrimary} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${w ? "focus:ring-offset-white" : "focus:ring-offset-zinc-900"} disabled:opacity-50`}
+                  >
+                    Approve
+                  </button>
                 </div>
               ))}
               {receivedRequests.length === 0 && (
-                <div className={`text-xs italic p-4 text-center border border-dashed rounded ${dividerLine} ${miniMutedTxt}`}>
-                  No incoming requests present.
+                <div className={`text-xs italic p-4 text-center border border-dashed rounded-xl ${borderColor} ${textMini}`}>
+                  No incoming requests.
                 </div>
               )}
             </div>
           </div>
 
+          {/* Sent */}
           <div className="space-y-3 flex flex-col">
             <div className="flex flex-col select-none">
-              <h2 className={`text-xs font-bold tracking-wider uppercase ${miniMutedTxt}`}>Request Sent</h2>
-              <p className={`text-[11px] ${mutedTxt}`}>Monitor validation status or pull back pending invites.</p>
+              <h2 className={`text-xs font-bold tracking-wider uppercase ${textMini}`}>Sent</h2>
+              <p className={`text-[11px] ${textMuted}`}>Monitor validation status or pull back pending invites.</p>
             </div>
-            <div className="space-y-2 flex-1 overflow-y-auto max-h-75 pr-1 custom-scrollbar">
+            <div className="space-y-2 flex-1 overflow-y-auto max-h-72 pr-1 custom-scrollbar">
               {sentRequests.map((req) => (
-                <div key={req.id} className={`flex items-center justify-between p-3.5 rounded shadow-sm gap-2 ${cardBg}`}>
+                <div key={req.id} className={`flex items-center justify-between p-3.5 rounded-xl border shadow-sm gap-2 ${cardBg}`}>
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <span className={`text-[11px] font-mono font-semibold px-2 py-0.5 rounded truncate max-w-40 ${innerCardBg} ${mutedTxt}`}>
-                      code:{req.projectCode}
+                    <span className={`text-[11px] font-mono font-semibold px-2 py-0.5 rounded truncate max-w-40 ${innerCardBg} ${textMuted}`}>
+                      code: {req.projectCode}
                     </span>
                     <span className="text-[11px] font-medium text-amber-500 capitalize select-none shrink-0">pending</span>
                   </div>
-                  <button type="button" onClick={() => handleRevokeRequest(req.id)} className={blueBtn}>revoke request</button>
+                  <button
+                    type="button"
+                    onClick={() => handleRevokeRequest(req.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${buttonPrimary} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${w ? "focus:ring-offset-white" : "focus:ring-offset-zinc-900"} disabled:opacity-50`}
+                  >
+                    Revoke
+                  </button>
                 </div>
               ))}
               {sentRequests.length === 0 && (
-                <div className={`text-xs italic p-4 text-center border border-dashed rounded ${dividerLine} ${miniMutedTxt}`}>
-                  No outbound request records found.
+                <div className={`text-xs italic p-4 text-center border border-dashed rounded-xl ${borderColor} ${textMini}`}>
+                  No outbound requests.
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        <hr className={dividerLine} />
+        <hr className={`border-t ${borderColor}`} />
 
+        {/* User Projects */}
         <div className="space-y-3">
           <div className="flex flex-col select-none">
-            <h2 className={`text-xs font-bold tracking-wider uppercase ${miniMutedTxt}`}>Your API Projects</h2>
-            <p className={`text-[11px] ${mutedTxt}`}>APIs of your created projects. grouped by workspace.</p>
+            <h2 className={`text-xs font-bold tracking-wider uppercase ${textMini}`}>Your API Projects</h2>
+            <p className={`text-[11px] ${textMuted}`}>APIs of your created projects, grouped by workspace.</p>
           </div>
-          <div className="space-y-6">
+          <div className="space-y-5">
             {userProjects.length === 0 && (
-              <div className={`text-xs italic p-4 text-center border border-dashed rounded ${dividerLine} ${miniMutedTxt}`}>
+              <div className={`text-xs italic p-4 text-center border border-dashed rounded-xl ${borderColor} ${textMini}`}>
                 No projects with APIs yet.
               </div>
             )}
             {userProjects.map((project) => (
-              <div key={project.projectId} className={`p-4 rounded shadow-sm flex flex-col gap-3 ${cardBg}`}>
+              <div key={project.projectId} className={`p-4 rounded-xl border shadow-sm flex flex-col gap-3 ${cardBg}`}>
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold text-blue-500">📁 Project:</span>
-                  <span className={`text-xs font-semibold ${headerTxt}`}>{project.projectName}</span>
+                  <span className={`text-xs font-semibold ${textPrimary}`}>{project.projectName}</span>
                 </div>
                 <div className="ml-4 space-y-3">
                   {project.apis.map((api) => (
-                    <div key={api.apiId} className={`p-3 rounded ${innerCardBg}`}>
+                    <div key={api.apiId} className={`p-3 rounded-lg border ${innerCardBg}`}>
                       <div className="flex items-center gap-1.5 font-mono text-xs mb-2">
-                        <span className={`font-bold ${highlightTxt}`}>path:</span>
-                        <span className={`font-semibold ${headerTxt}`}>{api.apiPath}</span>
+                        <span className={`font-bold ${highlight}`}>path:</span>
+                        <span className={`font-semibold ${textPrimary}`}>{api.apiPath}</span>
                       </div>
                       <div className="space-y-1.5 pl-3 border-l-2 border-blue-500/30">
                         {api.versions.map((version) => (
-                          <div key={version._id} className="flex items-center justify-between px-2 py-1 rounded">
+                          <div key={version._id} className="flex items-center justify-between px-2 py-1 rounded hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                             <div className="flex flex-col gap-0.5 min-w-0 pr-2">
-                              <span className={`text-[11px] font-bold ${headerTxt}`}>version: {version.version}</span>
-                              <span className={`text-xs font-mono truncate select-all ${mutedTxt}`}>{version.fullUrl}</span>
+                              <span className={`text-[11px] font-bold ${textPrimary}`}>version: {version.version}</span>
+                              <span className={`text-xs font-mono truncate select-all ${textMuted}`}>{version.fullUrl}</span>
                             </div>
                             <button
                               type="button"
                               onClick={() => handleDeleteVersion(project.projectId, api.apiId, version._id)}
-                              className={dangerBtn}
+                              className={`px-2 py-1 rounded text-xs font-medium transition-all ${buttonDanger} focus:outline-none focus:ring-2 focus:ring-rose-500/50`}
                             >
                               delete
                             </button>

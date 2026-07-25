@@ -7,9 +7,17 @@ const UrlPathInput = React.memo(({ urlPath, onUrlPathChange, inp }) => {
       onChange={onUrlPathChange}
       placeholder="users/:userId/posts"
       rows={1}
-      className={`flex-1 rounded px-3 py-1.5 text-sm outline-none focus:border-blue-500 transition-colors resize-none overflow-hidden ${inp}`}
+      className={`
+        flex-1 rounded-lg px-3.5 py-2 text-sm font-mono outline-none
+        transition-all duration-200
+        ${inp}
+        focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500
+        resize-none overflow-hidden
+        min-h-[38px]
+        leading-relaxed
+      `}
       style={{
-        minHeight: '36px',
+        minHeight: '38px',
         height: 'auto'
       }}
     />

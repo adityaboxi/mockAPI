@@ -38,45 +38,53 @@ const Footer = () => {
   const handleTermsClick = () => navigate("/terms");
   const handleSettingsClick = () => navigate("/setting");
 
+  // Theme-aware utility classes
+  const bg = isWhiteTheme ? "bg-white" : "bg-zinc-950";
+  const border = isWhiteTheme ? "border-gray-200" : "border-zinc-800";
+  const textBase = isWhiteTheme ? "text-gray-500" : "text-zinc-400";
+  const textHover = isWhiteTheme ? "hover:text-gray-700" : "hover:text-zinc-200";
+  const divider = isWhiteTheme ? "text-gray-300" : "text-zinc-600";
+
   return (
     <footer
       className={`
         h-12 flex flex-wrap justify-between items-center px-6 text-xs shrink-0
-        ${
-          isWhiteTheme
-            ? "bg-white border-t border-gray-200 text-gray-500 hover:text-gray-700"
-            : "bg-[#2b2d31] border-t border-zinc-700/50 text-gray-400 hover:text-gray-300"
-        }
+        ${bg} border-t ${border} ${textBase} ${textHover}
+        transition-colors duration-200
       `}
     >
+      {/* Left side */}
       <div className="flex items-center space-x-4">
         <button
           onClick={handleTermsClick}
-          className="tracking-wide hover:underline cursor-pointer focus:outline-none"
+          className="tracking-wide hover:underline cursor-pointer focus:outline-none transition-colors"
         >
           {TERMS_TEXT}
         </button>
-        <span className="hidden sm:inline text-[11px] opacity-60">•</span>
-        <span className="hidden sm:inline text-[11px] font-mono opacity-70">
+        <span className={`hidden sm:inline text-[11px] ${divider}`}>•</span>
+        <span className={`hidden sm:inline text-[11px] font-mono opacity-70 ${textBase}`}>
           {VERSION}
         </span>
       </div>
 
-      <div className="flex items-center space-x-3">
-        <div className="hidden md:flex items-center space-x-1">
+      {/* Right side */}
+      <div className="flex items-center space-x-4">
+        {/* Live indicator */}
+        <div className="hidden md:flex items-center space-x-1.5">
           <div
-            className={`w-1.5 h-1.5 rounded-full ${
+            className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${
               isLive ? "bg-green-500 animate-pulse" : "bg-red-500"
             }`}
           />
-          <span className="text-[10px] uppercase tracking-wider">
+          <span className={`text-[10px] uppercase tracking-wider font-medium ${textBase}`}>
             {isLive ? "Live" : "Offline"}
           </span>
         </div>
 
+        {/* Settings button */}
         <button
           onClick={handleSettingsClick}
-          className="group flex items-center justify-center w-7 h-7 rounded-md bg-blue-600 hover:bg-blue-500 text-white focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-500"
+          className="group flex items-center justify-center w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-500 text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 hover:scale-105"
           aria-label="Settings"
         >
           <svg
@@ -85,7 +93,7 @@ const Footer = () => {
             viewBox="0 0 24 24"
             strokeWidth={1.5}
             stroke="currentColor"
-            className="w-4 h-4 transition-transform duration-200 group-hover:rotate-90"
+            className="w-4 h-4 transition-transform duration-300 group-hover:rotate-90"
           >
             <path
               strokeLinecap="round"

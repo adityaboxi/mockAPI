@@ -1,42 +1,51 @@
+// src/App.jsx
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
+
+// ─── Pages ──────────────────────────────────────────────────────────
 import Login from './pages/Login';
 import Signup from './pages/Signup';
-import Home from './pages/Home';
 import OTP from './pages/OTP';
-import TermsCondition from './pages/TermsCondition';
+import GeneralQuestionPage from './pages/GeneralQuestionPage';
+import Home from './pages/Home';
 import Setting from './pages/Setting';
 import ManageAccount from './pages/ManageAccount';
 import Subscribe from './pages/Subscribe';
-import TitleUpdater from './components/TitleUpdater';
-import NetworkTest from './pages/NetworkTest';
-import OpenApi from './pages/OpenApi';
+import TermsCondition from './pages/TermsCondition';
 import Dashboard from './pages/Dashboard';
 import ApiToolsPage from './pages/ApiToolsPage';
-import GeneralQuestionPage from './pages/GeneralQuestionPage'; // ✅ NEW
+import NetworkTest from './pages/NetworkTest';      // (used inside ApiToolsPage)
+import OpenApi from './pages/OpenApi';              // (used inside ApiToolsPage)
 
+// ─── Components ────────────────────────────────────────────────────
+import TitleUpdater from './components/TitleUpdater';
 
 function App() {
   return (
     <>
       <TitleUpdater />
       <Routes>
+        {/* Redirect root to home */}
         <Route path="/" element={<Navigate to="/home" replace />} />
+
+        {/* Authentication & Onboarding */}
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         <Route path="/otp" element={<OTP />} />
+        <Route path="/general-questions" element={<GeneralQuestionPage />} />
+
+        {/* Core Application */}
         <Route path="/home" element={<Home />} />
-        <Route path="/terms" element={<TermsCondition />} />
         <Route path="/setting" element={<Setting />} />
         <Route path="/manageaccount" element={<ManageAccount />} />
         <Route path="/subscribe" element={<Subscribe />} />
+        <Route path="/terms" element={<TermsCondition />} />
 
+        {/* Tools & Analytics */}
         <Route path="/tools" element={<ApiToolsPage />} />
         <Route path="/dashboard" element={<Dashboard />} />
 
-        {/* ✅ New route for first‑time user onboarding */}
-        <Route path="/general-questions" element={<GeneralQuestionPage />} />
-
+        {/* Fallback – any unknown route goes home */}
         <Route path="*" element={<Navigate to="/home" replace />} />
       </Routes>
     </>

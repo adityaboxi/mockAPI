@@ -1,3 +1,4 @@
+// src/pages/Signup.jsx
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
@@ -7,32 +8,27 @@ function Signup() {
   const { theme } = useTheme();
   const isWhiteTheme = theme === "white";
 
-  // ─── Form state ──────────────────────────────────────────────
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
 
-  // ─── Validation states ──────────────────────────────────────
-  const [emailStatus, setEmailStatus] = useState(null); // true = available, false = taken
+  const [emailStatus, setEmailStatus] = useState(null);
   const [usernameStatus, setUsernameStatus] = useState(null);
   const [isEmailChecking, setIsEmailChecking] = useState(false);
   const [isUsernameChecking, setIsUsernameChecking] = useState(false);
   const [signupError, setSignupError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  // ─── Refs for debouncing & abort ────────────────────────────
   const emailTimeoutRef = useRef(null);
   const usernameTimeoutRef = useRef(null);
   const abortControllerRef = useRef(null);
 
-  // ─── Environment ──────────────────────────────────────────────
   const VALID_EMAIL_URL = import.meta.env.VITE_API_URL_VALIDEMAIL;
   const VALID_USERNAME_URL = import.meta.env.VITE_API_URL_VALIDUSERNAME;
   const SIGNUP_URL = import.meta.env.VITE_API_URL_SIGNUP;
 
-  // ─── Cleanup on unmount ──────────────────────────────────────
   useEffect(() => {
     return () => {
       emailTimeoutRef.current && clearTimeout(emailTimeoutRef.current);
@@ -41,9 +37,7 @@ function Signup() {
     };
   }, []);
 
-  // ─── Validation helpers (with AbortController) ──────────────
   const validateField = useCallback(async (url, body, setStatus, setIsChecking) => {
-    // Cancel previous request
     abortControllerRef.current && abortControllerRef.current.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -58,11 +52,10 @@ function Signup() {
         body: JSON.stringify(body),
         signal: controller.signal,
       });
-      // 200 = available, 409 = taken, other = treat as unavailable
       setStatus(response.status === 200);
     } catch (err) {
       if (err.name === "AbortError") return;
-      setStatus(false); // treat network errors as invalid
+      setStatus(false);
     } finally {
       setIsChecking(false);
     }
@@ -96,7 +89,6 @@ function Signup() {
     [VALID_USERNAME_URL, validateField]
   );
 
-  // ─── Handlers ────────────────────────────────────────────────
   const handleNameChange = useCallback((e) => setName(e.target.value), []);
   const handleEmailChange = useCallback((e) => {
     const val = e.target.value;
@@ -116,7 +108,6 @@ function Signup() {
   const handleSignup = useCallback(async () => {
     setSignupError("");
 
-    // 1. Basic validation
     if (!name || !email || !username || !password) {
       setSignupError("All fields are required.");
       return;
@@ -134,7 +125,6 @@ function Signup() {
       return;
     }
     if (emailStatus === null || usernameStatus === null) {
-      // Wait for validation to complete (or force a check)
       setSignupError("Please wait for email/username validation.");
       return;
     }
@@ -163,119 +153,125 @@ function Signup() {
     }
   }, [name, email, username, password, confirmPassword, emailStatus, usernameStatus, navigate, SIGNUP_URL]);
 
-  // ─── Theme classes ──────────────────────────────────────────
-  const themeClasses = {
-    page: isWhiteTheme ? "bg-gray-100" : "bg-zinc-950",
-    card: isWhiteTheme
-      ? "bg-white border-gray-200"
-      : "bg-zinc-900 border-zinc-800",
-    label: isWhiteTheme ? "text-gray-500" : "text-zinc-400",
-    input: isWhiteTheme
-      ? "bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-400"
-      : "bg-zinc-900 border-zinc-800 text-zinc-300 placeholder-zinc-500",
-    inputFocus: "focus:border-blue-500",
-    button: "bg-blue-600 hover:bg-blue-500 text-white",
-    buttonDisabled: "opacity-50 cursor-not-allowed",
-  };
+  // ─── Theme‑aware styles ──────────────────────────────────────────
+  const pageBg = isWhiteTheme ? "bg-gray-50" : "bg-zinc-950";
+  const cardBg = isWhiteTheme ? "bg-white" : "bg-zinc-900";
+  const borderColor = isWhiteTheme ? "border-gray-200" : "border-zinc-800";
+  const shadow = isWhiteTheme ? "shadow-lg" : "shadow-xl shadow-black/20";
+  const textPrimary = isWhiteTheme ? "text-gray-800" : "text-white";
+  const labelText = isWhiteTheme ? "text-gray-600" : "text-zinc-400";
+  const inputBg = isWhiteTheme ? "bg-white" : "bg-zinc-900";
+  const inputBorder = isWhiteTheme ? "border-gray-300" : "border-zinc-700";
+  const inputFocus = "focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 focus:outline-none";
+  const inputText = isWhiteTheme ? "text-gray-800" : "text-zinc-200";
+  const inputPlaceholder = isWhiteTheme ? "placeholder-gray-400" : "placeholder-zinc-500";
+  const inputClass = `w-full rounded-lg px-4 py-2.5 text-sm outline-none transition-all duration-200 border ${inputBg} ${inputBorder} ${inputFocus} ${inputText} ${inputPlaceholder}`;
+  const buttonPrimary = "bg-blue-600 hover:bg-blue-500 text-white";
+  const buttonDisabled = isWhiteTheme
+    ? "opacity-50 cursor-not-allowed"
+    : "opacity-50 cursor-not-allowed";
 
-  const inputBase = `w-full rounded px-3 py-2 text-sm outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${themeClasses.input} ${themeClasses.inputFocus}`;
-  const labelBase = `text-xs font-medium mb-1 ${themeClasses.label}`;
-
-  // ─── Helper to render validation status ─────────────────────
   const renderValidation = (status, checking, validMsg, invalidMsg) => {
     if (checking) return <span className="text-xs text-blue-400">checking…</span>;
-    if (status === true) return <span className="text-xs text-green-400">✓ {validMsg}</span>;
+    if (status === true) return <span className="text-xs text-emerald-400">✓ {validMsg}</span>;
     if (status === false) return <span className="text-xs text-red-400">✗ {invalidMsg}</span>;
     return null;
   };
 
-  // ─── Main render ─────────────────────────────────────────────
   return (
-    <div className={`min-h-screen flex items-center justify-center py-8 px-4 ${themeClasses.page} font-sans`}>
-      <div className={`p-8 rounded shadow-lg border w-full max-w-sm ${themeClasses.card}`}>
-        <h2 className={`text-xl font-semibold mb-6 ${isWhiteTheme ? "text-gray-800" : "text-white"}`}>
-          Create Account
-        </h2>
+    <div className={`min-h-screen flex items-center justify-center py-8 px-4 transition-colors duration-200 ${pageBg}`}>
+      <div className={`p-8 rounded-2xl border w-full max-w-sm transition-colors duration-200 ${cardBg} ${borderColor} ${shadow}`}>
+        <div className="text-center mb-6">
+          <div className="text-3xl mb-1">🚀</div>
+          <h2 className={`text-lg font-semibold ${textPrimary}`}>Create Account</h2>
+          <p className={`text-xs ${labelText} mt-1`}>Join MockAPI and start building</p>
+        </div>
 
         {/* Name */}
         <div className="mb-4">
-          <label className={labelBase}>Full Name</label>
+          <label className={`block text-xs font-medium mb-1.5 ${labelText}`}>Full Name</label>
           <input
             autoFocus
             type="text"
             value={name}
             onChange={handleNameChange}
             disabled={isLoading}
-            className={inputBase}
+            className={inputClass}
             placeholder="John Doe"
           />
         </div>
 
         {/* Email */}
         <div className="mb-4">
-          <label className={labelBase}>Email</label>
+          <label className={`block text-xs font-medium mb-1.5 ${labelText}`}>Email</label>
           <input
             type="email"
             value={email}
             onChange={handleEmailChange}
             onBlur={() => checkEmail(email)}
             disabled={isLoading}
-            className={inputBase}
+            className={inputClass}
             placeholder="you@example.com"
           />
-          {renderValidation(emailStatus, isEmailChecking, "email available", "email already taken")}
+          <div className="mt-1">{renderValidation(emailStatus, isEmailChecking, "email available", "email already taken")}</div>
         </div>
 
         {/* Username */}
         <div className="mb-4">
-          <label className={labelBase}>Username</label>
+          <label className={`block text-xs font-medium mb-1.5 ${labelText}`}>Username</label>
           <input
             type="text"
             value={username}
             onChange={handleUsernameChange}
             onBlur={() => checkUsername(username)}
             disabled={isLoading}
-            className={inputBase}
+            className={inputClass}
             placeholder="cooluser123"
           />
-          {renderValidation(usernameStatus, isUsernameChecking, "username available", "username already taken")}
+          <div className="mt-1">{renderValidation(usernameStatus, isUsernameChecking, "username available", "username already taken")}</div>
         </div>
 
         {/* Password */}
         <div className="mb-4">
-          <label className={labelBase}>Password</label>
+          <label className={`block text-xs font-medium mb-1.5 ${labelText}`}>Password</label>
           <input
             type="password"
             value={password}
             onChange={handlePasswordChange}
             disabled={isLoading}
-            className={inputBase}
+            className={inputClass}
             placeholder="••••••••"
           />
         </div>
 
         {/* Confirm Password */}
         <div className="mb-4">
-          <label className={labelBase}>Confirm Password</label>
+          <label className={`block text-xs font-medium mb-1.5 ${labelText}`}>Confirm Password</label>
           <input
             type="password"
             value={confirmPassword}
             onChange={handleConfirmChange}
             disabled={isLoading}
-            className={inputBase}
+            className={inputClass}
             placeholder="••••••••"
           />
-          {confirmPassword && password !== confirmPassword && (
-            <p className="text-xs text-red-400 mt-1">✗ passwords do not match</p>
-          )}
-          {confirmPassword && password === confirmPassword && password.length > 0 && (
-            <p className="text-xs text-green-400 mt-1">✓ passwords match</p>
-          )}
+          <div className="mt-1">
+            {confirmPassword && password !== confirmPassword && (
+              <span className="text-xs text-red-400">✗ passwords do not match</span>
+            )}
+            {confirmPassword && password === confirmPassword && password.length > 0 && (
+              <span className="text-xs text-emerald-400">✓ passwords match</span>
+            )}
+          </div>
         </div>
 
         {/* Global error */}
         {signupError && (
-          <div className="mt-2 p-2 bg-red-500/10 border border-red-500/20 rounded text-center text-xs text-red-400">
+          <div className={`mt-2 p-3 rounded-xl text-xs border ${
+            isWhiteTheme
+              ? "bg-red-50 border-red-200 text-red-700"
+              : "bg-red-500/10 border-red-500/20 text-red-400"
+          }`}>
             {signupError}
           </div>
         )}
@@ -285,15 +281,17 @@ function Signup() {
           <button
             onClick={handleSignup}
             disabled={isLoading}
-            className={`w-full font-medium py-2 rounded text-sm transition-colors flex items-center justify-center gap-2 ${
+            className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 flex items-center justify-center gap-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+              isWhiteTheme ? "focus:ring-offset-white" : "focus:ring-offset-zinc-900"
+            } ${
               isLoading
-                ? `${themeClasses.button} ${themeClasses.buttonDisabled}`
-                : themeClasses.button
+                ? `${buttonPrimary} ${buttonDisabled}`
+                : buttonPrimary
             }`}
           >
             {isLoading ? (
               <>
-                <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                 </svg>
@@ -302,6 +300,17 @@ function Signup() {
             ) : (
               "Sign Up"
             )}
+          </button>
+        </div>
+
+        {/* Login link */}
+        <div className="mt-4 text-center">
+          <span className={`text-xs ${labelText}`}>Already have an account? </span>
+          <button
+            onClick={() => navigate("/login")}
+            className="text-xs font-medium text-blue-400 hover:text-blue-300 hover:underline transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
+          >
+            Log in
           </button>
         </div>
       </div>

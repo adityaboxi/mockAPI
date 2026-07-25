@@ -131,23 +131,23 @@ function NetworkTestInline({ onComplete, isWhiteTheme }) {
     }
   }, []);
 
-  const theme = {
-    card: isWhiteTheme ? 'bg-white border-gray-200' : 'bg-zinc-900 border-zinc-800',
-    text: isWhiteTheme ? 'text-gray-800' : 'text-zinc-300',
-    muted: isWhiteTheme ? 'text-gray-500' : 'text-zinc-400',
-    resultBg: isWhiteTheme ? 'bg-gray-50 border-gray-200' : 'bg-zinc-800 border-zinc-700',
-    progressBg: isWhiteTheme ? 'bg-gray-200' : 'bg-zinc-700',
-    errorBg: isWhiteTheme
-      ? 'bg-red-50 border-red-200 text-red-700'
-      : 'bg-red-500/10 border-red-500/20 text-red-400',
-    buttonPrimary: 'bg-blue-600 hover:bg-blue-500 text-white',
-    buttonSecondary: isWhiteTheme
-      ? 'bg-gray-200 hover:bg-gray-300 text-gray-700 border border-gray-300'
-      : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700',
-    individualPing: isWhiteTheme
-      ? 'bg-gray-100 border-gray-300 text-gray-700'
-      : 'bg-zinc-900 border-zinc-700 text-zinc-400',
-  };
+  // ── Theme-aware styles ──
+  const borderColor = isWhiteTheme ? "border-gray-200" : "border-zinc-800";
+  const cardBg = isWhiteTheme ? "bg-white" : "bg-zinc-900";
+  const textPrimary = isWhiteTheme ? "text-gray-800" : "text-zinc-200";
+  const textMuted = isWhiteTheme ? "text-gray-500" : "text-zinc-400";
+  const resultBg = isWhiteTheme ? "bg-gray-50" : "bg-zinc-800";
+  const progressBg = isWhiteTheme ? "bg-gray-200" : "bg-zinc-700";
+  const errorBg = isWhiteTheme
+    ? "bg-red-50 border-red-200 text-red-700"
+    : "bg-red-500/10 border-red-500/20 text-red-400";
+  const buttonPrimary = "bg-blue-600 hover:bg-blue-500 text-white";
+  const buttonSecondary = isWhiteTheme
+    ? "bg-gray-200 hover:bg-gray-300 text-gray-700 border border-gray-300"
+    : "bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700";
+  const individualPing = isWhiteTheme
+    ? "bg-gray-100 border-gray-300 text-gray-700"
+    : "bg-zinc-900 border-zinc-700 text-zinc-400";
 
   const renderStatusMessage = () => {
     if (status === 'idle') return 'Press "Run Test" to measure your network latency.';
@@ -158,23 +158,23 @@ function NetworkTestInline({ onComplete, isWhiteTheme }) {
   };
 
   return (
-    <div className={`mt-6 p-4 rounded-lg border ${theme.card}`}>
-      <h3 className={`text-sm font-semibold ${theme.text} mb-3`}>🌐 Network Latency Test</h3>
-      <p className={`text-xs ${theme.muted} mb-3`}>
+    <div className={`mt-6 p-5 rounded-xl border ${cardBg} ${borderColor} transition-colors duration-200`}>
+      <h3 className={`text-sm font-semibold ${textPrimary} mb-1`}>🌐 Network Latency Test</h3>
+      <p className={`text-xs ${textMuted} mb-3`}>
         Measures your round‑trip time to the server via 5 ping‑pong requests.
       </p>
       <div className="flex gap-3 flex-wrap">
         <button
           onClick={() => runTest(false)}
           disabled={status === 'running'}
-          className={`px-4 py-2 rounded text-sm font-medium transition disabled:opacity-50 ${theme.buttonPrimary}`}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${buttonPrimary} disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${isWhiteTheme ? 'focus:ring-offset-white' : 'focus:ring-offset-zinc-900'}`}
         >
           {status === 'running' ? '⏳ Measuring...' : '▶ Run Test'}
         </button>
         {cacheRef.current && (
           <button
             onClick={clearCache}
-            className={`px-4 py-2 rounded text-sm transition ${theme.buttonSecondary}`}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${buttonSecondary} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${isWhiteTheme ? 'focus:ring-offset-white' : 'focus:ring-offset-zinc-900'}`}
           >
             🗑️ Clear Cache
           </button>
@@ -182,7 +182,7 @@ function NetworkTestInline({ onComplete, isWhiteTheme }) {
       </div>
 
       {status === 'running' && (
-        <div className={`mt-3 w-full rounded-full h-2 ${theme.progressBg}`}>
+        <div className={`mt-3 w-full rounded-full h-2 ${progressBg}`}>
           <div
             className="bg-blue-500 h-2 rounded-full transition-all duration-300"
             style={{ width: `${progress}%` }}
@@ -190,14 +190,14 @@ function NetworkTestInline({ onComplete, isWhiteTheme }) {
         </div>
       )}
 
-      <div className={`mt-3 text-sm ${theme.text}`}>{renderStatusMessage()}</div>
+      <div className={`mt-3 text-sm ${textPrimary}`}>{renderStatusMessage()}</div>
 
       {status === 'done' && average !== null && (
-        <div className={`mt-3 rounded p-4 text-center border ${theme.resultBg}`}>
+        <div className={`mt-3 rounded-xl p-4 text-center border ${resultBg} ${borderColor}`}>
           <div className={`text-3xl font-bold ${isWhiteTheme ? 'text-emerald-600' : 'text-emerald-400'}`}>
             {average} ms
           </div>
-          <div className={`text-xs ${theme.muted} mt-1`}>average round‑trip</div>
+          <div className={`text-xs ${textMuted} mt-1`}>average round‑trip</div>
           {stats.samples > 0 && (
             <div className="flex justify-center gap-4 mt-2 text-xs text-zinc-500">
               <span>Min: {Math.round(stats.min)} ms</span>
@@ -207,12 +207,12 @@ function NetworkTestInline({ onComplete, isWhiteTheme }) {
           )}
           {individualResults.length > 0 && (
             <div className="mt-3">
-              <p className={`text-xs mb-1 ${theme.muted}`}>Individual ping times (ms):</p>
+              <p className={`text-xs mb-1 ${textMuted}`}>Individual ping times (ms):</p>
               <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
                 {individualResults.map((time, idx) => (
                   <span
                     key={idx}
-                    className={`px-2 py-0.5 border rounded text-xs ${theme.individualPing}`}
+                    className={`px-2 py-0.5 border rounded text-xs ${individualPing}`}
                   >
                     {Math.round(time)}
                   </span>
@@ -224,7 +224,7 @@ function NetworkTestInline({ onComplete, isWhiteTheme }) {
       )}
 
       {status === 'error' && (
-        <div className={`mt-3 rounded p-3 text-xs ${theme.errorBg}`}>
+        <div className={`mt-3 rounded-lg p-3 text-xs border ${errorBg}`}>
           {error}
           <button onClick={() => runTest(true)} className="block mt-1 text-blue-400 hover:underline">
             Retry
@@ -290,30 +290,30 @@ const GeneralQuestionPage = () => {
     }, 500);
   }, [useCase, heardFrom, excitedFeatures, additionalFeedback, username, email, navigate, isFormValid]);
 
-  // ─── Theme classes ──────────────────────────────────────────
-  const themeClasses = {
-    page: isWhiteTheme ? 'bg-white text-gray-800' : 'bg-zinc-950 text-zinc-300',
-    header: isWhiteTheme ? 'bg-white border-gray-200' : 'bg-zinc-950 border-zinc-800',
-    label: isWhiteTheme ? 'text-gray-700' : 'text-zinc-300',
-    input: isWhiteTheme
-      ? 'bg-gray-50 border border-gray-300 text-gray-900 placeholder-gray-400'
-      : 'bg-zinc-900 border border-zinc-800 text-zinc-300 placeholder-zinc-500',
-    inputFocus: 'focus:border-blue-500',
-    description: isWhiteTheme ? 'text-gray-600' : 'text-zinc-400',
-    buttonEnabled: 'bg-blue-600 hover:bg-blue-500 text-white',
-    buttonDisabled: isWhiteTheme
-      ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-      : 'bg-zinc-700 text-zinc-300 cursor-not-allowed',
-  };
+  // ── Theme-aware classes ──
+  const pageBg = isWhiteTheme ? "bg-gray-50" : "bg-zinc-950";
+  const pageText = isWhiteTheme ? "text-gray-800" : "text-zinc-300";
+  const headerBg = isWhiteTheme ? "bg-white" : "bg-zinc-900";
+  const borderColor = isWhiteTheme ? "border-gray-200" : "border-zinc-800";
+  const labelText = isWhiteTheme ? "text-gray-700" : "text-zinc-300";
+  const descriptionText = isWhiteTheme ? "text-gray-600" : "text-zinc-400";
+  const inputBg = isWhiteTheme ? "bg-white" : "bg-zinc-900";
+  const inputBorder = isWhiteTheme ? "border-gray-300" : "border-zinc-700";
+  const inputFocus = "focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 focus:outline-none";
+  const inputText = isWhiteTheme ? "text-gray-800" : "text-zinc-200";
+  const inputPlaceholder = isWhiteTheme ? "placeholder-gray-400" : "placeholder-zinc-500";
+  const buttonEnabled = "bg-blue-600 hover:bg-blue-500 text-white";
+  const buttonDisabled = isWhiteTheme
+    ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+    : "bg-zinc-700 text-zinc-400 cursor-not-allowed";
 
-  const inputBase = `w-full rounded px-3 py-2 text-sm outline-none transition-colors ${themeClasses.input} ${themeClasses.inputFocus}`;
-  const labelBase = `block text-xs font-medium mb-1 ${themeClasses.label}`;
+  const inputBase = `w-full rounded-lg px-3.5 py-2.5 text-sm outline-none transition-all duration-200 border ${inputBg} ${inputBorder} ${inputFocus} ${inputText} ${inputPlaceholder}`;
 
   return (
-    <div className={`min-h-screen w-full flex flex-col font-sans transition-colors duration-150 ${themeClasses.page}`}>
+    <div className={`min-h-screen w-full flex flex-col font-sans transition-colors duration-200 ${pageBg} ${pageText}`}>
       {/* Header */}
-      <div className={`h-12 flex items-center px-6 border-b shrink-0 ${themeClasses.header}`}>
-        <h1 className="flex-1 text-center text-sm font-semibold tracking-wide select-none text-white">
+      <div className={`h-12 flex items-center px-6 border-b shrink-0 ${headerBg} ${borderColor}`}>
+        <h1 className="flex-1 text-center text-sm font-semibold tracking-wide select-none">
           🚀 Welcome, {username || 'Guest'}!
         </h1>
         <div className="w-20" />
@@ -321,17 +321,17 @@ const GeneralQuestionPage = () => {
 
       {/* Main content */}
       <div className="flex-1 p-6 max-w-3xl mx-auto w-full space-y-6">
-        <p className={`text-sm ${themeClasses.description}`}>
+        <p className={`text-sm ${descriptionText}`}>
           Let’s personalise your experience. Please answer a few questions and run the network test.
         </p>
 
         {/* General Questions */}
-        <div className="space-y-4">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-zinc-500">General Questions</h2>
+        <div className="space-y-5">
+          <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-500">General Questions</h2>
 
           {/* Use Case */}
           <div>
-            <label className={labelBase}>
+            <label className={`block text-xs font-medium mb-1 ${labelText}`}>
               What is your primary use case for MockAPI? <span className="text-red-400">*</span>
             </label>
             <select
@@ -350,7 +350,7 @@ const GeneralQuestionPage = () => {
 
           {/* How did you hear? */}
           <div>
-            <label className={labelBase}>
+            <label className={`block text-xs font-medium mb-1 ${labelText}`}>
               How did you hear about us? <span className="text-red-400">*</span>
             </label>
             <input
@@ -364,24 +364,24 @@ const GeneralQuestionPage = () => {
 
           {/* Excited Features (multi-select) */}
           <div>
-            <label className={labelBase}>
+            <label className={`block text-xs font-medium mb-1.5 ${labelText}`}>
               What features are you most excited about? <span className="text-red-400">*</span>
             </label>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-3">
               {featureOptions.map((feature) => (
-                <label key={feature} className="flex items-center gap-1.5 text-xs cursor-pointer">
+                <label key={feature} className="flex items-center gap-1.5 text-sm cursor-pointer">
                   <input
                     type="checkbox"
                     checked={excitedFeatures.includes(feature)}
                     onChange={() => toggleFeature(feature)}
-                    className="accent-blue-500 w-3.5 h-3.5"
+                    className="accent-blue-500 w-4 h-4 rounded focus:ring-2 focus:ring-blue-500"
                   />
                   {feature}
                 </label>
               ))}
             </div>
             {excitedFeatures.length > 0 && (
-              <div className="mt-1 text-xs text-zinc-500">
+              <div className="mt-1.5 text-xs text-zinc-500">
                 Selected: {excitedFeatures.join(', ')}
               </div>
             )}
@@ -389,7 +389,7 @@ const GeneralQuestionPage = () => {
 
           {/* Additional Feedback */}
           <div>
-            <label className={labelBase}>Additional feedback (optional)</label>
+            <label className={`block text-xs font-medium mb-1 ${labelText}`}>Additional feedback (optional)</label>
             <textarea
               value={additionalFeedback}
               onChange={(e) => setAdditionalFeedback(e.target.value)}
@@ -411,9 +411,9 @@ const GeneralQuestionPage = () => {
               id="termsCheckbox"
               checked={termsAccepted}
               onChange={(e) => setTermsAccepted(e.target.checked)}
-              className="accent-blue-500 w-4 h-4"
+              className="accent-blue-500 w-4 h-4 rounded focus:ring-2 focus:ring-blue-500"
             />
-            <label htmlFor="termsCheckbox" className="text-xs text-zinc-500">
+            <label htmlFor="termsCheckbox" className={`text-xs ${isWhiteTheme ? 'text-gray-500' : 'text-zinc-500'}`}>
               I agree to the{' '}
               <a href="/terms" className="text-blue-400 hover:underline" target="_blank" rel="noopener noreferrer">
                 Terms & Conditions
@@ -423,8 +423,8 @@ const GeneralQuestionPage = () => {
           <button
             onClick={handleContinue}
             disabled={!isFormValid || isSubmitting}
-            className={`px-6 py-2 rounded text-sm font-semibold transition flex items-center gap-2 ${
-              isFormValid && !isSubmitting ? themeClasses.buttonEnabled : themeClasses.buttonDisabled
+            className={`px-6 py-2.5 rounded-lg text-sm font-semibold transition-all flex items-center gap-2 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${isWhiteTheme ? 'focus:ring-offset-white' : 'focus:ring-offset-zinc-900'} ${
+              isFormValid && !isSubmitting ? buttonEnabled : buttonDisabled
             }`}
           >
             {isSubmitting ? (

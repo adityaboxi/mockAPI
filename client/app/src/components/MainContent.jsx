@@ -29,7 +29,7 @@ function MainContent() {
   const timerRef = useRef(null);
 
   const isWhiteTheme = theme === 'white';
-  const w = isWhiteTheme; // true = white, false = dark
+  const w = isWhiteTheme;
 
   // All state (unchanged)
   const [protocol, setProtocol] = useState('http');
@@ -664,23 +664,23 @@ function MainContent() {
 
   const [serverUrl, setServerUrl] = useState('');
 
-  // ──────────────────────────────────────────────
-  // STYLE HELPERS (white theme kept, dark now uses elegant zinc palette)
-  // ──────────────────────────────────────────────
-  const border = w ? "border border-gray-200" : "border border-zinc-800";
-  const panel = w ? `bg-white ${border}` : `bg-zinc-950 ${border}`;
-  const panelHdr = w ? "bg-gray-50 border-b border-gray-200 text-gray-500" : "bg-zinc-900 border-b border-zinc-800 text-zinc-400";
-  const inp = w
-    ? "bg-white border border-gray-300 text-gray-800 placeholder-gray-400 focus:outline-none focus:border-blue-500"
-    : "bg-zinc-900 border border-zinc-800 text-zinc-300 placeholder-zinc-500 focus:outline-none focus:border-blue-500 transition-colors";
-  const labelTxt = w ? "text-gray-500" : "text-zinc-400";
-  const mutedTxt = w ? "text-gray-400" : "text-zinc-500";
-  // miniBtn kept for non-primary actions like Cancel buttons
+  // ─── THEME‑AWARE STYLES ─────────────────────────────────────
+  // More refined, card‑like appearance
+  const cardBg = w ? "bg-white" : "bg-zinc-900";
+  const borderColor = w ? "border-gray-200" : "border-zinc-800";
+  const cardBorder = `border ${borderColor}`;
+  const sectionLabel = w ? "text-gray-600 font-semibold" : "text-zinc-300 font-semibold";
+  const mutedText = w ? "text-gray-400" : "text-zinc-500";
+  const inputClass = w
+    ? "bg-white border border-gray-300 text-gray-800 placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
+    : "bg-zinc-900 border border-zinc-700 text-zinc-300 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all";
+  const btnPrimary = "bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-xs font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed";
+  const btnSecondary = w
+    ? "bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-200 px-3 py-1 rounded text-xs font-medium transition-colors"
+    : "bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-3 py-1 rounded text-xs font-medium transition-colors";
   const miniBtn = w
     ? "bg-gray-100 hover:bg-gray-200 text-gray-500 border border-gray-200 px-2 py-0.5 rounded text-xs font-medium transition-colors"
-    : "bg-zinc-900 hover:bg-zinc-800 text-zinc-300 border border-zinc-800 px-2 py-0.5 rounded text-xs font-medium transition-colors";
-  // New solid blue button style for primary actions in dark mode (and white mode too if desired)
-  const blueBtnClass = "bg-blue-600 hover:bg-blue-500 text-white px-2 py-0.5 rounded text-xs font-medium transition-colors";
+    : "bg-zinc-800 hover:bg-zinc-700 text-zinc-400 border border-zinc-700 px-2 py-0.5 rounded text-xs font-medium transition-colors";
 
   const renderButtonContent = (status, text) => {
     if (status === "loading") {
@@ -700,217 +700,236 @@ function MainContent() {
   };
 
   return (
-    <main className={`w-full h-full overflow-hidden flex flex-col min-w-0 ${w ? "bg-white" : "bg-zinc-950"}`}>
+    <main className={`w-full h-full overflow-hidden flex flex-col min-w-0 ${w ? "bg-gray-50" : "bg-zinc-950"}`}>
       {/* Header */}
-      <div className={`px-4 py-2 text-xs font-medium shrink-0 border-b select-none ${
-        w ? "text-gray-400 bg-white border-gray-200" : "text-zinc-500 bg-zinc-950 border-zinc-800"
+      <div className={`px-6 py-3 text-sm font-medium shrink-0 border-b select-none flex items-center ${
+        w ? "text-gray-700 bg-white border-gray-200" : "text-zinc-300 bg-zinc-950 border-zinc-800"
       }`}>
-        API Builder
+        <span className="flex items-center gap-2">
+          <span className="text-blue-500">⚡</span> API Builder
+        </span>
+        <span className={`ml-auto text-xs ${mutedText}`}>
+          {currentProject?.name || "No project selected"}
+        </span>
       </div>
 
       {/* Scrollable content */}
-      <div className={`flex-1 h-full overflow-y-auto px-6 py-6 transition-colors duration-150 ${
-        w ? "bg-white text-gray-800 [&::-webkit-scrollbar-track]:bg-white [&::-webkit-scrollbar-thumb]:bg-gray-200 hover:[&::-webkit-scrollbar-thumb]:bg-gray-300"
-          : "bg-zinc-950 text-zinc-300 [&::-webkit-scrollbar-track]:bg-zinc-950 [&::-webkit-scrollbar-thumb]:bg-zinc-700/40 hover:[&::-webkit-scrollbar-thumb]:bg-zinc-600/60"
+      <div className={`flex-1 h-full overflow-y-auto px-6 py-6 space-y-6 transition-colors duration-150 ${
+        w ? "bg-gray-50 text-gray-800" : "bg-zinc-950 text-zinc-300"
       }`}>
-        <UrlBuilder
-          protocol={protocol} setProtocol={setProtocol}
-          method={method} setMethod={setMethod}
-          urlPath={urlPath} setUrlPath={handleUrlPathChange}
-          finalUrl={finalUrl} actualFullUrl={currentVersionData?.actualFullUrl || ''}
-          copied={copied} copyToClipboard={copyToClipboard}
-          mutedTxt={mutedTxt} inp={inp} miniBtn={miniBtn} w={w}
-        />
-
-        {/* Auth, latency, rate limit */}
-        <div className={`px-4 py-2 border-b flex items-center gap-6 flex-wrap shrink-0 ${
-          w ? "bg-gray-50/40 border-gray-200" : "bg-zinc-900/40 border-zinc-800"
-        }`}>
-          <Authtokenetc
-            isAuthEnabled={isAuthEnabled} setIsAuthEnabled={setIsAuthEnabled}
-            latency={latency} setLatency={setLatency}
-            rateLimit={rateLimit} setRateLimit={setRateLimit}
-            authScheme={authScheme} setAuthScheme={setAuthScheme}
-            w={w} mutedTxt={mutedTxt} inp={inp}
+        {/* UrlBuilder section – already good, we just wrap it with a subtle card */}
+        <div className={`rounded-xl ${cardBg} ${cardBorder} p-4 shadow-sm`}>
+          <UrlBuilder
+            protocol={protocol} setProtocol={setProtocol}
+            method={method} setMethod={setMethod}
+            urlPath={urlPath} setUrlPath={handleUrlPathChange}
+            finalUrl={finalUrl} actualFullUrl={currentVersionData?.actualFullUrl || ''}
+            copied={copied} copyToClipboard={copyToClipboard}
+            mutedTxt={mutedText} inp={inputClass} miniBtn={miniBtn} w={w}
           />
-          {isAuthEnabled && authScheme === 'BearerAuth' && (
-            <div className="flex items-center gap-2">
-              <span className={`text-xs ${labelTxt}`}>Expected Bearer token:</span>
-              <input type="text" value={expectedToken} onChange={(e) => setExpectedToken(e.target.value)}
-                placeholder="Leave empty to accept any" className={`px-2 py-0.5 text-xs rounded ${inp}`} />
+        </div>
+
+        {/* Auth, latency, rate limit, status code */}
+        <div className={`rounded-xl ${cardBg} ${cardBorder} p-4 shadow-sm`}>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+            <Authtokenetc
+              isAuthEnabled={isAuthEnabled} setIsAuthEnabled={setIsAuthEnabled}
+              latency={latency} setLatency={setLatency}
+              rateLimit={rateLimit} setRateLimit={setRateLimit}
+              authScheme={authScheme} setAuthScheme={setAuthScheme}
+              w={w} mutedTxt={mutedText} inp={inputClass}
+            />
+            {isAuthEnabled && authScheme === 'BearerAuth' && (
+              <div className="flex items-center gap-2">
+                <span className={`text-xs ${sectionLabel}`}>Bearer token:</span>
+                <input type="text" value={expectedToken} onChange={(e) => setExpectedToken(e.target.value)}
+                  placeholder="Leave empty to accept any" className={`px-2 py-1 text-xs rounded ${inputClass}`} />
+              </div>
+            )}
+            {isAuthEnabled && authScheme === 'ApiKeyAuth' && (
+              <div className="flex items-center gap-2">
+                <span className={`text-xs ${sectionLabel}`}>API Key:</span>
+                <input type="text" value={expectedApiKey} onChange={(e) => setExpectedApiKey(e.target.value)}
+                  placeholder="Leave empty to accept any" className={`px-2 py-1 text-xs rounded ${inputClass}`} />
+              </div>
+            )}
+            <div className="flex items-center gap-2 ml-auto">
+              <span className={`text-xs ${sectionLabel}`}>Status Code:</span>
+              <input type="number" value={statusCode === '' ? '' : statusCode}
+                onChange={handleStatusCodeChange} onBlur={handleStatusCodeBlur}
+                min="100" max="599" className={`w-16 px-2 py-1 text-xs rounded text-right ${inputClass}`} />
             </div>
-          )}
-          {isAuthEnabled && authScheme === 'ApiKeyAuth' && (
-            <div className="flex items-center gap-2">
-              <span className={`text-xs ${labelTxt}`}>Expected API Key:</span>
-              <input type="text" value={expectedApiKey} onChange={(e) => setExpectedApiKey(e.target.value)}
-                placeholder="Leave empty to accept any" className={`px-2 py-0.5 text-xs rounded ${inp}`} />
-            </div>
-          )}
-          <div className="flex items-center gap-2">
-            <span className={`text-xs font-medium ${labelTxt}`}>Status Code:</span>
-            <input type="number" value={statusCode === '' ? '' : statusCode}
-              onChange={handleStatusCodeChange} onBlur={handleStatusCodeBlur}
-              min="100" max="599" className={`w-16 px-2 py-0.5 text-xs rounded text-right ${inp}`} />
           </div>
         </div>
 
         {/* Path & Query params */}
-        <div className={`flex flex-col md:grid md:grid-cols-2 gap-0 border-b shrink-0 ${border}`}>
-          <PathParamsSection
-            pathParams={pathParams} updatePathParam={updatePathParam} setPathParams={setPathParams}
-            showPathParamInput={showPathParamInput} setShowPathParamInput={setShowPathParamInput}
-            newPathKey={newPathKey} setNewPathKey={setNewPathKey}
-            newPathValue={newPathValue} setNewPathValue={setNewPathValue}
-            addPathParam={addPathParam} removePathParam={removePathParam}
-            labelTxt={labelTxt} miniBtn={miniBtn} inp={inp} mutedTxt={mutedTxt} w={w}
-          />
-          <QueryParamsSection
-            queryParams={queryParams} updateQueryParam={updateQueryParam} removeQueryParam={removeQueryParam}
-            showQueryParamInput={showQueryParamInput} setShowQueryParamInput={setShowQueryParamInput}
-            newQueryKey={newQueryKey} setNewQueryKey={setNewQueryKey}
-            newQueryValue={newQueryValue} setNewQueryValue={setNewQueryValue}
-            addQueryParam={addQueryParam}
-            labelTxt={labelTxt} miniBtn={miniBtn} inp={inp} mutedTxt={mutedTxt} w={w}
-          />
-        </div>
-
-        {/* Headers */}
-        <div className={`flex flex-col md:grid md:grid-cols-2 gap-0 border-b shrink-0 ${border}`}>
-          <div className={`p-3 flex flex-col gap-2 border-b md:border-b-0 md:border-r ${border}`}>
-            <div className="flex items-center justify-between">
-              <span className={`text-xs font-semibold ${labelTxt}`}>Request Headers ({headers.length})</span>
-              <button onClick={() => handleAddRow(setHeaders)} className={blueBtnClass}>+ Add Header</button>
+        <div className={`rounded-xl ${cardBg} ${cardBorder} shadow-sm overflow-hidden`}>
+          <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-gray-200 dark:divide-zinc-800">
+            <div className="p-4">
+              <PathParamsSection
+                pathParams={pathParams} updatePathParam={updatePathParam} setPathParams={setPathParams}
+                showPathParamInput={showPathParamInput} setShowPathParamInput={setShowPathParamInput}
+                newPathKey={newPathKey} setNewPathKey={setNewPathKey}
+                newPathValue={newPathValue} setNewPathValue={setNewPathValue}
+                addPathParam={addPathParam} removePathParam={removePathParam}
+                labelTxt={sectionLabel} miniBtn={miniBtn} inp={inputClass} mutedTxt={mutedText} w={w}
+              />
             </div>
-            <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-              {headers.map((item, idx) => (
-                <div key={idx} className="flex items-center gap-2">
-                  <input type="text" value={item.key} placeholder="X-Request-Id"
-                    onChange={(e) => {
-                      const newKey = e.target.value;
-                      if (isKeyDuplicate(headers, newKey, idx)) {
-                        alert(`Request header "${newKey}" already exists.`); return;
-                      }
-                      handleUpdateRow(setHeaders, idx, "key", newKey);
-                    }}
-                    className={`w-1/3 px-2 py-0.5 text-xs rounded font-mono outline-none ${inp}`} />
-                  <input type="text" value={item.value} placeholder="Value"
-                    onChange={(e) => handleUpdateRow(setHeaders, idx, "value", e.target.value)}
-                    className={`flex-1 px-2 py-0.5 text-xs rounded font-mono outline-none ${inp}`} />
-                  <button onClick={() => handleRemoveRow(setHeaders, idx)} className="text-zinc-500 hover:text-rose-400 text-xs px-1">✕</button>
-                </div>
-              ))}
-              {headers.length === 0 && <span className={`text-xs italic ${mutedTxt} block pt-1`}>No request headers compiled.</span>}
+            <div className="p-4">
+              <QueryParamsSection
+                queryParams={queryParams} updateQueryParam={updateQueryParam} removeQueryParam={removeQueryParam}
+                showQueryParamInput={showQueryParamInput} setShowQueryParamInput={setShowQueryParamInput}
+                newQueryKey={newQueryKey} setNewQueryKey={setNewQueryKey}
+                newQueryValue={newQueryValue} setNewQueryValue={setNewQueryValue}
+                addQueryParam={addQueryParam}
+                labelTxt={sectionLabel} miniBtn={miniBtn} inp={inputClass} mutedTxt={mutedText} w={w}
+              />
             </div>
           </div>
-          <div className="p-3 flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <span className={`text-xs font-semibold ${labelTxt}`}>Response Headers ({responseHeaders.length})</span>
-              <button onClick={() => handleAddRow(setResponseHeaders)} className={blueBtnClass}>+ Add Header</button>
+        </div>
+
+        {/* Headers & Response headers */}
+        <div className={`rounded-xl ${cardBg} ${cardBorder} shadow-sm overflow-hidden`}>
+          <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-gray-200 dark:divide-zinc-800">
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className={`text-xs ${sectionLabel}`}>Request Headers ({headers.length})</span>
+                <button onClick={() => handleAddRow(setHeaders)} className={btnPrimary}>+ Add</button>
+              </div>
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {headers.map((item, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <input type="text" value={item.key} placeholder="X-Request-Id"
+                      onChange={(e) => {
+                        const newKey = e.target.value;
+                        if (isKeyDuplicate(headers, newKey, idx)) {
+                          alert(`Request header "${newKey}" already exists.`); return;
+                        }
+                        handleUpdateRow(setHeaders, idx, "key", newKey);
+                      }}
+                      className={`w-1/3 px-2 py-1 text-xs rounded font-mono outline-none ${inputClass}`} />
+                    <input type="text" value={item.value} placeholder="Value"
+                      onChange={(e) => handleUpdateRow(setHeaders, idx, "value", e.target.value)}
+                      className={`flex-1 px-2 py-1 text-xs rounded font-mono outline-none ${inputClass}`} />
+                    <button onClick={() => handleRemoveRow(setHeaders, idx)} className="text-zinc-500 hover:text-rose-400 text-xs px-1">✕</button>
+                  </div>
+                ))}
+                {headers.length === 0 && <span className={`text-xs italic ${mutedText} block pt-1`}>No request headers compiled.</span>}
+              </div>
             </div>
-            <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-              {responseHeaders.map((item, idx) => (
-                <div key={idx} className="flex items-center gap-2">
-                  <input type="text" value={item.key} placeholder="Access-Control-Allow-Origin"
-                    onChange={(e) => {
-                      const newKey = e.target.value;
-                      if (isKeyDuplicate(responseHeaders, newKey, idx)) {
-                        alert(`Response header "${newKey}" already exists.`); return;
-                      }
-                      handleUpdateRow(setResponseHeaders, idx, "key", newKey);
-                    }}
-                    className={`w-1/3 px-2 py-0.5 text-xs rounded font-mono outline-none ${inp}`} />
-                  <input type="text" value={item.value} placeholder="value or *"
-                    onChange={(e) => handleUpdateRow(setResponseHeaders, idx, "value", e.target.value)}
-                    className={`flex-1 px-2 py-0.5 text-xs rounded font-mono outline-none ${inp}`} />
-                  <button onClick={() => handleRemoveRow(setResponseHeaders, idx)} className="text-zinc-500 hover:text-rose-400 text-xs px-1">✕</button>
-                </div>
-              ))}
-              {responseHeaders.length === 0 && <span className={`text-xs italic ${mutedTxt} block pt-1`}>No custom response headers attached.</span>}
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className={`text-xs ${sectionLabel}`}>Response Headers ({responseHeaders.length})</span>
+                <button onClick={() => handleAddRow(setResponseHeaders)} className={btnPrimary}>+ Add</button>
+              </div>
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                {responseHeaders.map((item, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <input type="text" value={item.key} placeholder="Access-Control-Allow-Origin"
+                      onChange={(e) => {
+                        const newKey = e.target.value;
+                        if (isKeyDuplicate(responseHeaders, newKey, idx)) {
+                          alert(`Response header "${newKey}" already exists.`); return;
+                        }
+                        handleUpdateRow(setResponseHeaders, idx, "key", newKey);
+                      }}
+                      className={`w-1/3 px-2 py-1 text-xs rounded font-mono outline-none ${inputClass}`} />
+                    <input type="text" value={item.value} placeholder="value or *"
+                      onChange={(e) => handleUpdateRow(setResponseHeaders, idx, "value", e.target.value)}
+                      className={`flex-1 px-2 py-1 text-xs rounded font-mono outline-none ${inputClass}`} />
+                    <button onClick={() => handleRemoveRow(setResponseHeaders, idx)} className="text-zinc-500 hover:text-rose-400 text-xs px-1">✕</button>
+                  </div>
+                ))}
+                {responseHeaders.length === 0 && <span className={`text-xs italic ${mutedText} block pt-1`}>No custom response headers attached.</span>}
+              </div>
             </div>
           </div>
         </div>
 
         {/* Cookies & cURL */}
-        <div className={`flex flex-col md:grid md:grid-cols-2 gap-0 border-b shrink-0 ${border}`}>
-          <div className={`p-3 flex flex-col gap-2 border-b md:border-b-0 md:border-r ${border}`}>
-            <div className="flex items-center justify-between">
-              <span className={`text-xs font-semibold ${labelTxt}`}>Stateful Cookies ({cookies.length})</span>
-              <button onClick={handleAddCookie} className={blueBtnClass}>+ Add Cookie</button>
-            </div>
-            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-              {cookies.map((cookie, idx) => (
-                <div key={idx} className={`flex flex-col gap-1 p-2 rounded border ${w ? "border-gray-200 bg-gray-50" : "border-zinc-700 bg-zinc-900/30"}`}>
-                  <div className="flex items-center gap-2">
-                    <input type="text" value={cookie.key} placeholder="Name"
-                      onChange={(e) => {
-                        const newKey = e.target.value;
-                        if (isKeyDuplicate(cookies, newKey, idx)) {
-                          alert(`Cookie "${newKey}" already exists.`); return;
-                        }
-                        handleUpdateRow(setCookies, idx, "key", newKey);
-                      }}
-                      className={`flex-1 px-2 py-0.5 text-xs rounded font-mono outline-none ${inp}`} />
-                    <input type="text" value={cookie.value} placeholder="Value"
-                      onChange={(e) => handleUpdateRow(setCookies, idx, "value", e.target.value)}
-                      className={`flex-1 px-2 py-0.5 text-xs rounded font-mono outline-none ${inp}`} />
-                    <button onClick={() => handleRemoveRow(setCookies, idx)} className="text-zinc-500 hover:text-rose-400 text-xs px-1">✕</button>
+        <div className={`rounded-xl ${cardBg} ${cardBorder} shadow-sm overflow-hidden`}>
+          <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-gray-200 dark:divide-zinc-800">
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <span className={`text-xs ${sectionLabel}`}>Stateful Cookies ({cookies.length})</span>
+                <button onClick={handleAddCookie} className={btnPrimary}>+ Add</button>
+              </div>
+              <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+                {cookies.map((cookie, idx) => (
+                  <div key={idx} className={`flex flex-col gap-1 p-2 rounded border ${w ? "border-gray-200 bg-gray-50" : "border-zinc-700 bg-zinc-900/30"}`}>
+                    <div className="flex items-center gap-2">
+                      <input type="text" value={cookie.key} placeholder="Name"
+                        onChange={(e) => {
+                          const newKey = e.target.value;
+                          if (isKeyDuplicate(cookies, newKey, idx)) {
+                            alert(`Cookie "${newKey}" already exists.`); return;
+                          }
+                          handleUpdateRow(setCookies, idx, "key", newKey);
+                        }}
+                        className={`flex-1 px-2 py-1 text-xs rounded font-mono outline-none ${inputClass}`} />
+                      <input type="text" value={cookie.value} placeholder="Value"
+                        onChange={(e) => handleUpdateRow(setCookies, idx, "value", e.target.value)}
+                        className={`flex-1 px-2 py-1 text-xs rounded font-mono outline-none ${inputClass}`} />
+                      <button onClick={() => handleRemoveRow(setCookies, idx)} className="text-zinc-500 hover:text-rose-400 text-xs px-1">✕</button>
+                    </div>
+                    <div className="flex flex-wrap gap-2 items-center text-[10px]">
+                      <label className="flex items-center gap-1"><input type="checkbox" checked={cookie.options?.httpOnly || false} onChange={(e) => handleUpdateCookieOption(idx, 'httpOnly', e.target.checked)} /> HttpOnly</label>
+                      <label className="flex items-center gap-1"><input type="checkbox" checked={cookie.options?.secure || false} onChange={(e) => handleUpdateCookieOption(idx, 'secure', e.target.checked)} /> Secure</label>
+                      <select value={cookie.options?.sameSite || 'Lax'} onChange={(e) => handleUpdateCookieOption(idx, 'sameSite', e.target.value)} className={`text-xs rounded px-1 py-0.5 ${inputClass}`}>
+                        <option value="Strict">Strict</option><option value="Lax">Lax</option><option value="None">None</option>
+                      </select>
+                      <input type="number" placeholder="MaxAge (s)" value={cookie.options?.maxAge || ''} onChange={(e) => handleUpdateCookieOption(idx, 'maxAge', e.target.value === '' ? '' : Number(e.target.value))} className={`w-20 px-1 py-0.5 text-xs rounded ${inputClass}`} />
+                      <input type="text" placeholder="Domain" value={cookie.options?.domain || ''} onChange={(e) => handleUpdateCookieOption(idx, 'domain', e.target.value)} className={`w-24 px-1 py-0.5 text-xs rounded ${inputClass}`} />
+                      <input type="text" placeholder="Path" value={cookie.options?.path || '/'} onChange={(e) => handleUpdateCookieOption(idx, 'path', e.target.value)} className={`w-16 px-1 py-0.5 text-xs rounded ${inputClass}`} />
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-2 items-center text-[10px]">
-                    <label className="flex items-center gap-1"><input type="checkbox" checked={cookie.options?.httpOnly || false} onChange={(e) => handleUpdateCookieOption(idx, 'httpOnly', e.target.checked)} /> HttpOnly</label>
-                    <label className="flex items-center gap-1"><input type="checkbox" checked={cookie.options?.secure || false} onChange={(e) => handleUpdateCookieOption(idx, 'secure', e.target.checked)} /> Secure</label>
-                    <select value={cookie.options?.sameSite || 'Lax'} onChange={(e) => handleUpdateCookieOption(idx, 'sameSite', e.target.value)} className={`text-xs rounded px-1 py-0.5 ${inp}`}>
-                      <option value="Strict">Strict</option><option value="Lax">Lax</option><option value="None">None</option>
-                    </select>
-                    <input type="number" placeholder="MaxAge (s)" value={cookie.options?.maxAge || ''} onChange={(e) => handleUpdateCookieOption(idx, 'maxAge', e.target.value === '' ? '' : Number(e.target.value))} className={`w-20 px-1 py-0.5 text-xs rounded ${inp}`} />
-                    <input type="text" placeholder="Domain" value={cookie.options?.domain || ''} onChange={(e) => handleUpdateCookieOption(idx, 'domain', e.target.value)} className={`w-24 px-1 py-0.5 text-xs rounded ${inp}`} />
-                    <input type="text" placeholder="Path" value={cookie.options?.path || '/'} onChange={(e) => handleUpdateCookieOption(idx, 'path', e.target.value)} className={`w-16 px-1 py-0.5 text-xs rounded ${inp}`} />
-                  </div>
-                </div>
-              ))}
-              {cookies.length === 0 && <span className={`text-xs italic ${mutedTxt} block pt-1`}>No tracking cookies attached.</span>}
+                ))}
+                {cookies.length === 0 && <span className={`text-xs italic ${mutedText} block pt-1`}>No tracking cookies attached.</span>}
+              </div>
             </div>
-          </div>
-          <div className="p-3 flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <span className={`text-xs font-semibold ${labelTxt}`}>🧪 test-with-curl</span>
-              <button onClick={handleCopyCurl} disabled={!finalUrl && !currentVersionData?.actualFullUrl}
-                className={blueBtnClass}>
-                {copiedCurl ? (<span className="text-green-400 flex items-center gap-1">✓ Copied</span>) : 'Copy'}
-              </button>
+            <div className="p-4 flex flex-col">
+              <div className="flex items-center justify-between mb-3">
+                <span className={`text-xs ${sectionLabel}`}>🧪 cURL Command</span>
+                <button onClick={handleCopyCurl} disabled={!finalUrl && !currentVersionData?.actualFullUrl}
+                  className={btnPrimary}>
+                  {copiedCurl ? (<span className="text-green-400 flex items-center gap-1">✓ Copied</span>) : 'Copy'}
+                </button>
+              </div>
+              <pre className={`text-xs font-mono p-3 rounded flex-1 overflow-x-auto whitespace-pre-wrap break-all ${
+                w ? "bg-gray-50 border border-gray-200 text-gray-800" : "bg-zinc-900/60 border border-zinc-800 text-zinc-400"
+              }`}>
+                {finalUrl || currentVersionData?.actualFullUrl
+                  ? generateCurlCommand()
+                  : <span className="text-amber-400 italic">💡 Fill in the API details to generate a test curl command.</span>}
+              </pre>
             </div>
-            <pre className={`text-xs font-mono p-2 rounded overflow-x-auto max-h-48 whitespace-pre-wrap break-all ${
-              w ? "bg-gray-50 border border-gray-200 text-gray-800" : "bg-zinc-900/60 border border-zinc-900 text-zinc-400"
-            }`}>
-              {finalUrl || currentVersionData?.actualFullUrl
-                ? generateCurlCommand()
-                : <span className="text-amber-400 italic">💡 Fill in the API details to generate a test curl command.</span>}
-            </pre>
           </div>
         </div>
 
         {/* Request / Response panels */}
-        <div className="p-4 shrink-0">
+        <div className={`rounded-xl ${cardBg} ${cardBorder} shadow-sm p-4`}>
           <RequestResponsePanels
             requestBody={requestBody} setRequestBody={setRequestBody}
             responseBody={responseBody} setResponseBody={setResponseBody}
-            panel={panel} panelHdr={panelHdr} w={w} />
+            panel={cardBg} panelHdr={w ? "bg-gray-50 border-b border-gray-200 text-gray-500" : "bg-zinc-900 border-b border-zinc-800 text-zinc-400"} w={w} />
         </div>
       </div>
 
-      {/* Bottom AI section */}
+      {/* Bottom AI section – improved layout and visual integration */}
       <div className={`shrink-0 border-t z-20 flex flex-col relative ${
         w ? "border-gray-200 bg-white" : "border-zinc-800 bg-zinc-950"
       }`}>
-        <div className={`flex items-center justify-between px-3 py-2 border-b text-xs shrink-0 h-12 ${
-          w ? "border-gray-200 bg-gray-50" : "border-zinc-800 bg-zinc-900"
+        <div className={`flex flex-wrap items-center gap-3 px-6 py-3 border-b ${
+          w ? "border-gray-200 bg-gray-50/80" : "border-zinc-800 bg-zinc-900/60"
         }`}>
-          <span className="text-blue-400 font-medium flex items-center gap-1.5 select-none"><span>✦</span> Ask MockAPI Ai</span>
+          <span className="text-blue-400 font-medium flex items-center gap-1.5 select-none text-sm">
+            <span>✦</span> Ask MockAPI AI
+          </span>
           <button
             type="button"
             onClick={handleReverseAi}
             disabled={isReversing || !originalPayload || reverseTimer === 0}
-            className="text-blue-400 font-medium flex items-center gap-1.5 hover:underline disabled:opacity-50"
+            className="text-blue-400 font-medium flex items-center gap-1.5 hover:underline disabled:opacity-50 text-sm"
           >
             {isReversing ? (
               <div className="flex items-center gap-1">
@@ -929,33 +948,31 @@ function MainContent() {
               </span>
             )}
           </button>
-          <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-end gap-3 mb-0.5">
-              <label className="flex items-center gap-2 cursor-pointer select-none">
-                <span className={`text-xs ${w ? "text-gray-600" : "text-zinc-400"}`}>Include AI Response</span>
-                <div className="relative">
-                  <input
-                    type="checkbox"
-                    checked={includeAIResponse}
-                    onChange={(e) => setIncludeAIResponse(e.target.checked)}
-                    className="sr-only peer"
-                  />
-                  <div className={`w-8 h-4 rounded-full transition-colors ${
-                    includeAIResponse ? "bg-blue-600" : w ? "bg-gray-300" : "bg-zinc-700"
-                  }`}></div>
-                  <div className={`absolute left-0.5 top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${
-                    includeAIResponse ? "translate-x-4" : ""
-                  }`}></div>
-                </div>
-              </label>
-            </div>
+          <div className="flex items-center gap-4 ml-auto">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <span className={`text-xs ${w ? "text-gray-600" : "text-zinc-400"}`}>Include AI Response</span>
+              <div className="relative">
+                <input
+                  type="checkbox"
+                  checked={includeAIResponse}
+                  onChange={(e) => setIncludeAIResponse(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className={`w-8 h-4 rounded-full transition-colors ${
+                  includeAIResponse ? "bg-blue-600" : w ? "bg-gray-300" : "bg-zinc-700"
+                }`}></div>
+                <div className={`absolute left-0.5 top-0.5 w-3 h-3 rounded-full bg-white transition-transform ${
+                  includeAIResponse ? "translate-x-4" : ""
+                }`}></div>
+              </div>
+            </label>
             <div className="flex items-center gap-2">
-              <button onClick={updateAPI} disabled={updateStatus === "loading"} className={`px-3 py-0.5 min-h-5.5 min-w-22.5 rounded text-xs font-medium transition-colors flex items-center justify-center ${
+              <button onClick={updateAPI} disabled={updateStatus === "loading"} className={`px-4 py-1.5 rounded text-xs font-medium transition-colors flex items-center justify-center min-w-[80px] ${
                 w ? "bg-white border border-gray-300 text-gray-600 hover:bg-gray-100" : "bg-blue-600 hover:bg-blue-500 text-white"
               }`}>
                 {renderButtonContent(updateStatus, "Update")}
               </button>
-              <button onClick={handleNewAPI} disabled={newApiStatus === "loading"} className={`px-3 py-0.5 min-h-5.5 min-w-22.5 rounded text-xs font-medium transition-colors flex items-center justify-center ${
+              <button onClick={handleNewAPI} disabled={newApiStatus === "loading"} className={`px-4 py-1.5 rounded text-xs font-medium transition-colors flex items-center justify-center min-w-[80px] ${
                 w ? "bg-white border border-gray-300 text-gray-600 hover:bg-gray-100" : "bg-blue-600 hover:bg-blue-500 text-white"
               }`}>
                 {renderButtonContent(newApiStatus, "New API")}
@@ -963,21 +980,21 @@ function MainContent() {
             </div>
           </div>
         </div>
-        <div className="relative w-full h-24 shrink-0 block overflow-visible z-10">
+        <div className="relative w-full h-28 shrink-0 block overflow-visible z-10">
           <textarea
             value={geminiInput}
             onChange={(e) => setGeminiInput(e.target.value)}
-            className={`w-full h-full px-3 pt-3 pb-12 resize-none outline-none text-sm block relative z-0 ${
-              w ? "bg-white text-gray-800 placeholder-gray-400 focus:border-gray-300" : "bg-zinc-900 text-zinc-300 placeholder-zinc-500 border-0"
+            className={`w-full h-full px-4 pt-3 pb-12 resize-none outline-none text-sm block relative z-0 ${
+              w ? "bg-white text-gray-800 placeholder-gray-400" : "bg-zinc-900 text-zinc-300 placeholder-zinc-500 border-0"
             }`}
-            placeholder="Ask MockAPI Ai for API URL and request/response structure..."
+            placeholder="Ask MockAPI AI for API URL and request/response structure..."
             spellCheck="false"
           />
           <button
             type="button"
             onClick={handleAskAi}
             disabled={isAiLoading}
-            className="absolute bottom-3 right-3 z-30 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-semibold tracking-wide transition-all shadow-md active:scale-95 select-none focus:outline-none disabled:opacity-60"
+            className="absolute bottom-3 right-4 z-30 px-4 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-semibold tracking-wide transition-all shadow-md active:scale-95 select-none focus:outline-none disabled:opacity-60"
           >
             {isAiLoading ? (
               <div className="flex items-center gap-1">

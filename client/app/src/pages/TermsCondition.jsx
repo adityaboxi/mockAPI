@@ -1,3 +1,4 @@
+// src/pages/TermsCondition.jsx
 import { useTheme } from "../context/ThemeContext";
 import { useNavigate } from "react-router-dom";
 
@@ -32,7 +33,7 @@ const TermsCondition = () => {
 
   const Badge = ({ color, children }) => (
     <span
-      className={`text-[10px] font-semibold px-2 py-0.5 rounded uppercase tracking-wider whitespace-nowrap ${
+      className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full uppercase tracking-wider whitespace-nowrap border ${
         badgeMap[color]
       }`}
     >
@@ -40,58 +41,78 @@ const TermsCondition = () => {
     </span>
   );
 
+  // ─── Theme‑aware styles ──────────────────────────────────────────
+  const pageBg = isWhiteTheme ? "bg-gray-50" : "bg-zinc-950";
+  const pageText = isWhiteTheme ? "text-gray-800" : "text-zinc-300";
+  const headerBg = isWhiteTheme ? "bg-white" : "bg-zinc-900";
+  const borderColor = isWhiteTheme ? "border-gray-200" : "border-zinc-800";
+  const mutedText = isWhiteTheme ? "text-gray-400" : "text-zinc-500";
+  const textSecondary = isWhiteTheme ? "text-gray-700" : "text-zinc-400";
+  const textMuted = isWhiteTheme ? "text-gray-500" : "text-zinc-500";
+  const cardBg = isWhiteTheme ? "bg-white" : "bg-zinc-900";
+  const dividerLine = isWhiteTheme ? "border-gray-100" : "border-zinc-800";
+  const headingText = isWhiteTheme ? "text-gray-900" : "text-white";
+
   return (
     <div
-      className={`h-screen w-full flex flex-col overflow-hidden font-sans ${
-        isWhiteTheme ? "bg-white text-gray-800" : "bg-zinc-950 text-zinc-300"
-      }`}
+      className={`min-h-screen w-full flex flex-col font-sans transition-colors duration-200 ${pageBg} ${pageText}`}
     >
-      {/* HEADER */}
-      <div
-        className={`h-12 shrink-0 flex items-center px-6 border-b z-10 ${
-          isWhiteTheme
-            ? "bg-white border-gray-200"
-            : "bg-zinc-950 border-zinc-800"
-        }`}
+      {/* ─── HEADER ─── */}
+      <header
+        className={`h-12 flex items-center px-6 border-b shrink-0 ${headerBg} ${borderColor}`}
       >
         <button
           onClick={() => navigate("/home")}
-          className="bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-xs font-medium transition-colors flex items-center gap-1"
+          className={`
+            flex items-center gap-2 text-xs font-medium transition-all duration-200
+            ${isWhiteTheme ? "text-gray-500 hover:text-gray-900" : "text-zinc-400 hover:text-white"}
+            focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded px-2 py-1
+            ${isWhiteTheme ? "focus:ring-offset-white" : "focus:ring-offset-zinc-900"}
+          `}
+          aria-label="Go back to Home"
         >
-          ← Back to Home
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+          </svg>
+          <span>Back</span>
         </button>
-      </div>
+        <h1 className="flex-1 text-center text-xs font-bold tracking-wider select-none">
+          Terms of Service
+        </h1>
+        <div className="w-20" />
+      </header>
 
-      {/* SCROLLABLE CONTENT */}
+      {/* ─── SCROLLABLE CONTENT ─── */}
       <div className="flex-1 overflow-y-auto px-6 py-12 md:py-16">
         <div className="max-w-3xl mx-auto space-y-10">
+          {/* Title Section */}
           <div>
-            <h1 className={`text-3xl font-extrabold tracking-tight mb-2 ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
+            <h1 className={`text-3xl font-extrabold tracking-tight mb-2 ${headingText}`}>
               Terms of Service
             </h1>
-            <p className={`text-xs ${isWhiteTheme ? "text-gray-400" : "text-zinc-500"}`}>
+            <p className={`text-xs ${mutedText}`}>
               Last updated: July 10, 2026
             </p>
-            <div className="h-1 w-12 bg-blue-500 rounded mt-4" />
+            <div className="h-1 w-16 bg-blue-500 rounded mt-4" />
           </div>
 
-          <p className="text-sm leading-relaxed font-medium">
+          <p className={`text-sm leading-relaxed font-medium ${textSecondary}`}>
             Please read these Terms of Service carefully before using the Mock API Manager
             ("the Service", "MockAPI"). By accessing or using the Service, you legally agree
             to be bound by these provisions in full.
           </p>
 
-          <hr className={isWhiteTheme ? "border-gray-100" : "border-zinc-800"} />
+          <hr className={dividerLine} />
 
           {/* Section 1 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
+              <h2 className={`text-lg font-bold tracking-tight ${headingText}`}>
                 1. Agreement & Acceptance
               </h2>
               <Badge color="blue">TL;DR: Using this = agreeing</Badge>
             </div>
-            <p className={`text-sm leading-relaxed ${isWhiteTheme ? "text-gray-700" : "text-zinc-400"}`}>
+            <p className={`text-sm leading-relaxed ${textSecondary}`}>
               By accessing, deploying, or interacting with the Service, you create a legally
               binding agreement between yourself and the creators of this application. If you
               represent an entity, you warrant that you have authority to bind that entity. If
@@ -103,13 +124,13 @@ const TermsCondition = () => {
           {/* Section 2 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
+              <h2 className={`text-lg font-bold tracking-tight ${headingText}`}>
                 2. Scope of Service & Non-Production Use
               </h2>
               <Badge color="amber">TL;DR: Testing only, not for real apps</Badge>
             </div>
             <div
-              className={`text-sm leading-relaxed p-4 rounded border ${
+              className={`text-sm leading-relaxed p-4 rounded-xl border ${
                 isWhiteTheme
                   ? "bg-amber-50 border-amber-200 text-gray-700"
                   : "bg-amber-500/10 border-amber-500/20 text-amber-400"
@@ -133,13 +154,13 @@ const TermsCondition = () => {
           {/* Section 3 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
+              <h2 className={`text-lg font-bold tracking-tight ${headingText}`}>
                 3. Data Constraints & Absolute Prohibitions
               </h2>
               <Badge color="red">TL;DR: No real sensitive data, ever</Badge>
             </div>
             <div
-              className={`text-sm leading-relaxed p-4 rounded border ${
+              className={`text-sm leading-relaxed p-4 rounded-xl border ${
                 isWhiteTheme
                   ? "bg-red-50 border-red-200 text-gray-700"
                   : "bg-red-500/10 border-red-500/20 text-red-400"
@@ -176,33 +197,35 @@ const TermsCondition = () => {
           {/* Section 4 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
+              <h2 className={`text-lg font-bold tracking-tight ${headingText}`}>
                 4. Disclaimer of Warranties
               </h2>
               <Badge color="zinc">TL;DR: Zero promises things won't break</Badge>
             </div>
-            <p className={`text-sm leading-relaxed uppercase font-mono tracking-tight text-xs p-3 rounded border ${
-              isWhiteTheme
-                ? "bg-zinc-50 border-zinc-200 text-zinc-700"
-                : "bg-zinc-800/50 border-zinc-700 text-zinc-400"
-            }`}>
+            <div
+              className={`text-sm leading-relaxed uppercase font-mono tracking-tight p-4 rounded-xl border ${
+                isWhiteTheme
+                  ? "bg-zinc-50 border-zinc-200 text-zinc-700"
+                  : "bg-zinc-800/50 border-zinc-700 text-zinc-400"
+              }`}
+            >
               The platform is delivered "AS IS" and "AS AVAILABLE" without warranties of any
               nature — whether express, implied, statutory, or otherwise. We disclaim any
               guarantees regarding server uptime, data persistence, completeness of logs, or that
               mock endpoints will behave consistently with production standards.
-            </p>
+            </div>
           </section>
 
           {/* Section 5 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
+              <h2 className={`text-lg font-bold tracking-tight ${headingText}`}>
                 5. Absolute Limitation of Liability
               </h2>
               <Badge color="red">TL;DR: If you lose data, you can't sue us</Badge>
             </div>
             <div
-              className={`text-sm leading-relaxed p-4 rounded border ${
+              className={`text-sm leading-relaxed p-4 rounded-xl border ${
                 isWhiteTheme
                   ? "bg-red-50 border-red-200 text-gray-700"
                   : "bg-red-500/10 border-red-500/20 text-red-400"
@@ -222,12 +245,12 @@ const TermsCondition = () => {
           {/* Section 6 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
+              <h2 className={`text-lg font-bold tracking-tight ${headingText}`}>
                 6. Intellectual Property & Account Termination
               </h2>
               <Badge color="zinc">TL;DR: Bad actors get banned</Badge>
             </div>
-            <p className={`text-sm leading-relaxed ${isWhiteTheme ? "text-gray-700" : "text-zinc-400"}`}>
+            <p className={`text-sm leading-relaxed ${textSecondary}`}>
               We own all proprietary interface architecture, styling assets, and structural
               tooling. We reserve the unrestricted right to terminate or freeze access, remove
               project histories, and invalidate keys instantly and without warning if malicious
@@ -238,12 +261,12 @@ const TermsCondition = () => {
           {/* Section 7 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
+              <h2 className={`text-lg font-bold tracking-tight ${headingText}`}>
                 7. Authentication Priority & Request Validation
               </h2>
               <Badge color="purple">TL;DR: Query/body checked before auth</Badge>
             </div>
-            <div className={`space-y-3 text-sm leading-relaxed ${isWhiteTheme ? "text-gray-700" : "text-zinc-400"}`}>
+            <div className={`space-y-3 text-sm leading-relaxed ${textSecondary}`}>
               <p>
                 The mock engine enforces a deterministic validation order for every incoming
                 request. This order is critical to understand — it is <strong>not</strong>{" "}
@@ -300,13 +323,13 @@ const TermsCondition = () => {
           {/* Section 8 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
+              <h2 className={`text-lg font-bold tracking-tight ${headingText}`}>
                 8. Validation Failures & Ignored Input
               </h2>
               <Badge color="orange">TL;DR: Bad definitions get rejected up front</Badge>
             </div>
             <div
-              className={`text-sm leading-relaxed p-4 rounded border ${
+              className={`text-sm leading-relaxed p-4 rounded-xl border ${
                 isWhiteTheme
                   ? "bg-orange-50 border-orange-200 text-gray-700"
                   : "bg-orange-500/10 border-orange-500/20 text-orange-400"
@@ -354,17 +377,17 @@ const TermsCondition = () => {
           {/* Section 9 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
+              <h2 className={`text-lg font-bold tracking-tight ${headingText}`}>
                 9. Cookie Policy & Data Privacy
               </h2>
               <Badge color="teal">TL;DR: Essential cookies only, no tracking</Badge>
             </div>
-            <p className={`text-sm leading-relaxed ${isWhiteTheme ? "text-gray-700" : "text-zinc-400"}`}>
+            <p className={`text-sm leading-relaxed ${textSecondary}`}>
               The Service uses cookies solely to enable core functionality and improve user
               experience. We do not sell, share, or use cookies for cross-site advertising. Our
               use of cookies is limited to:
             </p>
-            <ul className={`list-disc pl-5 text-sm space-y-1 ${isWhiteTheme ? "text-gray-700" : "text-zinc-400"}`}>
+            <ul className={`list-disc pl-5 text-sm space-y-1 ${textSecondary}`}>
               <li>
                 <strong>Session Management:</strong> Cookies maintain your authenticated session
                 (e.g., <code>sessionToken</code>) and simulate API authentication flows.
@@ -386,7 +409,7 @@ const TermsCondition = () => {
               </li>
             </ul>
             <div
-              className={`p-3 rounded border text-xs ${
+              className={`p-4 rounded-xl border text-sm ${
                 isWhiteTheme
                   ? "bg-amber-50 border-amber-200 text-gray-700"
                   : "bg-amber-500/10 border-amber-500/20 text-amber-300"
@@ -406,12 +429,12 @@ const TermsCondition = () => {
           {/* Section 10 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
+              <h2 className={`text-lg font-bold tracking-tight ${headingText}`}>
                 10. Features & Dynamic Mocking
               </h2>
               <Badge color="indigo">TL;DR: Define APIs, toggle AI responses, get fake data</Badge>
             </div>
-            <div className={`space-y-3 text-sm leading-relaxed ${isWhiteTheme ? "text-gray-700" : "text-zinc-400"}`}>
+            <div className={`space-y-3 text-sm leading-relaxed ${textSecondary}`}>
               <p>
                 <strong>How to define an API:</strong> Provide a URL path (e.g.,{" "}
                 <code>/users/:id</code>), select an HTTP method, and define your request/response
@@ -447,7 +470,7 @@ const TermsCondition = () => {
                 order described in <strong>Section 7</strong>. Combine Bearer tokens with custom
                 headers and cookies to simulate complex real-world authorization.
               </p>
-              <p className={`text-xs ${isWhiteTheme ? "text-gray-500" : "text-zinc-500"}`}>
+              <p className={`text-xs ${textMuted}`}>
                 💡 <strong>Pro Tip:</strong> Combine dynamic responses with rate limiting (
                 <code>rateLimit</code>) and latency (<code>latency</code>) to mimic production API
                 behaviour more realistically.
@@ -458,13 +481,13 @@ const TermsCondition = () => {
           {/* Section 11 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
+              <h2 className={`text-lg font-bold tracking-tight ${headingText}`}>
                 11. User Responsibilities & Consequences
               </h2>
               <Badge color="blue">TL;DR: Misuse it, lose access</Badge>
             </div>
             <div
-              className={`text-sm leading-relaxed p-4 rounded border ${
+              className={`text-sm leading-relaxed p-4 rounded-xl border ${
                 isWhiteTheme
                   ? "bg-blue-50 border-blue-200 text-gray-700"
                   : "bg-blue-500/10 border-blue-500/20 text-blue-400"
@@ -509,12 +532,12 @@ const TermsCondition = () => {
           {/* Section 12 */}
           <section className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className={`text-lg font-bold tracking-tight ${isWhiteTheme ? "text-gray-900" : "text-white"}`}>
+              <h2 className={`text-lg font-bold tracking-tight ${headingText}`}>
                 12. Modifications & Inquiries
               </h2>
               <Badge color="blue">TL;DR: Check here for updates</Badge>
             </div>
-            <p className={`text-sm leading-relaxed ${isWhiteTheme ? "text-gray-700" : "text-zinc-400"}`}>
+            <p className={`text-sm leading-relaxed ${textSecondary}`}>
               These terms are fluid and subject to revision. Continued use of the platform
               following any adjustment reflects binding acceptance of the updated terms. For
               legal, compliance, or feature inquiries, contact us at:
@@ -522,13 +545,13 @@ const TermsCondition = () => {
             <div className="flex flex-col space-y-1 text-sm">
               <a
                 href="mailto:adityaboxi2005@gmail.com"
-                className="text-blue-600 dark:text-blue-400 hover:underline hover:text-blue-500 font-medium"
+                className="text-blue-600 dark:text-blue-400 hover:underline hover:text-blue-500 font-medium transition-colors"
               >
                 adityaboxi2005@gmail.com
               </a>
               <a
                 href="mailto:krishnaboxi1983@gmail.com"
-                className="text-blue-600 dark:text-blue-400 hover:underline hover:text-blue-500 font-medium"
+                className="text-blue-600 dark:text-blue-400 hover:underline hover:text-blue-500 font-medium transition-colors"
               >
                 krishnaboxi1983@gmail.com
               </a>
@@ -536,8 +559,8 @@ const TermsCondition = () => {
           </section>
 
           {/* Footer */}
-          <hr className={isWhiteTheme ? "border-gray-100" : "border-zinc-800"} />
-          <p className={`text-[10px] text-center ${isWhiteTheme ? "text-gray-400" : "text-zinc-500"}`}>
+          <hr className={dividerLine} />
+          <p className={`text-[10px] text-center ${mutedText}`}>
             By using the Service, you acknowledge that you have read, understood, and agreed to
             these Terms of Service.
           </p>

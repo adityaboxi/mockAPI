@@ -1,3 +1,4 @@
+// src/pages/OTP.jsx
 import { useState, useRef, useEffect, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
@@ -12,12 +13,10 @@ function OTP() {
   const navigate = useNavigate();
   const { username, email, password, name } = location.state || {};
 
-  // ─── Environment ──────────────────────────────────────────────
   const OTP_TIMER = parseInt(import.meta.env.VITE_OTP_TIMER) || 120;
   const RESEND_URL = import.meta.env.VITE_API_URL_OTPRESEND;
   const VERIFY_URL = import.meta.env.VITE_API_URL_OTPVERIFY;
 
-  // ─── State ──────────────────────────────────────────────────
   const [otp, setOtp] = useState("");
   const [timer, setTimer] = useState(OTP_TIMER);
   const [isVerifying, setIsVerifying] = useState(false);
@@ -27,7 +26,6 @@ function OTP() {
   const intervalRef = useRef(null);
   const abortControllerRef = useRef(null);
 
-  // ─── Timer helpers ──────────────────────────────────────────
   const clearTimer = useCallback(() => {
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -39,7 +37,7 @@ function OTP() {
     (seconds) => {
       clearTimer();
       setTimer(seconds);
-      setError(null); // clear expiry error when timer restarts
+      setError(null);
 
       intervalRef.current = setInterval(() => {
         setTimer((prev) => {
@@ -55,10 +53,8 @@ function OTP() {
     [clearTimer]
   );
 
-  // ─── API calls (with AbortController) ──────────────────────
   const sendOtp = useCallback(async () => {
     if (isResending || !email || !username) return;
-
     abortControllerRef.current?.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -74,12 +70,11 @@ function OTP() {
         body: JSON.stringify({ email, username }),
         signal: controller.signal,
       });
-
       const data = await response.json();
 
       if (response.ok) {
         startTimer(OTP_TIMER);
-        setOtp(""); // clear old OTP
+        setOtp("");
       } else {
         setError(data.message || "Failed to resend OTP.");
       }
@@ -118,12 +113,10 @@ function OTP() {
         body: JSON.stringify({ email, username, otp: cleanOtp, password, name }),
         signal: controller.signal,
       });
-
       const data = await response.json();
 
       if (response.ok && data.user) {
         await login(data.user);
-        // Brief delay for a smooth transition
         setTimeout(() => {
           navigate("/general-questions", {
             state: { username, email, name },
@@ -142,21 +135,18 @@ function OTP() {
     }
   }, [otp, timer, email, username, password, name, VERIFY_URL, login, navigate]);
 
-  // ─── Input handler (digits only, max 6) ────────────────────
   const handleOtpChange = useCallback((e) => {
     const digits = e.target.value.replace(/\D/g, "").slice(0, 6);
     setOtp(digits);
-    setError(null); // clear error on typing
+    setError(null);
   }, []);
 
-  // ─── Auto‑submit when 6 digits are entered ──────────────────
   useEffect(() => {
     if (otp.length === 6 && timer > 0 && !isVerifying && !isResending) {
       verifyOtp();
     }
   }, [otp, timer, isVerifying, isResending, verifyOtp]);
 
-  // ─── Mount: start the timer ─────────────────────────────────
   useEffect(() => {
     if (email && username) {
       startTimer(OTP_TIMER);
@@ -166,45 +156,41 @@ function OTP() {
       abortControllerRef.current?.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // only run once
+  }, []);
 
-  // ─── Theme classes ──────────────────────────────────────────
-  const themeClasses = {
-    page: isWhiteTheme ? "bg-gray-100" : "bg-zinc-950",
-    card: isWhiteTheme
-      ? "bg-white border-gray-200"
-      : "bg-zinc-900 border-zinc-800",
-    text: isWhiteTheme ? "text-gray-800" : "text-white",
-    muted: isWhiteTheme ? "text-gray-600" : "text-zinc-400",
-    input: isWhiteTheme
-      ? "bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-400"
-      : "bg-zinc-900 border-zinc-800 text-zinc-300 placeholder-zinc-500",
-    inputFocus: "focus:border-blue-500",
-    timerBox: (timer < 10)
-      ? (isWhiteTheme
-        ? "bg-red-100 border-red-400 text-red-700"
-        : "bg-red-500/10 border-red-500/30 text-red-400")
-      : (isWhiteTheme
-        ? "bg-green-100 border-green-400 text-green-700"
-        : "bg-emerald-500/10 border-emerald-500/30 text-emerald-400"),
-    buttonPrimary: "bg-blue-600 hover:bg-blue-500 text-white",
-    buttonDisabled: isWhiteTheme
-      ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-      : "bg-zinc-800 text-zinc-500 border border-zinc-700 cursor-not-allowed",
-  };
+  // ─── Theme‑aware styles ──────────────────────────────────────────
+  const pageBg = isWhiteTheme ? "bg-gray-50" : "bg-zinc-950";
+  const cardBg = isWhiteTheme ? "bg-white" : "bg-zinc-900";
+  const borderColor = isWhiteTheme ? "border-gray-200" : "border-zinc-800";
+  const shadow = isWhiteTheme ? "shadow-lg" : "shadow-xl shadow-black/20";
+  const textPrimary = isWhiteTheme ? "text-gray-800" : "text-white";
+  const textMuted = isWhiteTheme ? "text-gray-500" : "text-zinc-400";
+  const inputBg = isWhiteTheme ? "bg-white" : "bg-zinc-900";
+  const inputBorder = isWhiteTheme ? "border-gray-300" : "border-zinc-700";
+  const inputFocus = "focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30 focus:outline-none";
+  const inputText = isWhiteTheme ? "text-gray-800" : "text-zinc-200";
+  const inputPlaceholder = isWhiteTheme ? "placeholder-gray-400" : "placeholder-zinc-500";
+  const inputClass = `w-full rounded-lg px-4 py-2.5 text-sm outline-none transition-all duration-200 border tracking-widest ${inputBg} ${inputBorder} ${inputFocus} ${inputText} ${inputPlaceholder}`;
+  const timerBox = isWhiteTheme
+    ? timer < 10 ? "bg-red-50 border-red-200 text-red-700" : "bg-emerald-50 border-emerald-200 text-emerald-700"
+    : timer < 10 ? "bg-red-500/10 border-red-500/20 text-red-400" : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400";
+  const buttonPrimary = "bg-blue-600 hover:bg-blue-500 text-white";
+  const buttonDisabled = isWhiteTheme
+    ? "bg-gray-200 text-gray-400 cursor-not-allowed border border-gray-300"
+    : "bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700";
 
-  // ─── Guard: missing user data ──────────────────────────────
+  // ─── Guard ──────────────────────────────────────────────────────
   if (!username || !email) {
     return (
-      <div className={`min-h-screen flex items-center justify-center p-4 ${themeClasses.page}`}>
-        <div className={`p-8 rounded shadow-lg border w-full max-w-sm text-center ${themeClasses.card}`}>
+      <div className={`min-h-screen flex items-center justify-center p-4 ${pageBg}`}>
+        <div className={`p-8 rounded-2xl border shadow-lg w-full max-w-sm text-center ${cardBg} ${borderColor}`}>
           <h1 className="text-lg font-semibold text-red-400 mb-2">Unauthorized Access</h1>
-          <p className={`text-sm mb-6 ${themeClasses.muted}`}>
+          <p className={`text-sm mb-6 ${textMuted}`}>
             Please sign up first to access this page.
           </p>
           <button
             onClick={() => navigate("/signup")}
-            className="w-full bg-blue-600 hover:bg-blue-500 text-white font-medium py-2 rounded text-sm transition-colors"
+            className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-all ${buttonPrimary} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${isWhiteTheme ? 'focus:ring-offset-white' : 'focus:ring-offset-zinc-900'}`}
           >
             Go to Signup
           </button>
@@ -215,21 +201,23 @@ function OTP() {
 
   const isExpired = timer === 0;
   const isActionDisabled = isExpired || isVerifying || isResending;
-  const inputBase = `w-full rounded px-3 py-2 text-sm outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed tracking-widest ${themeClasses.input} ${themeClasses.inputFocus}`;
 
-  // ─── Main render ────────────────────────────────────────────
+  // ─── Main render ──────────────────────────────────────────────
   return (
-    <div className={`min-h-screen flex items-center justify-center p-4 ${themeClasses.page}`}>
-      <div className={`p-8 rounded shadow-lg border w-full max-w-sm ${themeClasses.card}`}>
-        <h1 className={`text-lg font-semibold mb-2 ${themeClasses.text}`}>OTP Verification</h1>
-        <p className={`text-sm mb-5 ${themeClasses.muted}`}>
-          Verification code sent to: <strong className={themeClasses.text}>{email}</strong>
-        </p>
+    <div className={`min-h-screen flex items-center justify-center p-4 transition-colors duration-200 ${pageBg}`}>
+      <div className={`p-8 rounded-2xl border w-full max-w-sm transition-colors duration-200 ${cardBg} ${borderColor} ${shadow}`}>
+        <div className="text-center mb-6">
+          <div className="text-3xl mb-1">🔐</div>
+          <h1 className={`text-lg font-semibold ${textPrimary}`}>OTP Verification</h1>
+          <p className={`text-sm ${textMuted} mt-1`}>
+            Verification code sent to <strong className={textPrimary}>{email}</strong>
+          </p>
+        </div>
 
         {/* Timer display */}
-        <div className={`p-3 rounded mb-4 text-center text-sm transition-colors duration-300 border ${themeClasses.timerBox}`}>
+        <div className={`p-3 rounded-xl mb-5 text-center text-sm border transition-colors duration-300 ${timerBox}`}>
           {isExpired ? (
-            <span className="font-bold">⏳ OTP Expired – request a new one</span>
+            <span className="font-medium">⏳ OTP Expired – request a new one</span>
           ) : (
             <span>
               <strong className="font-medium">OTP expires in:</strong> {timer} seconds
@@ -247,7 +235,7 @@ function OTP() {
           onChange={handleOtpChange}
           maxLength="6"
           disabled={isActionDisabled}
-          className={inputBase}
+          className={inputClass}
           autoFocus
         />
 
@@ -256,28 +244,50 @@ function OTP() {
           <button
             onClick={verifyOtp}
             disabled={isActionDisabled || otp.length < 6}
-            className={`flex-1 py-2 px-4 rounded text-sm font-medium transition-colors ${
-              isActionDisabled || otp.length < 6
-                ? themeClasses.buttonDisabled
-                : themeClasses.buttonPrimary
+            className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${isWhiteTheme ? 'focus:ring-offset-white' : 'focus:ring-offset-zinc-900'} ${
+              isActionDisabled || otp.length < 6 ? buttonDisabled : buttonPrimary
             }`}
           >
-            {isVerifying ? "Verifying…" : "Verify OTP"}
+            {isVerifying ? (
+              <span className="flex items-center justify-center gap-2">
+                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Verifying
+              </span>
+            ) : (
+              "Verify OTP"
+            )}
           </button>
           <button
             onClick={sendOtp}
             disabled={!isExpired || isResending}
-            className={`flex-1 py-2 px-4 rounded text-sm font-medium transition-colors ${
-              !isExpired || isResending
-                ? themeClasses.buttonDisabled
-                : themeClasses.buttonPrimary
+            className={`flex-1 py-2.5 px-4 rounded-lg text-sm font-semibold transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${isWhiteTheme ? 'focus:ring-offset-white' : 'focus:ring-offset-zinc-900'} ${
+              !isExpired || isResending ? buttonDisabled : buttonPrimary
             }`}
           >
-            {isResending ? "Sending…" : isExpired ? "Resend OTP" : `Resend OTP (${timer}s)`}
+            {isResending ? (
+              <span className="flex items-center justify-center gap-2">
+                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Sending
+              </span>
+            ) : isExpired ? (
+              "Resend OTP"
+            ) : (
+              `Resend (${timer}s)`
+            )}
           </button>
         </div>
 
-        {error && <p className="text-red-400 mt-4 text-center text-xs">{error}</p>}
+        {error && (
+          <div className={`mt-4 p-3 rounded-xl text-xs border ${isWhiteTheme ? 'bg-red-50 border-red-200 text-red-700' : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
+            {error}
+          </div>
+        )}
       </div>
     </div>
   );

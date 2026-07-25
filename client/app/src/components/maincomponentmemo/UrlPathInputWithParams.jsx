@@ -63,8 +63,12 @@ const UrlPathInputWithParams = React.memo(({ protocol, method, onUrlChange, w, i
 
   const finalUrl = buildFinalUrl();
 
+  // Theme-aware border colors
+  const borderColor = w ? "border-gray-200" : "border-zinc-800";
+
   return (
     <>
+      {/* UrlBuilder section */}
       <UrlBuilder
         protocol={protocol}
         setProtocol={() => {}} // not used; protocol/method are from parent
@@ -80,7 +84,9 @@ const UrlPathInputWithParams = React.memo(({ protocol, method, onUrlChange, w, i
         miniBtn={miniBtn}
         w={w}
       />
-      <div className={`grid grid-cols-2 gap-0 border-b ${w ? "border-gray-200" : "border-zinc-700/50"}`}>
+
+      {/* Path Parameters section – directly below UrlBuilder */}
+      <div className={`border-t ${borderColor} mt-0`}>
         <PathParamsSection
           pathParams={pathParams}
           updatePathParam={updatePathParam}
@@ -98,11 +104,9 @@ const UrlPathInputWithParams = React.memo(({ protocol, method, onUrlChange, w, i
           mutedTxt={mutedTxt}
           w={w}
         />
-       
       </div>
     </>
   );
 });
 
 export default UrlPathInputWithParams;
-

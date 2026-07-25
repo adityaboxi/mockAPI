@@ -61,31 +61,43 @@ const buildFullPath = (ver, api) => {
 
 // ---------- Memoized VersionItem ----------
 const VersionItem = memo(
-  ({ ver, api, projectId, isActive, onSelect, onHover }) => (
-    <div
-      className={`flex items-center gap-1 py-1 px-2 rounded cursor-pointer transition ${
-        isActive
-          ? 'bg-blue-500/10 text-blue-400 border-l-2 border-blue-500'
-          : 'text-zinc-400 hover:text-zinc-200'
-      }`}
-      onClick={() => onSelect(ver, projectId, api)}
-      onMouseEnter={() => onHover(ver, projectId, api)}
-      role="treeitem"
-      tabIndex={0}
-      aria-selected={isActive}
-      aria-label={`${ver.label} ${ver.latency}ms`}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onSelect(ver, projectId, api);
-        }
-      }}
-    >
-      <span className="text-xs" aria-hidden="true">🏷️</span>
-      <span className="text-sm ml-1">{ver.label}</span>
-      <span className="text-xs text-zinc-500 ml-auto">{ver.latency}ms</span>
-    </div>
-  ),
+  ({ ver, api, projectId, isActive, onSelect, onHover }) => {
+    const { theme } = useTheme();
+    const isWhiteTheme = theme === 'white';
+
+    const bgActive = isWhiteTheme
+      ? 'bg-blue-100/40 text-blue-700 border-l-2 border-blue-500'
+      : 'bg-blue-500/10 text-blue-400 border-l-2 border-blue-500';
+    const bgInactive = isWhiteTheme
+      ? 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+      : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/40';
+
+    return (
+      <div
+        className={`flex items-center gap-1 py-1.5 px-3 rounded cursor-pointer transition-all duration-150 ${
+          isActive ? bgActive : bgInactive
+        }`}
+        onClick={() => onSelect(ver, projectId, api)}
+        onMouseEnter={() => onHover(ver, projectId, api)}
+        role="treeitem"
+        tabIndex={0}
+        aria-selected={isActive}
+        aria-label={`${ver.label} ${ver.latency}ms`}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSelect(ver, projectId, api);
+          }
+        }}
+      >
+        <span className="text-xs" aria-hidden="true">🏷️</span>
+        <span className="text-sm ml-1 font-medium">{ver.label}</span>
+        <span className={`text-xs ml-auto ${isActive ? (isWhiteTheme ? 'text-blue-600' : 'text-blue-300') : 'text-zinc-500'}`}>
+          {ver.latency}ms
+        </span>
+      </div>
+    );
+  },
   (prevProps, nextProps) =>
     prevProps.ver.version === nextProps.ver.version &&
     prevProps.api.id === nextProps.api.id &&
@@ -138,7 +150,6 @@ function Dashboard() {
 
   // ---------- Fetch projects (sidebar) ----------
   useEffect(() => {
-    console.log('[Dashboard] 📡 Fetching projects...');
     const controller = new AbortController();
     const signal = controller.signal;
 
@@ -150,7 +161,6 @@ function Dashboard() {
       .then(data => {
         if (!mountedRef.current) return;
         const projs = data.projects || [];
-        console.log('[Dashboard] ✅ Projects loaded:', projs.length, 'projects');
         setProjects(projs);
 
         const newExpProj = {};
@@ -169,7 +179,6 @@ function Dashboard() {
         const firstVer = firstApi?.versions?.[0];
         if (firstProj && firstApi && firstVer) {
           const fullPath = buildFullPath(firstVer, firstApi);
-          console.log('[Dashboard] 🎯 Auto‑selecting first version:', firstVer.label, 'with fullPath:', fullPath);
           setSelectedVersion({
             projectId: firstProj.id,
             apiId: firstApi.id,
@@ -178,16 +187,10 @@ function Dashboard() {
             version: firstVer.version,
             label: firstVer.label,
           });
-        } else {
-          console.warn('[Dashboard] ⚠️ No projects/APIs found to auto-select');
         }
       })
       .catch(err => {
-        if (err.name === 'AbortError') {
-          console.log('[Dashboard] ⏹️ Projects fetch aborted');
-          return;
-        }
-        console.error('[Dashboard] ❌ Projects fetch error:', err);
+        if (err.name === 'AbortError') return;
         if (mountedRef.current) setError(err.message);
       })
       .finally(() => {
@@ -206,11 +209,9 @@ function Dashboard() {
     force = false
   ) => {
     const cacheKey = `stats:${projectId}:${path}:${method}:${range}`;
-    console.log(`[Dashboard] 📈 fetchChartData called: ${method} ${path} | range=${range} | force=${force} | cacheKey=${cacheKey}`);
 
     if (!force && chartCache.has(cacheKey)) {
       const cached = chartCache.get(cacheKey);
-      console.log('[Dashboard] 💾 Cache HIT for', cacheKey, '→', cached?.length, 'points');
       if (mountedRef.current) {
         setChartData(cached);
         setChartError(null);
@@ -218,7 +219,6 @@ function Dashboard() {
       }
       return;
     }
-    console.log('[Dashboard] 💾 Cache MISS for', cacheKey, '– fetching from API');
 
     if (abortControllerRef.current) abortControllerRef.current.abort();
     const controller = new AbortController();
@@ -232,29 +232,17 @@ function Dashboard() {
 
     try {
       const url = `${API_BASE}/api/latency-stats?project_id=${encodeURIComponent(projectId)}&path=${encodeURIComponent(path)}&method=${method}&range=${range}`;
-      console.log('[Dashboard] 🌐 Fetching chart data from:', url);
       const res = await fetch(url, { credentials: 'include', signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       const points = data.points || [];
-      console.log('[Dashboard] ✅ Chart data received:', points.length, 'points');
-      if (points.length > 0) {
-        console.log('[Dashboard] 📊 Sample points:', points.slice(0, 3));
-      } else {
-        console.warn('[Dashboard] ⚠️ No data points returned for this endpoint.');
-      }
 
       if (mountedRef.current && !signal.aborted) {
         chartCache.set(cacheKey, points);
         setChartData(points);
-        console.log('[Dashboard] 💾 Chart data cached and state updated, chartData length:', points.length);
       }
     } catch (err) {
-      if (err.name === 'AbortError') {
-        console.log('[Dashboard] ⏹️ Chart fetch aborted');
-        return;
-      }
-      console.error('[Dashboard] ❌ Chart fetch error:', err);
+      if (err.name === 'AbortError') return;
       if (mountedRef.current) {
         setChartError(err.message || 'Failed to load chart data');
         setChartData([]);
@@ -269,14 +257,8 @@ function Dashboard() {
     }
   }, [timeRange]);
 
-  // ---------- Log chartData changes ----------
-  useEffect(() => {
-    console.log('[Dashboard] 📊 chartData changed, length:', chartData.length);
-  }, [chartData]);
-
-  // ---------- Manual refresh function ----------
+  // ---------- Manual refresh ----------
   const refreshData = useCallback(() => {
-    console.log('[Dashboard] 🔄 Manual refresh triggered');
     chartCache.clear();
     if (selectedVersion) {
       fetchChartData(
@@ -292,7 +274,6 @@ function Dashboard() {
   // ---------- Load chart when selection changes ----------
   useEffect(() => {
     if (selectedVersion) {
-      console.log('[Dashboard] 🔄 Selection changed, fetching chart for:', selectedVersion);
       fetchChartData(
         selectedVersion.projectId,
         selectedVersion.path,
@@ -303,12 +284,10 @@ function Dashboard() {
     }
   }, [selectedVersion, timeRange, fetchChartData]);
 
-  // ---------- Auto‑refresh (polling) ----------
+  // ---------- Auto‑refresh ----------
   useEffect(() => {
     if (autoRefresh && selectedVersion) {
-      console.log('[Dashboard] 🔄 Auto‑refresh ENABLED, starting interval');
       refreshIntervalRef.current = setInterval(() => {
-        console.log('[Dashboard] 🔄 Auto‑refresh tick');
         fetchChartData(
           selectedVersion.projectId,
           selectedVersion.path,
@@ -319,7 +298,6 @@ function Dashboard() {
       }, 30000);
     } else {
       if (refreshIntervalRef.current) {
-        console.log('[Dashboard] 🔄 Auto‑refresh DISABLED, clearing interval');
         clearInterval(refreshIntervalRef.current);
         refreshIntervalRef.current = null;
       }
@@ -329,26 +307,18 @@ function Dashboard() {
     };
   }, [autoRefresh, selectedVersion, timeRange, fetchChartData]);
 
-  // ---------- WebSocket listener (only for charts) ----------
+  // ---------- WebSocket listener ----------
   useEffect(() => {
-    if (!socket) {
-      console.warn('[Dashboard] ⚠️ Socket not available');
-      return;
-    }
+    if (!socket) return;
 
     const onNewLog = (logData) => {
-      console.log('[Dashboard] 📨 WS new_api_log received:', logData);
-      if (!selectedVersion) {
-        console.log('[Dashboard] ⏭️ No selected version, ignoring log');
-        return;
-      }
+      if (!selectedVersion) return;
       const { project_id, path, method } = logData;
       if (
         project_id === selectedVersion.projectId &&
         path === selectedVersion.path &&
         method === selectedVersion.method
       ) {
-        console.log('[Dashboard] 🔄 WS log matches current selection – triggering chart refresh');
         fetchChartData(
           selectedVersion.projectId,
           selectedVersion.path,
@@ -356,8 +326,6 @@ function Dashboard() {
           timeRange,
           true
         );
-      } else {
-        console.log('[Dashboard] ⏭️ WS log does NOT match current selection (current:', selectedVersion, ')');
       }
     };
 
@@ -367,15 +335,11 @@ function Dashboard() {
     };
   }, [socket, selectedVersion, timeRange, fetchChartData]);
 
-  // ---------- Prefetch on hover ----------
+  // ---------- Prefetch ----------
   const prefetchVersion = useCallback((ver, projId, api) => {
     const fullPath = buildFullPath(ver, api);
     const cacheKey = `stats:${projId}:${fullPath}:${api.method}:${timeRange}`;
-    if (chartCache.has(cacheKey)) {
-      console.log('[Dashboard] 👆 Prefetch SKIP (already cached):', cacheKey);
-      return;
-    }
-    console.log('[Dashboard] 👆 Prefetch START:', ver.label, 'for', projId, fullPath);
+    if (chartCache.has(cacheKey)) return;
 
     if (prefetchAbortControllerRef.current) {
       prefetchAbortControllerRef.current.abort();
@@ -392,19 +356,14 @@ function Dashboard() {
         const points = data.points || [];
         if (!chartCache.has(cacheKey)) {
           chartCache.set(cacheKey, points);
-          console.log('[Dashboard] 👆 Prefetch COMPLETED:', cacheKey, points.length, 'points');
         }
       })
-      .catch(err => {
-        if (err.name === 'AbortError') return;
-        console.warn('[Dashboard] 👆 Prefetch error:', err);
-      });
+      .catch(() => {});
   }, [timeRange]);
 
   // ---------- Version selection ----------
   const handleVersionSelect = useCallback((ver, projId, api) => {
     const fullPath = buildFullPath(ver, api);
-    console.log('[Dashboard] 🎯 Version selected:', ver.label, 'for', projId, fullPath);
     setSelectedVersion({
       projectId: projId,
       apiId: api.id,
@@ -443,7 +402,7 @@ function Dashboard() {
   const renderTree = useMemo(() => {
     if (filteredProjects.length === 0) {
       return (
-        <div className="text-zinc-500 text-sm text-center py-8 px-4">
+        <div className={`text-sm text-center py-8 px-4 ${isWhiteTheme ? 'text-gray-500' : 'text-zinc-500'}`}>
           {projects.length === 0
             ? 'No projects found. Import an OpenAPI spec to get started.'
             : 'No endpoints match your search.'}
@@ -451,12 +410,22 @@ function Dashboard() {
       );
     }
 
+    const treeClasses = {
+      project: `flex items-center gap-1 py-1 cursor-pointer hover:text-${isWhiteTheme ? 'gray-800' : 'white'} group`,
+      projectIcon: `text-${isWhiteTheme ? 'gray-400' : 'zinc-500'} transition-transform duration-200`,
+      projectName: `text-${isWhiteTheme ? 'gray-600' : 'zinc-400'} group-hover:text-${isWhiteTheme ? 'gray-800' : 'white'}`,
+      projectCount: `text-xs ${isWhiteTheme ? 'text-gray-300' : 'text-zinc-600'} ml-auto`,
+      api: `flex items-center gap-1 py-1 cursor-pointer hover:text-${isWhiteTheme ? 'gray-800' : 'white'} group`,
+      apiName: `text-${isWhiteTheme ? 'gray-600' : 'zinc-400'} group-hover:text-${isWhiteTheme ? 'gray-800' : 'white'} text-sm`,
+      apiCount: `text-xs ${isWhiteTheme ? 'text-gray-300' : 'text-zinc-600'} ml-auto`,
+    };
+
     return filteredProjects.map(proj => {
       const isProjExpanded = expandedProjects[proj.id] !== false;
       return (
         <li key={proj.id} role="treeitem" className="select-none">
           <div
-            className="flex items-center gap-1 py-1 cursor-pointer hover:text-white group"
+            className={treeClasses.project}
             onClick={() => toggleProject(proj.id)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
@@ -469,26 +438,21 @@ function Dashboard() {
             aria-expanded={isProjExpanded}
             aria-label={`${proj.name} (${proj.apis?.length || 0} APIs)`}
           >
-            <span
-              className={`text-zinc-500 transition-transform duration-200 ${
-                isProjExpanded ? 'rotate-90' : ''
-              }`}
-              aria-hidden="true"
-            >
+            <span className={`${treeClasses.projectIcon} ${isProjExpanded ? 'rotate-90' : ''}`} aria-hidden="true">
               ▸
             </span>
-            <span className="text-zinc-400 group-hover:text-white">📁 {proj.name}</span>
-            <span className="text-xs text-zinc-600 ml-auto">{proj.apis?.length}</span>
+            <span className={treeClasses.projectName}>📁 {proj.name}</span>
+            <span className={treeClasses.projectCount}>{proj.apis?.length}</span>
           </div>
 
           {isProjExpanded && (
-            <ul className="ml-4 border-l border-zinc-800 pl-2" role="group">
+            <ul className={`ml-4 border-l ${isWhiteTheme ? 'border-gray-200' : 'border-zinc-800'} pl-2`} role="group">
               {proj.apis?.map(api => {
                 const isApiExpanded = expandedApis[api.id] !== false;
                 return (
                   <li key={api.id} role="treeitem">
                     <div
-                      className="flex items-center gap-1 py-1 cursor-pointer hover:text-white group"
+                      className={treeClasses.api}
                       onClick={() => toggleApi(api.id)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' || e.key === ' ') {
@@ -501,22 +465,17 @@ function Dashboard() {
                       aria-expanded={isApiExpanded}
                       aria-label={`${api.method} ${api.path} (${api.versions?.length || 0} versions)`}
                     >
-                      <span
-                        className={`text-zinc-500 transition-transform duration-200 ${
-                          isApiExpanded ? 'rotate-90' : ''
-                        }`}
-                        aria-hidden="true"
-                      >
+                      <span className={`${treeClasses.projectIcon} ${isApiExpanded ? 'rotate-90' : ''}`} aria-hidden="true">
                         ▸
                       </span>
-                      <span className="text-zinc-400 group-hover:text-white text-sm">
+                      <span className={treeClasses.apiName}>
                         {api.method} {api.path}
                       </span>
-                      <span className="text-xs text-zinc-600 ml-auto">{api.versions?.length}</span>
+                      <span className={treeClasses.apiCount}>{api.versions?.length}</span>
                     </div>
 
                     {isApiExpanded && (
-                      <ul className="ml-6 border-l border-zinc-800 pl-2" role="group">
+                      <ul className={`ml-6 border-l ${isWhiteTheme ? 'border-gray-200' : 'border-zinc-800'} pl-2`} role="group">
                         {api.versions?.map(ver => {
                           const isActive =
                             selectedVersion?.version === ver.version &&
@@ -554,6 +513,7 @@ function Dashboard() {
     projects.length,
     toggleProject,
     toggleApi,
+    isWhiteTheme
   ]);
 
   // ---------- Chart render ----------
@@ -591,9 +551,9 @@ function Dashboard() {
 
     if (!chartData.length) {
       return (
-        <div className="text-zinc-500 text-center py-8">
+        <div className={`text-center py-8 ${isWhiteTheme ? 'text-gray-500' : 'text-zinc-500'}`}>
           No data available for this endpoint.<br />
-          <span className="text-xs text-zinc-600">
+          <span className={`text-xs ${isWhiteTheme ? 'text-gray-400' : 'text-zinc-600'}`}>
             Make a mock API call to start collecting statistics.
           </span>
           <button
@@ -606,16 +566,19 @@ function Dashboard() {
       );
     }
 
+    const chartBg = isWhiteTheme ? 'bg-white border-gray-200' : 'bg-zinc-900 border-zinc-800';
+    const chartText = isWhiteTheme ? 'text-gray-500' : 'text-zinc-400';
+
     return (
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[400px]">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-          <h3 className="text-sm font-medium text-zinc-400 uppercase mb-2">
+        <div className={`border rounded-xl p-4 ${chartBg}`}>
+          <h3 className={`text-sm font-medium uppercase mb-2 ${chartText}`}>
             📈 Latency vs Requests
           </h3>
           <ResponsiveContainer width="100%" height={300}>
             <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#3f3f46" />
-              <XAxis dataKey="time" tick={{ fill: '#a1a1aa' }} fontSize={10} />
+              <CartesianGrid strokeDasharray="3 3" stroke={isWhiteTheme ? '#e5e7eb' : '#3f3f46'} />
+              <XAxis dataKey="time" tick={{ fill: isWhiteTheme ? '#6b7280' : '#a1a1aa' }} fontSize={10} />
               <YAxis yAxisId="left" stroke="#a78bfa" tick={{ fill: '#a78bfa' }} fontSize={10} />
               <YAxis
                 yAxisId="right"
@@ -624,7 +587,7 @@ function Dashboard() {
                 tick={{ fill: '#fbbf24' }}
                 fontSize={10}
               />
-              <Tooltip contentStyle={{ background: '#18181b', border: '1px solid #27272a' }} />
+              <Tooltip contentStyle={{ background: isWhiteTheme ? '#fff' : '#18181b', border: isWhiteTheme ? '1px solid #e5e7eb' : '1px solid #27272a' }} />
               <Line
                 yAxisId="left"
                 type="monotone"
@@ -645,16 +608,16 @@ function Dashboard() {
             </LineChart>
           </ResponsiveContainer>
         </div>
-        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-          <h3 className="text-sm font-medium text-zinc-400 uppercase mb-2">
+        <div className={`border rounded-xl p-4 ${chartBg}`}>
+          <h3 className={`text-sm font-medium uppercase mb-2 ${chartText}`}>
             📊 Requests over Time
           </h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#3f3f46" />
-              <XAxis dataKey="time" tick={{ fill: '#a1a1aa' }} fontSize={10} />
+              <CartesianGrid strokeDasharray="3 3" stroke={isWhiteTheme ? '#e5e7eb' : '#3f3f46'} />
+              <XAxis dataKey="time" tick={{ fill: isWhiteTheme ? '#6b7280' : '#a1a1aa' }} fontSize={10} />
               <YAxis stroke="#34d399" tick={{ fill: '#34d399' }} fontSize={10} />
-              <Tooltip contentStyle={{ background: '#18181b', border: '1px solid #27272a' }} />
+              <Tooltip contentStyle={{ background: isWhiteTheme ? '#fff' : '#18181b', border: isWhiteTheme ? '1px solid #e5e7eb' : '1px solid #27272a' }} />
               <Bar dataKey="requests" fill="#34d399" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
@@ -684,42 +647,61 @@ function Dashboard() {
     ? projects.find(p => p.id === selectedVersion.projectId)?.name || 'Project'
     : 'No Project';
 
-  const headerBg = isWhiteTheme ? 'bg-white border-gray-200' : 'bg-zinc-900 border-zinc-800';
-  const headerText = isWhiteTheme ? 'text-gray-800' : 'text-white';
+  // ─── Theme-aware styles ──────────────────────────────────────────
+  const bg = isWhiteTheme ? 'bg-gray-50' : 'bg-zinc-950';
+  const text = isWhiteTheme ? 'text-gray-800' : 'text-zinc-300';
+  const headerBg = isWhiteTheme ? 'bg-white' : 'bg-zinc-900';
+  const borderColor = isWhiteTheme ? 'border-gray-200' : 'border-zinc-800';
+  const sidebarBg = isWhiteTheme ? 'bg-white' : 'bg-zinc-900';
+  const inputBg = isWhiteTheme ? 'bg-white' : 'bg-zinc-900';
+  const inputBorder = isWhiteTheme ? 'border-gray-300' : 'border-zinc-800';
+  const inputFocus = 'focus:border-blue-500 focus:ring-2 focus:ring-blue-500/30';
+  const mutedText = isWhiteTheme ? 'text-gray-500' : 'text-zinc-500';
+  const cardBg = isWhiteTheme ? 'bg-white border-gray-200' : 'bg-zinc-900 border-zinc-800';
 
   return (
-    <div className="h-screen flex flex-col bg-zinc-950 text-zinc-300 overflow-hidden">
-      <header className={`h-12 shrink-0 flex items-center px-4 border-b ${headerBg}`}>
-        <div className="flex items-center gap-4">
+    <div className={`h-screen flex flex-col overflow-hidden ${bg} ${text} transition-colors duration-200`}>
+      {/* ========== HEADER ========== */}
+      <header className={`h-12 shrink-0 flex items-center px-5 border-b ${headerBg} ${borderColor}`}>
+        <div className="flex items-center gap-5">
           <button
             onClick={() => navigate('/setting')}
-            className={`flex items-center gap-2 text-sm transition-colors ${
-              isWhiteTheme ? 'text-gray-600 hover:text-gray-900' : 'text-zinc-400 hover:text-white'
+            className={`flex items-center gap-2 text-sm font-medium transition-all duration-200 ${
+              isWhiteTheme ? 'text-gray-500 hover:text-gray-800' : 'text-zinc-400 hover:text-white'
+            } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded ${
+              isWhiteTheme ? 'focus:ring-offset-white' : 'focus:ring-offset-zinc-900'
             }`}
             aria-label="Go to Settings"
           >
-            <span className="text-lg">←</span>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
             <span>Back</span>
           </button>
-          <span className={`text-sm font-medium ${headerText}`}>Dashboard</span>
+          <div className={`w-px h-5 ${isWhiteTheme ? 'bg-gray-200' : 'bg-zinc-700'}`} />
+          <span className={`text-sm font-semibold tracking-wide ${isWhiteTheme ? 'text-gray-700' : 'text-white'}`}>
+            Dashboard
+          </span>
         </div>
         <div className="flex-1 flex items-center justify-end gap-4 text-sm">
-          <span className={isWhiteTheme ? 'text-gray-500' : 'text-zinc-500'}>
-            {currentProjectName}
-          </span>
-          <span className={isWhiteTheme ? 'text-gray-400' : 'text-zinc-600'}>
+          <span className={`${mutedText} font-medium`}>{currentProjectName}</span>
+          <span className={`${isWhiteTheme ? 'text-gray-400' : 'text-zinc-600'}`}>
             {user?.username || 'Guest'}
           </span>
         </div>
       </header>
 
+      {/* ========== BODY ========== */}
       <div className="flex flex-1 min-h-0">
-        <div className="w-72 bg-zinc-900 border-r border-zinc-800 flex flex-col flex-shrink-0">
-          <div className="p-4 border-b border-zinc-800 text-xs font-semibold text-zinc-500 uppercase flex justify-between">
-            <span>📂 Explorer</span>
+        {/* Sidebar */}
+        <div className={`w-72 shrink-0 border-r flex flex-col ${sidebarBg} ${borderColor}`}>
+          <div className={`px-4 py-3 border-b ${borderColor} text-xs font-semibold uppercase ${mutedText} flex justify-between items-center`}>
+            <span className="flex items-center gap-2">
+              <span>📂</span> Explorer
+            </span>
             <button
               onClick={() => window.location.reload()}
-              className="text-zinc-600 hover:text-zinc-300 transition-colors"
+              className={`${mutedText} hover:${isWhiteTheme ? 'text-gray-700' : 'text-zinc-300'} transition-colors`}
               aria-label="Reload dashboard"
             >
               ⟳
@@ -728,23 +710,24 @@ function Dashboard() {
           <div className="p-3">
             <input
               type="text"
-              placeholder="Search..."
+              placeholder="Search endpoints..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm text-zinc-300 placeholder-zinc-500 focus:outline-none focus:border-blue-500"
+              className={`w-full rounded-lg px-3 py-1.5 text-sm outline-none transition-all duration-200 border ${inputBg} ${inputBorder} ${inputFocus} ${isWhiteTheme ? 'text-gray-800 placeholder-gray-400' : 'text-zinc-300 placeholder-zinc-500'}`}
               aria-label="Search endpoints"
             />
           </div>
-          <div className="flex-1 overflow-y-auto px-2 py-2 custom-scrollbar">
+          <div className={`flex-1 overflow-y-auto px-2 py-2 custom-scrollbar ${isWhiteTheme ? 'scrollbar-thin scrollbar-track-gray-100 scrollbar-thumb-gray-300' : 'scrollbar-thin scrollbar-track-zinc-900 scrollbar-thumb-zinc-700'}`}>
             <ul className="space-y-1" role="tree">
               {renderTree}
             </ul>
           </div>
         </div>
 
+        {/* Main content */}
         <div className="flex-1 flex flex-col overflow-hidden p-6">
-          <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
-            <h1 className="text-xl font-medium text-white truncate">
+          <div className="flex flex-wrap justify-between items-center gap-3 mb-6">
+            <h1 className={`text-xl font-semibold truncate ${isWhiteTheme ? 'text-gray-800' : 'text-white'}`}>
               {selectedVersion
                 ? `${selectedVersion.label} – ${selectedVersion.path || ''} (${selectedVersion.method})`
                 : 'API Performance'}
@@ -752,14 +735,14 @@ function Dashboard() {
             <div className="flex items-center gap-3 flex-wrap">
               <button
                 onClick={refreshData}
-                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-white text-sm transition"
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-zinc-900"
               >
                 🔄 Refresh
               </button>
               <select
                 value={timeRange}
                 onChange={(e) => setTimeRange(e.target.value)}
-                className="bg-zinc-900 border border-zinc-800 rounded px-3 py-1.5 text-sm text-zinc-300 focus:outline-none focus:border-blue-500"
+                className={`rounded-lg px-3 py-1.5 text-sm border outline-none transition-all ${inputBg} ${inputBorder} ${inputFocus} ${isWhiteTheme ? 'text-gray-800' : 'text-zinc-300'}`}
                 aria-label="Select time range"
               >
                 <option value="1h">1 hour</option>
@@ -767,13 +750,13 @@ function Dashboard() {
                 <option value="24h">24 hours</option>
                 <option value="7d">7 days</option>
               </select>
-              <label className="flex items-center gap-2 text-sm text-zinc-400 cursor-pointer">
+              <label className={`flex items-center gap-2 text-sm ${mutedText} cursor-pointer`}>
                 <span aria-hidden="true">🔄</span>
                 <input
                   type="checkbox"
                   checked={autoRefresh}
                   onChange={() => setAutoRefresh((prev) => !prev)}
-                  className="w-4 h-4 accent-blue-500"
+                  className="w-4 h-4 accent-blue-500 rounded focus:ring-2 focus:ring-blue-500"
                   aria-label="Toggle auto-refresh"
                 />
                 Auto-refresh
@@ -783,7 +766,7 @@ function Dashboard() {
 
           <div className="flex-1 overflow-y-auto">
             {renderCharts()}
-            <div className="mt-4 text-xs text-zinc-600 text-center border-t border-zinc-800 pt-3">
+            <div className={`mt-4 text-xs ${mutedText} text-center border-t ${borderColor} pt-3`}>
               {autoRefresh && (
                 <span className="text-blue-400 mr-2">⏳ Auto-refreshing every 30s •</span>
               )}
@@ -800,6 +783,3 @@ function Dashboard() {
 }
 
 export default Dashboard;
-
-
-
