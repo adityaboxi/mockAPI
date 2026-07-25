@@ -304,5 +304,5 @@ server.listen(PORT, () => {
   console.log(`🔭 OTLP traces ingest: POST ${PORT}/v1/traces (JSON)`);
   console.log(`🔐 Auth: session cookie (${sessionStore.constructor.name}) OR JWT`);
   console.log(`🌐 Environment: ${NODE_ENV}`);
-  console.log(`==================================\n`);
+  console.log(`===============================\n`);
 });
