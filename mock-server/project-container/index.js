@@ -367,7 +367,6 @@ function sanitizeDefinition(definition) {
     if (!Number.isInteger(sc) || sc < 100 || sc > 599) return 'statusCode must be 100-599';
   }
 
-  
   if (definition.latency !== undefined) {
     const lat = Number(definition.latency);
     if (!Number.isFinite(lat) || lat < 0) return 'latency must be non‑negative';
