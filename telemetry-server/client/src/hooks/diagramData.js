@@ -1,0 +1,70 @@
+// client/src/hooks/diagramData.js
+
+// ─── Fixed node definitions (exact positions) ──────────────
+export const NODE_DEFS = {
+  // Left column – clients / CDN
+  'client': { label: '🖥️ client', color: '#ce93d8', x: -700, y: -100 },
+  'curl-api': { label: '🔗 curl-api', color: '#ec407a', x: -700, y: 100 },
+  'Domain-service/CDN': { label: '🌍 CDN', color: '#ffa726', x: -500, y: 0 },
+
+  // Ingress
+  'nginx': { label: '🌐 nginx', color: '#42a5f5', x: -300, y: -120 },
+  'openresty-nginx': { label: '🌐 openresty (Lua)', color: '#42a5f5', x: -300, y: 120 },
+
+  // App containers (fixed)
+  'mockapi-app': { label: '📦 app-1', color: '#66bb6a', x: 0, y: -180 },
+  'mockapi-app-2': { label: '📦 app-2', color: '#66bb6a', x: 0, y: -60 },
+
+  // Workers (middle)
+  'bullmq-worker': { label: '⚙️ worker', color: '#ffd54f', x: 250, y: -180 },
+  'worker-server': { label: '⚙️ worker-server', color: '#42a5f5', x: 250, y: -60 },
+  'worker-logs': { label: '📋 worker-logs', color: '#ffd54f', x: 250, y: 60 },
+  'worker-health': { label: '💚 worker-health', color: '#4dd0e1', x: 250, y: 180 },
+
+  // Backend services
+  'server': { label: '📦 server', color: '#66bb6a', x: 500, y: -120 },
+  'bulk-server': { label: '📦 bulk-server', color: '#26c6da', x: 500, y: 0 },
+  'telemetry-service': { label: '📊 Telemetry', color: '#42a5f5', x: 500, y: 120 },
+
+  // Databases / Redis (right)
+  'mongodb-atlas': { label: '🍃 MongoDB Atlas', color: '#4caf50', x: 750, y: -120 },
+  'redis-external': { label: '🗄️ redis-external', color: '#ef5350', x: 750, y: 60 },
+  'internal-redis': { label: '🗄️ internal-redis', color: '#ef5350', x: 750, y: 200 },
+
+  // Other
+  'nodemailer': { label: '✉️ Nodemailer', color: '#ff6b6b', x: 500, y: -200 },
+  'gemini': { label: '🤖 Gemini', color: '#b388ff', x: 500, y: 200 },
+};
+
+// ─── Fixed edges (arrows) ──────────────────────────────────
+export const FIXED_EDGES = [
+  { from: 'client', to: 'nginx', label: 'req', color: '#ce93d8' },
+  { from: 'curl-api', to: 'nginx', label: 'API', color: '#ec407a' },
+  { from: 'Domain-service/CDN', to: 'nginx', label: 'CDN', color: '#ffa726' },
+  { from: 'nginx', to: 'mockapi-app', label: 'LB', color: '#42a5f5' },
+  { from: 'nginx', to: 'mockapi-app-2', label: 'LB', color: '#42a5f5' },
+  { from: 'openresty-nginx', to: 'mockapi-app', label: 'proxy', color: '#42a5f5' },
+  { from: 'openresty-nginx', to: 'mockapi-app-2', label: 'proxy', color: '#42a5f5' },
+  { from: 'openresty-nginx', to: 'Domain-service/CDN', label: 'upstream', color: '#ffa726' },
+  { from: 'mockapi-app', to: 'redis-external', label: 'cache', color: '#ffd54f', dashes: true },
+  { from: 'mockapi-app-2', to: 'redis-external', label: 'cache', color: '#ffd54f', dashes: true },
+  { from: 'mockapi-app', to: 'mongodb-atlas', label: 'store', color: '#4caf50' },
+  { from: 'mockapi-app', to: 'nodemailer', label: 'email', color: '#ff6b6b' },
+  { from: 'mockapi-app', to: 'gemini', label: 'AI', color: '#b388ff' },
+  { from: 'mockapi-app', to: 'bullmq-worker', label: 'queue', color: '#ffd54f' },
+  { from: 'mockapi-app-2', to: 'bullmq-worker', label: 'queue', color: '#ffd54f' },
+  { from: 'mockapi-app', to: 'worker-server', label: 'process', color: '#42a5f5' },
+  { from: 'mockapi-app-2', to: 'worker-server', label: 'process', color: '#42a5f5' },
+  { from: 'bullmq-worker', to: 'redis-external', label: 'queue', color: '#ef5350', dashes: true },
+  { from: 'worker-server', to: 'redis-external', label: 'queue', color: '#ef5350', dashes: true },
+  { from: 'worker-logs', to: 'redis-external', label: 'logs', color: '#ffd54f', dashes: true },
+  { from: 'worker-health', to: 'redis-external', label: 'health', color: '#4dd0e1', dashes: true },
+  { from: 'server', to: 'mongodb-atlas', label: 'store', color: '#4caf50' },
+  { from: 'server', to: 'redis-external', label: 'cache', color: '#ffd54f' },
+  { from: 'telemetry-service', to: 'mongodb-atlas', label: 'store', color: '#42a5f5' },
+  { from: 'bulk-server', to: 'mongodb-atlas', label: 'bulk', color: '#26c6da' },
+  { from: 'mockapi-app', to: 'internal-redis', label: 'session', color: '#ef5350' },
+  { from: 'mockapi-app-2', to: 'internal-redis', label: 'session', color: '#ef5350' },
+  { from: 'server', to: 'internal-redis', label: 'session', color: '#ef5350' },
+  { from: 'telemetry-service', to: 'internal-redis', label: 'session', color: '#ef5350' },
+];

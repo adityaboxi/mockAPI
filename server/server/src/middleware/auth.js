@@ -7,7 +7,7 @@ require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 const jwt = require('jsonwebtoken');
 
 const authenticateToken = (req, res, next) => {
-  // Check for a regular (authenticated) token
+  // Check for a regular (aauthenticated) token
   const token = req.cookies.token;
   if (token) {
     try {
