@@ -1,151 +1,358 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dashboard</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Service Topology · Telemetry</title>
+  <!-- vis-network (CDN) -->
+  <script type="text/javascript" src="https://unpkg.com/vis-network@9.1.2/dist/vis-network.min.js"></script>
+  <link rel="stylesheet" type="text/css" href="https://unpkg.com/vis-network@9.1.2/dist/vis-network.min.css" />
   <style>
-    body { background: #1e1e2e; color: #cdd6f4; font-family: system-ui, sans-serif; padding: 20px; }
-    header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #45475a; padding-bottom: 10px; }
-    h1 { color: #89b4fa; margin: 0; }
-    .status { font-size: 14px; }
-    .status .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #a6da95; margin-right: 6px; }
+    * { box-sizing: border-box; margin: 0; }
+    body {
+      background: #1e1e2e;
+      color: #cdd6f4;
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 20px;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ─── HEADER ─── */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #45475a;
+      padding-bottom: 10px;
+      flex-shrink: 0;
+    }
+    h1 { color: #89b4fa; margin: 0; font-weight: 600; }
+    .status { font-size: 14px; display: flex; align-items: center; gap: 6px; }
+    .status .dot {
+      display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+      background: #a6da95;
+    }
     .status .dot.off { background: #f38ba8; }
-    .stats { display: flex; gap: 20px; margin: 20px 0; }
-    .stat { background: #313244; padding: 10px 20px; border-radius: 8px; border-left: 4px solid #89b4fa; }
-    .stat span { font-size: 28px; font-weight: bold; display: block; }
-    .filters { display: flex; gap: 10px; margin: 10px 0; }
-    .filters select { background: #313244; color: #cdd6f4; border: 1px solid #45475a; padding: 6px 12px; border-radius: 6px; }
-    table { width: 100%; border-collapse: collapse; background: #11111b; border-radius: 8px; overflow: hidden; }
-    th { background: #313244; text-align: left; padding: 10px; }
-    td { padding: 8px 10px; border-bottom: 1px solid #45475a; }
-    .level { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
-    .level.INFO { background: rgba(137,180,250,0.2); color: #89b4fa; }
-    .level.ERROR { background: rgba(243,139,168,0.2); color: #f38ba8; }
-    .level.WARN { background: rgba(249,226,175,0.2); color: #f9e2af; }
-    button { background: #f38ba8; color: #1e1e2e; border: none; padding: 6px 14px; border-radius: 6px; cursor: pointer; }
-    .empty { text-align: center; padding: 40px; color: #a6adc8; }
+    button {
+      background: #f38ba8; color: #1e1e2e; border: none;
+      padding: 6px 14px; border-radius: 6px; cursor: pointer;
+      font-weight: 500;
+    }
+    button:hover { opacity: 0.9; }
+
+    /* ─── STATS ─── */
+    .stats {
+      display: flex; gap: 20px; margin: 12px 0;
+      flex-shrink: 0;
+    }
+    .stat {
+      background: #313244; padding: 6px 16px; border-radius: 8px;
+      border-left: 4px solid #89b4fa;
+      font-size: 14px;
+    }
+    .stat span { font-size: 24px; font-weight: bold; display: block; }
+
+    /* ─── MAIN LAYOUT ─── */
+    .main-area {
+      flex: 1;
+      display: flex;
+      gap: 16px;
+      min-height: 0;
+      margin-top: 12px;
+    }
+    #graph-container {
+      flex: 3;
+      background: #11111b;
+      border-radius: 8px;
+      border: 1px solid #313244;
+      position: relative;
+      min-height: 0;
+    }
+    #graph-container canvas {
+      display: block;
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    /* ─── SIDE LOG PANEL ─── */
+    #log-panel {
+      flex: 1;
+      background: #11111b;
+      border-radius: 8px;
+      border: 1px solid #313244;
+      padding: 8px 12px;
+      overflow-y: auto;
+      font-size: 13px;
+      font-family: 'SF Mono', 'Menlo', monospace;
+      min-width: 240px;
+    }
+    #log-panel .log-entry {
+      padding: 4px 0;
+      border-bottom: 1px solid #2a2a3a;
+      display: flex;
+      gap: 8px;
+      align-items: baseline;
+    }
+    #log-panel .time { color: #6c7086; font-size: 11px; white-space: nowrap; }
+    #log-panel .level {
+      font-weight: 600; padding: 0 6px; border-radius: 3px;
+      font-size: 11px;
+    }
+    #log-panel .level.INFO { color: #89b4fa; background: rgba(137,180,250,0.15); }
+    #log-panel .level.WARN { color: #f9e2af; background: rgba(249,226,175,0.15); }
+    #log-panel .level.ERROR { color: #f38ba8; background: rgba(243,139,168,0.15); }
+    #log-panel .msg { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #log-panel .svc { color: #a6adc8; font-size: 11px; }
+
+    /* ─── FILTERS ─── */
+    .filters {
+      display: flex; gap: 10px; margin: 6px 0;
+      flex-shrink: 0;
+    }
+    .filters select {
+      background: #313244; color: #cdd6f4; border: 1px solid #45475a;
+      padding: 4px 12px; border-radius: 6px;
+      font-size: 13px;
+    }
+
+    /* ─── SCROLLBAR ─── */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #45475a; border-radius: 4px; }
+
+    /* ─── RESPONSIVE ─── */
+    @media (max-width: 800px) {
+      .main-area { flex-direction: column; }
+      #log-panel { max-height: 180px; flex: none; }
+    }
   </style>
 </head>
 <body>
-  <header>
-    <h1>📊 Telemetry</h1>
-    <div>
-      <span class="status"><span class="dot" id="statusDot"></span><span id="statusText">Connected</span></span>
-      <button onclick="logout()" style="margin-left: 20px;">Logout</button>
-    </div>
-  </header>
 
-  <div class="stats">
-    <div class="stat"><span id="totalLogs">0</span> Total Logs</div>
-    <div class="stat" style="border-left-color:#f38ba8;"><span id="totalErrors">0</span> Errors</div>
+<!-- ─── HEADER ─── -->
+<header>
+  <h1>🌐 Service Topology</h1>
+  <div style="display:flex; align-items:center; gap:16px;">
+    <span class="status">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText">Connecting…</span>
+    </span>
+    <button onclick="logout()">Logout</button>
   </div>
+</header>
 
-  <div class="filters">
-    <select id="levelFilter" onchange="renderLogs()">
-      <option value="">All Levels</option>
-      <option value="INFO">Info</option>
-      <option value="WARN">Warn</option>
-      <option value="ERROR">Error</option>
-    </select>
-    <select id="limitFilter" onchange="renderLogs()">
-      <option value="20">20</option>
-      <option value="50" selected>50</option>
-      <option value="100">100</option>
-    </select>
+<!-- ─── STATS ─── -->
+<div class="stats">
+  <div class="stat"><span id="totalLogs">0</span> Total Events</div>
+  <div class="stat" style="border-left-color:#f38ba8;"><span id="totalErrors">0</span> Errors</div>
+</div>
+
+<!-- ─── FILTERS ─── -->
+<div class="filters">
+  <select id="levelFilter" onchange="renderLogs()">
+    <option value="">All Levels</option>
+    <option value="INFO">Info</option>
+    <option value="WARN">Warn</option>
+    <option value="ERROR">Error</option>
+  </select>
+  <select id="limitFilter" onchange="renderLogs()">
+    <option value="10">10</option>
+    <option value="20">20</option>
+    <option value="50" selected>50</option>
+    <option value="100">100</option>
+  </select>
+</div>
+
+<!-- ─── MAIN AREA ─── -->
+<div class="main-area">
+  <div id="graph-container"></div>
+  <div id="log-panel">
+    <div style="font-size:12px; color:#6c7086; margin-bottom:6px;">📋 Recent Logs</div>
+    <div id="logList"></div>
   </div>
+</div>
 
-  <div id="logContainer">
-    <table>
-      <thead><tr><th>Time</th><th>Level</th><th>Message</th><th>Service</th></tr></thead>
-      <tbody id="logBody"></tbody>
-    </table>
-    <div id="emptyMsg" class="empty">No logs yet.</div>
-  </div>
+<script>
+  // ─── Constants ─────────────────────────────────────────────────────
+  const LOG_LIMIT = 50;
+  let logs = [];
+  let ws = null;
+  let network = null;
 
-  <script>
-    let logs = [];
-    let ws = null;
+  // ─── Graph Data ────────────────────────────────────────────────────
+  // Nodes: define your services
+  const nodes = new vis.DataSet([
+    { id: 'nginx',      label: '🌐 nginx',       shape: 'box', color: '#89b4fa', font: { color: '#cdd6f4' } },
+    { id: 'mockapi-app',label: '📦 app-1',       shape: 'box', color: '#a6da95', font: { color: '#1e1e2e' } },
+    { id: 'mockapi-app-2',label: '📦 app-2',    shape: 'box', color: '#a6da95', font: { color: '#1e1e2e' } },
+    { id: 'bullmq-worker',label: '⚙️ worker',   shape: 'box', color: '#f9e2af', font: { color: '#1e1e2e' } },
+    { id: 'redis-external',label: '🗄️ redis', shape: 'circle', color: '#f38ba8', font: { color: '#1e1e2e' } },
+  ]);
 
-    function formatTime(ts) {
-      return new Date(ts).toLocaleTimeString() + '.' + String(new Date(ts).getMilliseconds()).padStart(3,'0');
-    }
+  // Edges: define data flow
+  const edges = new vis.DataSet([
+    { from: 'nginx', to: 'mockapi-app',     label: 'LB',   arrows: 'to', color: { color: '#89b4fa' }, smooth: { type: 'curvedCW' } },
+    { from: 'nginx', to: 'mockapi-app-2',   label: 'LB',   arrows: 'to', color: { color: '#89b4fa' }, smooth: { type: 'curvedCCW' } },
+    { from: 'mockapi-app', to: 'redis-external', label: 'cache', arrows: 'to', dashes: true, color: { color: '#f9e2af' } },
+    { from: 'mockapi-app-2', to: 'redis-external', label: 'cache', arrows: 'to', dashes: true, color: { color: '#f9e2af' } },
+    { from: 'bullmq-worker', to: 'redis-external', label: 'queue', arrows: 'to', dashes: true, color: { color: '#f38ba8' } },
+  ]);
 
-    function renderLogs() {
-      const level = document.getElementById('levelFilter').value;
-      const limit = parseInt(document.getElementById('limitFilter').value);
-      let filtered = level ? logs.filter(l => l.level === level) : logs;
-      const displayed = filtered.slice(0, limit);
-      const tbody = document.getElementById('logBody');
-      tbody.innerHTML = '';
-      const empty = document.getElementById('emptyMsg');
-      if (displayed.length === 0) {
-        empty.style.display = 'block';
-        return;
+  // ─── Graph Options ─────────────────────────────────────────────────
+  const options = {
+    nodes: { shape: 'box', font: { size: 14, face: 'system-ui' }, margin: 10 },
+    edges: { font: { size: 11, align: 'middle' }, smooth: { type: 'continuous' }, arrows: { to: { enabled: true } } },
+    physics: {
+      enabled: true,
+      stabilization: { iterations: 50 },
+      solver: 'repulsion',
+      repulsion: { nodeDistance: 200 }
+    },
+    interaction: {
+      hover: true,
+      tooltipDelay: 200,
+      zoomView: true,
+      dragNodes: true
+    },
+    layout: { improvedLayout: true }
+  };
+
+  // ─── Init Graph ────────────────────────────────────────────────────
+  function initGraph() {
+    const container = document.getElementById('graph-container');
+    const data = { nodes, edges };
+    network = new vis.Network(container, data, options);
+    // Fit view after a short delay
+    setTimeout(() => network.fit(), 100);
+  }
+
+  // ─── Update node status from logs ─────────────────────────────────
+  function updateNodeStatus() {
+    // For each node, check if recent logs contain errors or warnings
+    // We'll change node border color based on severity
+    const nodeMap = {
+      'nginx': ['nginx'],
+      'mockapi-app': ['mockapi-app'],
+      'mockapi-app-2': ['mockapi-app-2'],
+      'bullmq-worker': ['bullmq-worker'],
+      'redis-external': ['redis-external']
+    };
+    // For simplicity, we'll just set a basic status based on logs
+    // Could be extended to show last error count
+    const recent = logs.slice(0, 20);
+    Object.keys(nodeMap).forEach(id => {
+      const nodeLogs = recent.filter(l => l.container && l.container.includes(id));
+      const hasError = nodeLogs.some(l => l.level === 'ERROR' || l.level === 'FATAL');
+      const hasWarn = nodeLogs.some(l => l.level === 'WARN');
+      const color = hasError ? '#f38ba8' : hasWarn ? '#f9e2af' : undefined;
+      if (color) {
+        nodes.update({ id, color: { background: color, border: color } });
+      } else {
+        // revert to default
+        const defaults = {
+          'nginx': '#89b4fa',
+          'mockapi-app': '#a6da95',
+          'mockapi-app-2': '#a6da95',
+          'bullmq-worker': '#f9e2af',
+          'redis-external': '#f38ba8'
+        };
+        nodes.update({ id, color: { background: defaults[id], border: defaults[id] } });
       }
-      empty.style.display = 'none';
-      displayed.forEach(log => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td>${formatTime(log.timestamp)}</td>
-          <td><span class="level ${log.level || 'INFO'}">${log.level || 'INFO'}</span></td>
-          <td>${log.message || ''}</td>
-          <td>${log.container || '-'}</td>
-        `;
-        tbody.appendChild(tr);
-      });
-      document.getElementById('totalLogs').textContent = logs.length;
-      document.getElementById('totalErrors').textContent = logs.filter(l => l.level === 'ERROR' || l.level === 'FATAL').length;
-    }
-
-    function connectWebSocket() {
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}${window.location.pathname}`;
-      ws = new WebSocket(wsUrl);
-      ws.onopen = () => {
-        document.getElementById('statusDot').classList.remove('off');
-        document.getElementById('statusText').textContent = 'Connected';
-      };
-      ws.onmessage = (e) => {
-        const msg = JSON.parse(e.data);
-        if (msg.type === 'log') {
-          logs.unshift(msg.data);
-          if (logs.length > 10000) logs.pop();
-          renderLogs();
-        }
-      };
-      ws.onclose = () => {
-        document.getElementById('statusDot').classList.add('off');
-        document.getElementById('statusText').textContent = 'Disconnected';
-        setTimeout(connectWebSocket, 3000);
-      };
-      ws.onerror = () => ws.close();
-    }
-
-    async function loadLogs() {
-      try {
-        const res = await fetch('logs?limit=100');
-        if (res.ok) {
-          const data = await res.json();
-          logs = data.logs || [];
-          renderLogs();
-        }
-      } catch (e) { console.error(e); }
-    }
-
-    async function logout() {
-      if (confirm('Logout?')) {
-        await fetch('logout', { method: 'POST' });
-        window.location.href = 'login';
-      }
-    }
-
-    window.addEventListener('load', () => {
-      loadLogs();
-      connectWebSocket();
-      setInterval(renderLogs, 5000);
     });
-  </script>
+  }
+
+  // ─── Log Rendering ────────────────────────────────────────────────
+  function renderLogs() {
+    const level = document.getElementById('levelFilter').value;
+    const limit = parseInt(document.getElementById('limitFilter').value);
+    let filtered = level ? logs.filter(l => l.level === level) : logs;
+    const displayed = filtered.slice(0, limit);
+
+    const list = document.getElementById('logList');
+    list.innerHTML = '';
+    displayed.forEach(log => {
+      const div = document.createElement('div');
+      div.className = 'log-entry';
+      const time = document.createElement('span');
+      time.className = 'time';
+      time.textContent = new Date(log.timestamp).toLocaleTimeString() + '.' + String(new Date(log.timestamp).getMilliseconds()).padStart(3,'0');
+      const levelSpan = document.createElement('span');
+      levelSpan.className = `level ${log.level || 'INFO'}`;
+      levelSpan.textContent = log.level || 'INFO';
+      const msg = document.createElement('span');
+      msg.className = 'msg';
+      msg.textContent = log.message || '';
+      const svc = document.createElement('span');
+      svc.className = 'svc';
+      svc.textContent = log.container || '-';
+      div.append(time, levelSpan, msg, svc);
+      list.appendChild(div);
+    });
+
+    // Update stats
+    document.getElementById('totalLogs').textContent = logs.length;
+    document.getElementById('totalErrors').textContent = logs.filter(l => l.level === 'ERROR' || l.level === 'FATAL').length;
+
+    // Update node status based on logs
+    updateNodeStatus();
+  }
+
+  // ─── WebSocket ─────────────────────────────────────────────────────
+  function connectWebSocket() {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}${window.location.pathname}`;
+    ws = new WebSocket(wsUrl);
+    ws.onopen = () => {
+      document.getElementById('statusDot').classList.remove('off');
+      document.getElementById('statusText').textContent = 'Connected';
+    };
+    ws.onmessage = (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'log') {
+        logs.unshift(msg.data);
+        if (logs.length > 5000) logs.pop();
+        renderLogs();
+      }
+    };
+    ws.onclose = () => {
+      document.getElementById('statusDot').classList.add('off');
+      document.getElementById('statusText').textContent = 'Disconnected';
+      setTimeout(connectWebSocket, 3000);
+    };
+    ws.onerror = () => ws.close();
+  }
+
+  // ─── Load initial logs (REST) ─────────────────────────────────────
+  async function loadLogs() {
+    try {
+      const res = await fetch('logs?limit=100');
+      if (res.ok) {
+        const data = await res.json();
+        logs = data.logs || [];
+        renderLogs();
+      }
+    } catch (e) { console.error(e); }
+  }
+
+  // ─── Logout ────────────────────────────────────────────────────────
+  async function logout() {
+    if (confirm('Logout?')) {
+      await fetch('logout', { method: 'POST' });
+      window.location.href = 'login';
+    }
+  }
+
+  // ─── Bootstrap ─────────────────────────────────────────────────────
+  window.addEventListener('load', () => {
+    initGraph();
+    loadLogs();
+    connectWebSocket();
+    // Auto-refresh log list every 5s (just in case)
+    setInterval(renderLogs, 5000);
+  });
+</script>
 </body>
 </html>
