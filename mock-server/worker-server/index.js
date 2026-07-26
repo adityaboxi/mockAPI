@@ -11,7 +11,9 @@ const Project = require('./models/Project');
 const ProjectApiHistory = require('./models/ProjectApiHistory');
 const SystemEventLog = require('./models/SystemEventLog');
 
-// ---------- CONFIG ----------
+
+
+// ---------- CONFIG -------------
 const docker = new Docker({ socketPath: '/var/run/docker.sock' });
 const NETWORK = process.env.DOCKER_NETWORK || 'orch-net';
 const IMAGE = process.env.PROJECT_IMAGE || 'project-container:latest';

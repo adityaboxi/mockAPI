@@ -14,5 +14,3 @@ COPY maintenance-telemetry-server.html /usr/share/nginx/html/
 EXPOSE 80 443
 
 HEALTHCHECK --interval=30s --timeout=3s CMD nginx -t || exit 1
-
-

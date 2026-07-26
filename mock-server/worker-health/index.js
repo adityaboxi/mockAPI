@@ -252,11 +252,11 @@ async function sendRecoveryEmail(recoveryInfo) {
     return;
   }
 
-  const subject = `🔄 Project Container Recovered – ${projectName}`;
+  const subject = `🔄 Project  Container Recovered – ${projectName}`;
   const body = `
     Your project "${projectName}" (${projectId}) container was automatically recovered at ${recoveredAt.toISOString()}.
 
-    ✅ ${apiCount} API routes were re‑synced to the container.
+    ✅ ${apiCount} API routes were re-synced to the container.
     All endpoints are now operational.
 
     If you have any questions, please contact support.

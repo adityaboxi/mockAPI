@@ -8,7 +8,7 @@ export const socket = io(SOCKET_URL, {
   transports: ['websocket', 'polling'],
 });
 
-// Optional: log connection statusss
+// Optional: log connection status
 socket.on('connect', () => {
   console.log('[Socket] Connected to server');
 });
@@ -18,3 +18,4 @@ socket.on('disconnect', () => {
 socket.on('connect_error', (err) => {
   console.error('[Socket] Connection error:', err);
 });
+

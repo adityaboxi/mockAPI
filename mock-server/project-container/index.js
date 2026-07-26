@@ -28,7 +28,6 @@ const PORT = process.env.PORT || 3000;
 // ---------- Redis – lazy connect, graceful fallback ----------
 const REDIS_URL = process.env.INTERNAL_REDIS_URL || process.env.REDIS_URL || 'redis://redis-internal:6379';
 
-
 // Local fallback for rate limiting (if Redis is down)
 const localRateLimitStore = new Map();
 let redisWasDown = false; // tracks if Redis was previously unavailable
@@ -47,7 +46,7 @@ const redis = new IORedis(REDIS_URL, {
 redis.on('error', (err) => {
   if (err.code === 'ENOTFOUND') {
     if (!redis._notfoundLogged) {
-      console.warn('[Redis] Hostname not found – rate limiting disabled until Redis becomes available.');
+      console.warn('[Redis] Hostname not found - rate limiting disabled until Redis becomes available.');
       redis._notfoundLogged = true;
     }
     redisWasDown = true;

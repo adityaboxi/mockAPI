@@ -9,6 +9,6 @@ async function start() {
 }
 
 start().catch(err => {
-  console.error('[bullmq-worrker] Fataal error:', err);
+  console.error('[bullmq-worker] Fataal error:', err);
   process.exit(1);
 });

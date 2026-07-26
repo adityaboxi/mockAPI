@@ -48,6 +48,7 @@ jobs:
             if [ -n "${{ secrets.TELEMETRY_ENV }}" ]; then
               echo "${{ secrets.TELEMETRY_ENV }}" > telemetry-server/.env
             else
+              # Production defaults - adjust as needed
               printf "PORT=3003\nSESSION_SECRET=your-strong-secret\nREDIS_URL=redis://redis:6379\nDASHBOARD_USER=admin\nDASHBOARD_PASS=password\nCLIENT_ORIGIN=https://opentelemetry.client.mockapi.info\nNODE_ENV=production\nVITE_API_BASE_URL=/api\nVITE_WS_URL=/api\n" > telemetry-server/.env
             fi
 
@@ -64,21 +65,25 @@ jobs:
               [ -d "$1" ] && [ -n "$(ls -A "$1" 2>/dev/null)" ]
             }
 
+            # If manual trigger or fresh clone - deploy all existing services
             if [ "${{ github.event_name }}" == "workflow_dispatch" ] || [ "$CLONED" == "true" ]; then
-              echo "🔄 Manual trigger or fresh clone – deploying all existing services"
+              echo "🔄 Manual trigger or fresh clone - deploying all existing services"
               folder_exists "telemetry-server" && DEPLOY_TELEMETRY=true
               folder_exists "server" && DEPLOY_SERVER=true
               folder_exists "mock-server" && DEPLOY_MOCK=true
               folder_exists "client" && DEPLOY_CLIENT=true
               folder_exists "domainservice" && DEPLOY_DOMAIN=true
             else
-              if [ -z "$(git rev-parse HEAD^)" ]; then
-                CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
-              else
+              # Detect changed files (handles first commit gracefully)
+              if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
                 CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
+              else
+                # First commit – list all added files
+                CHANGED_FILES=$(git diff --name-only --diff-filter=A HEAD)
               fi
               echo "Changed files: $CHANGED_FILES"
 
+              # Only set deploy flag if the folder exists AND a file inside it changed
               if folder_exists "telemetry-server" && echo "$CHANGED_FILES" | grep -q "^telemetry-server/"; then
                 DEPLOY_TELEMETRY=true
               fi
@@ -96,9 +101,9 @@ jobs:
               fi
             fi
 
-            # If nothing to deploy, exit
+            # If nothing to deploy, exit early
             if [ "$DEPLOY_SERVER" = false ] && [ "$DEPLOY_MOCK" = false ] && [ "$DEPLOY_CLIENT" = false ] && [ "$DEPLOY_DOMAIN" = false ] && [ "$DEPLOY_TELEMETRY" = false ]; then
-              echo "ℹ️ No service folder changed – skipping deployment."
+              echo "ℹ️ No service folder changed - skipping deployment."
               exit 0
             fi
 
@@ -107,21 +112,6 @@ jobs:
             # -----------------------------------------------------------
             # 4. HELPER FUNCTIONS
             # -----------------------------------------------------------
-            wait_for_health() {
-              local url=$1
-              local max_attempts=$2
-              local attempt=0
-              while [ $attempt -lt $max_attempts ]; do
-                if curl -s -f "$url" > /dev/null; then
-                  return 0
-                fi
-                attempt=$((attempt+1))
-                echo "⏳ Waiting for $url (attempt $attempt/$max_attempts)..."
-                sleep 3
-              done
-              return 1
-            }
-
             check_and_restart() {
               local container_name=$1
               local health_url=$2
@@ -139,14 +129,14 @@ jobs:
                 sleep 5
               done
 
-              echo "⚠️ $container_name is unhealthy – restarting..."
+              echo "⚠️ $container_name is unhealthy - restarting..."
               docker restart "$container_name" || true
               sleep 10
               if curl -s -f "$health_url" > /dev/null; then
                 echo "✅ $container_name recovered after restart"
                 return 0
               else
-                echo "❌ $container_name still unhealthy after restart – continuing anyway"
+                echo "❌ $container_name still unhealthy after restart - continuing anyway"
                 return 1
               fi
             }
@@ -156,7 +146,7 @@ jobs:
             docker network create shared-net 2>/dev/null || true
 
             # -----------------------------------------------------------
-            # 5. DEPLOY SERVICES IN ORDER WITH HEALTH CHECKS
+            # 5. DEPLOY WITH RETRY LOGIC
             # -----------------------------------------------------------
             chmod +x deploy.sh
             echo "⏳ Starting deployment with retry logic..."
@@ -178,45 +168,40 @@ jobs:
             done
 
             # -----------------------------------------------------------
-            # 6. POST‑DEPLOYMENT HEALTH CHECKS (NON‑FATAL)
+            # 6. POST‑DEPLOYMENT HEALTH CHECKS (NON-FATAL)
             # -----------------------------------------------------------
-            echo "⏳ Running post‑deployment health checks and auto‑recovery..."
+            echo "⏳ Running post‑deployment health checks and auto-recovery..."
 
-            # Telemetry server
             if [ "$DEPLOY_TELEMETRY" = "true" ]; then
               check_and_restart "telemetry-server" "http://localhost:3003/health"
             fi
 
-            # Domain service
             if [ "$DEPLOY_DOMAIN" = "true" ]; then
               echo "🔍 Checking domain-proxy..."
               if docker exec domain-proxy nginx -t 2>/dev/null; then
                 echo "✅ domain-proxy nginx config is valid"
               else
-                echo "⚠️ domain-proxy nginx config invalid – restarting..."
+                echo "⚠️ domain-proxy nginx config invalid - restarting..."
                 docker restart domain-proxy
                 sleep 5
                 if docker exec domain-proxy nginx -t 2>/dev/null; then
-                  echo "✅ domain-proxy recovered after restart"
+                  echo "✅ domain-proxy recovered"
                 else
-                  echo "❌ domain-proxy still unhealthy – continuing anyway"
+                  echo "❌ domain-proxy still unhealthy - continuing anyway"
                 fi
               fi
             fi
 
-            # Main server (mockapi-app)
             if [ "$DEPLOY_SERVER" = "true" ]; then
               check_and_restart "mockapi-app" "http://localhost:8081/health"
             fi
 
-            # Mock‑server
             if [ "$DEPLOY_MOCK" = "true" ]; then
               check_and_restart "mock-server" "http://localhost:8080/healthz"
             fi
 
-            # Client
             if [ "$DEPLOY_CLIENT" = "true" ]; then
               check_and_restart "client" "http://localhost:8082/"
             fi
 
-            echo "✅ Deployment complete – health checks completed (some may have warnings)."
+            echo "✅ Deployment complete - health checks completed (some may have warnings)."
