@@ -44,9 +44,8 @@ function TopologyGraph({ nodes, edges, logs, onNodeClick, onEdgeHover }) {
         dragView: true,
         dragNodes: false,
         multiselect: false,
-        keyboard: { zoom: true },   // ✅ moved inside interaction
+        // keyboard removed – not supported in this version
       },
-      // background removed – handled by CSS
     };
 
     networkRef.current = new Network(container, data, options);

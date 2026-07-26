@@ -5,8 +5,11 @@ services:
     image: redis:7-alpine
     container_name: telemetry-redis
     restart: unless-stopped
+    command: redis-server --port 6378
     networks:
       - shared-net
+    ports:
+      - "6378:6378"
     volumes:
       - redis_data:/data
 
@@ -14,16 +17,19 @@ services:
     build: ./server
     container_name: telemetry-server
     restart: unless-stopped
+    env_file:
+      - ./.env
     environment:
       - PORT=${PORT:-3003}
       - SESSION_SECRET=${SESSION_SECRET}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - JWT_SECRET=${JWT_SECRET}
       - DASHBOARD_USER=${DASHBOARD_USER:-admin}
       - DASHBOARD_PASS=${DASHBOARD_PASS:-password}
       - CLIENT_ORIGIN=${CLIENT_ORIGIN}
-      - NODE_ENV=${NODE_ENV:-production}
+      - NODE_ENV=${NODE_ENV:-development}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6378}
     ports:
-      - "${PORT:-3003}:3003"   # Expose for external monitoring if needed
+      - "3003:3003"
     depends_on:
       - redis
     networks:
@@ -37,7 +43,8 @@ services:
         - VITE_WS_URL=${VITE_WS_URL}
     container_name: telemetry-client
     restart: unless-stopped
-    # No host ports exposed – only accessed via domain service
+    ports:
+      - "8083:80"
     depends_on:
       - server
     networks:
@@ -51,6 +58,3 @@ networks:
 
 volumes:
   redis_data:
-
-
-  

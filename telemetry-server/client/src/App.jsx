@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useLogs } from './hooks/useLogs';
-import { useWebSocket } from './hooks/useWebSocket';
+import { useSocketIO } from './hooks/useSocketIO';
 import { useNetwork } from './hooks/useNetwork';
 import TopologyGraph from './components/TopologyGraph';
 import LogPanel from './components/LogPanel';
@@ -8,13 +8,14 @@ import NodeDetails from './components/NodeDetails';
 import './styles/index.css';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3003';
-const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:3003';
+const WS_URL = import.meta.env.VITE_WS_URL || 'http://localhost:3003';
 
 function App() {
   const [isAuth, setIsAuth] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
+  const [jwtToken, setJwtToken] = useState(null);
 
   const { logs, addLog, getLogsForNode, errorLogsForNode, completedLogsForNode, stats } = useLogs();
   const { nodes, edges } = useNetwork(logs);
@@ -22,30 +23,50 @@ function App() {
   const [edgeHoverLogs, setEdgeHoverLogs] = useState([]);
   const [edgeHoverData, setEdgeHoverData] = useState(null);
 
-  const { readyState } = useWebSocket(WS_URL, isAuth, (data) => {
-    if (data.type === 'log') {
-      addLog(data.data);
-    }
-  });
+  // Socket.IO connection (token optional – server falls back to session cookie)
+  const { isConnected } = useSocketIO(
+    WS_URL,
+    isAuth,                    // enabled only when authenticated
+    jwtToken,                  // may be null
+    (log) => addLog(log),
+    (trace) => console.log('Trace received', trace)
+  );
 
+  // ─── Fetch initial logs after auth ──────────────────────────
   useEffect(() => {
-    if (isAuth) {
-      fetch(`${API_BASE}/logs?limit=100`, { credentials: 'include' })
-        .then(res => res.json())
-        .then(data => {
-          if (data.logs) data.logs.forEach(log => addLog(log));
-        })
-        .catch(console.error);
-    }
-  }, [isAuth]);
+    if (!isAuth) return;
 
+    // Use the session cookie (credentials: 'include') – no need for Bearer token if cookie works.
+    // If you have a token, you can still include it, but we'll rely on the cookie.
+    fetch(`${API_BASE}/logs?limit=100`, {
+      credentials: 'include',
+      // Optionally include Authorization header if token exists
+      ...(jwtToken && { headers: { 'Authorization': `Bearer ${jwtToken}` } }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      })
+      .then((data) => {
+        if (data.logs) data.logs.forEach((log) => addLog(log));
+      })
+      .catch((err) => console.error('[App] Failed to load logs:', err));
+  }, [isAuth, jwtToken]);
+
+  // ─── Check auth status on load ──────────────────────────────
   useEffect(() => {
     fetch(`${API_BASE}/check-auth`, { credentials: 'include' })
-      .then(res => res.json())
-      .then(data => setIsAuth(data.authenticated))
+      .then((res) => res.json())
+      .then((data) => {
+        setIsAuth(data.authenticated);
+        if (data.authenticated) {
+          // If you want to store the JWT from the session (if returned), you could.
+        }
+      })
       .catch(() => setIsAuth(false));
   }, []);
 
+  // ─── Login handler ──────────────────────────────────────────
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoginError('');
@@ -57,6 +78,8 @@ function App() {
         body: JSON.stringify({ username, password }),
       });
       if (res.ok) {
+        const data = await res.json();
+        if (data.token) setJwtToken(data.token); // store token if returned
         setIsAuth(true);
         setUsername('');
         setPassword('');
@@ -72,6 +95,7 @@ function App() {
   const handleLogout = async () => {
     await fetch(`${API_BASE}/logout`, { method: 'POST', credentials: 'include' });
     setIsAuth(false);
+    setJwtToken(null);
     setSelectedNode(null);
   };
 
@@ -125,11 +149,10 @@ function App() {
     );
   }
 
-  const isLive = readyState === 1;
+  const isLive = isConnected;
 
   return (
     <div className="h-screen flex flex-col bg-[#1e1e2e] text-[#cdd6f4] font-mono">
-      {/* ─── Header ───────────────────────────────────────────── */}
       <header className="flex items-center justify-between px-4 py-2 border-b border-[#313244] shrink-0 bg-[#181825]/50">
         <div className="flex items-center gap-3">
           <h1 className="text-sm font-semibold text-[#89b4fa]">🌐 topology</h1>
@@ -141,16 +164,12 @@ function App() {
         <div className="flex items-center gap-3 text-[10px] text-[#6c7086]">
           <span>events: <span className="text-[#cdd6f4]">{stats.total}</span></span>
           <span>errors: <span className="text-[#f38ba8]">{stats.errors}</span></span>
-          <button
-            onClick={handleLogout}
-            className="px-2 py-1 bg-[#313244] hover:bg-[#45475a] rounded text-[10px] font-mono transition"
-          >
+          <button onClick={handleLogout} className="px-2 py-1 bg-[#313244] hover:bg-[#45475a] rounded text-[10px] font-mono transition">
             logout
           </button>
         </div>
       </header>
 
-      {/* ─── Main Layout ──────────────────────────────────────── */}
       <div className="flex-1 flex gap-3 p-3 min-h-0">
         <div className="flex-1 min-w-0">
           <TopologyGraph

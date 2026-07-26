@@ -81,6 +81,7 @@ export function useNetwork(logs) {
         smooth: false,
         width: 1,
         color: { color: '#89b4fa' },
+        label: DYNAMIC_EDGES_FROM_OPENRESTY.label,
       });
 
       DYNAMIC_EDGES_TO_BACKEND.forEach(({ to, dashes }) => {
@@ -94,6 +95,7 @@ export function useNetwork(logs) {
             smooth: false,
             width: 1,
             color: { color: '#6c7086' },
+            label: to === 'mongodb-atlas' ? 'store' : 'session',
           });
         }
       });
