@@ -364,7 +364,7 @@ const startServer = async () => {
 
   const upload = multer({ storage: multer.memoryStorage() });
 
-  // ---- LATENCY TEST ----
+  // ---- LATENCY TEST -----
   app.get('/api/latency-test', (req, res) => {
     res.json({ timestamp: Date.now() });
   });

@@ -12,6 +12,3 @@ start().catch(err => {
   console.error('[bullmq-worker] Fataal error:', err);
   process.exit(1);
 });
-
-
-

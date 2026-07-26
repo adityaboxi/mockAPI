@@ -24,9 +24,9 @@ setup_health_monitor() {
 
 declare -A HEALTH_URLS=(
   ["telemetry-server"]="http://localhost:3003/health"
-  ["mockapi-app"]="http://localhost:8081/health"
-  ["mock-server"]="http://localhost:8080/healthz"
-  ["client"]="http://localhost:8082/"
+  ["mockapi-app"]="http://localhost:8081"
+  ["mock-server"]="http://localhost:8080"
+  ["client"]="http://localhost:8082/home"
 )
 
 for container in "${!HEALTH_URLS[@]}"; do
@@ -97,7 +97,12 @@ wait_for_health() {
     sleep 10
   done
 
+  # ── Health check failed – print diagnostics ──────────────────
   echo "❌ $container_name failed to become healthy after $max_attempts attempts."
+  echo "🔍 Last 50 log lines from $container_name:"
+  docker logs "$container_name" --tail 50 2>&1 || echo "⚠️ Could not fetch logs."
+  echo "🔍 Current container status and port mappings:"
+  docker ps --filter "name=$container_name" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
   return 1
 }
 
@@ -212,12 +217,12 @@ fi
 
 # Mock-server
 if [ "$DEPLOY_MOCK" = "true" ]; then
-  wait_for_health "mock-server" "http://localhost:8080/healthz" || exit 1
+  wait_for_health "mock-server" "http://localhost:8080" || exit 1
 fi
 
 # Client
 if [ "$DEPLOY_CLIENT" = "true" ]; then
-  wait_for_health "client" "http://localhost:8082/" || exit 1
+  wait_for_health "client" "http://localhost:8082/home" || exit 1
 fi
 
 # Telemetry
