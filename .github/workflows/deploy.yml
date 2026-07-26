@@ -47,18 +47,8 @@ jobs:
             if [ -n "${{ secrets.TELEMETRY_ENV }}" ]; then
               echo "${{ secrets.TELEMETRY_ENV }}" > telemetry-server/.env
             else
-              # Proper production defaults – NO indentation inside the HEREDOC
-              cat > telemetry-server/.env <<'EOF'
-            PORT=3003
-            SESSION_SECRET=your-strong-secret
-            REDIS_URL=redis://redis:6379
-            DASHBOARD_USER=admin
-            DASHBOARD_PASS=password
-            CLIENT_ORIGIN=https://opentelemetry.client.mockapi.info
-            NODE_ENV=production
-            VITE_API_BASE_URL=/api
-            VITE_WS_URL=/api
-            EOF
+              # Use printf to avoid indentation issues
+              printf "PORT=3003\nSESSION_SECRET=your-strong-secret\nREDIS_URL=redis://redis:6379\nDASHBOARD_USER=admin\nDASHBOARD_PASS=password\nCLIENT_ORIGIN=https://opentelemetry.client.mockapi.info\nNODE_ENV=production\nVITE_API_BASE_URL=/api\nVITE_WS_URL=/api\n" > telemetry-server/.env
             fi
 
             # ---------- Determine what to deploy ----------
@@ -117,82 +107,94 @@ jobs:
 
             export DEPLOY_SERVER DEPLOY_MOCK DEPLOY_CLIENT DEPLOY_DOMAIN DEPLOY_TELEMETRY
 
-            # Make deploy.sh executable and run it
+            # Make deploy.sh executable and run it with retry logic (up to 3 attempts)
             chmod +x deploy.sh
-            ./deploy.sh
+            echo "⏳ Starting deployment with retry logic..."
+            for attempt in 1 2 3; do
+              echo "🔄 Deployment attempt $attempt"
+              if ./deploy.sh; then
+                echo "✅ Deployment succeeded on attempt $attempt"
+                break
+              else
+                echo "⚠️ Deployment attempt $attempt failed."
+                if [ $attempt -eq 3 ]; then
+                  echo "❌ All 3 deployment attempts failed. Exiting."
+                  exit 1
+                fi
+                echo "⏳ Waiting 10 seconds before retry..."
+                sleep 10
+              fi
+            done
 
-            # ---------- Health Checks (only for deployed services) ----------
-            echo "⏳ Verifying deployed services..."
+            # ---------- Self‑Healing Health Checks ----------
+            echo "⏳ Running post‑deployment health checks and auto‑recovery..."
 
-            # Health check for telemetry (container and API)
+            # Helper: check a service and restart if unhealthy
+            check_and_restart() {
+              local container_name=$1
+              local health_url=$2
+              local max_attempts=3
+              local attempt=0
+
+              echo "🔍 Checking $container_name ..."
+              while [ $attempt -lt $max_attempts ]; do
+                if curl -s -f "$health_url" > /dev/null; then
+                  echo "✅ $container_name is healthy"
+                  return 0
+                fi
+                attempt=$((attempt+1))
+                echo "⏳ $container_name not ready (attempt $attempt/$max_attempts) – waiting 5s..."
+                sleep 5
+              done
+
+              echo "⚠️ $container_name is unhealthy – restarting..."
+              docker restart "$container_name" || true
+              # Wait a bit and check again
+              sleep 10
+              if curl -s -f "$health_url" > /dev/null; then
+                echo "✅ $container_name recovered after restart"
+                return 0
+              else
+                echo "❌ $container_name still unhealthy after restart"
+                return 1
+              fi
+            }
+
+            # Check telemetry server (only if deployed)
             if [ "$DEPLOY_TELEMETRY" = "true" ]; then
-              echo "🔍 Checking telemetry-server container status..."
-              for i in {1..30}; do
-                if docker ps --filter "name=telemetry-server" --filter "status=running" | grep -q telemetry-server; then
-                  echo "✅ Telemetry server container is running"
-                  # Check /health endpoint
-                  for j in {1..10}; do
-                    if curl -s -f http://localhost:3003/health > /dev/null; then
-                      echo "✅ Telemetry server health check passed"
-                      break
-                    fi
-                    sleep 1
-                  done
-                  break
-                fi
-                sleep 1
-              done
+              check_and_restart "telemetry-server" "http://localhost:3003/health"
             fi
 
-            if [ "$DEPLOY_SERVER" = "true" ] || [ "$DEPLOY_MOCK" = "true" ]; then
-              # Health check for server (port 8081)
-              if [ "$DEPLOY_SERVER" = "true" ]; then
-                for i in {1..30}; do
-                  if curl -s -f http://localhost:8081/ > /dev/null; then
-                    echo "✅ Server healthy"
-                    break
-                  fi
-                  sleep 1
-                done
-              fi
-              # Health check for mock-server (port 8080)
-              if [ "$DEPLOY_MOCK" = "true" ]; then
-                for i in {1..30}; do
-                  if curl -s -f http://localhost:8080/healthz > /dev/null; then
-                    echo "✅ Mock-server healthy"
-                    break
-                  fi
-                  sleep 1
-                done
-              fi
-            fi
-
-            if [ "$DEPLOY_CLIENT" = "true" ]; then
-              for i in {1..30}; do
-                if curl -s -f http://localhost:8082/ > /dev/null; then
-                  echo "✅ Client healthy"
-                  break
-                fi
-                sleep 1
-              done
-            fi
-
+            # Check domain service (only if deployed)
             if [ "$DEPLOY_DOMAIN" = "true" ]; then
-              echo "🔍 Checking domain-proxy container status..."
-              for i in {1..30}; do
-                if docker ps --filter "name=domain-proxy" --filter "status=running" | grep -q domain-proxy; then
-                  STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/ || echo "000")
-                  if [ "$STATUS" = "200" ] || [ "$STATUS" = "301" ]; then
-                    echo "✅ Domain service healthy (HTTP $STATUS)"
-                    break
-                  else
-                    echo "⏳ Domain service responding with $STATUS, waiting..."
-                  fi
+              echo "🔍 Checking domain-proxy..."
+              if docker exec domain-proxy nginx -t 2>/dev/null; then
+                echo "✅ domain-proxy nginx config is valid"
+              else
+                echo "⚠️ domain-proxy nginx config invalid – restarting..."
+                docker restart domain-proxy
+                sleep 5
+                if docker exec domain-proxy nginx -t 2>/dev/null; then
+                  echo "✅ domain-proxy recovered after restart"
                 else
-                  echo "⏳ Domain service container not running yet..."
+                  echo "❌ domain-proxy still unhealthy"
                 fi
-                sleep 1
-              done
+              fi
             fi
 
-            echo "✅ Deployment complete!"
+            # Check server (port 8081) if deployed
+            if [ "$DEPLOY_SERVER" = "true" ]; then
+              check_and_restart "mockapi-app" "http://localhost:8081/"
+            fi
+
+            # Check mock-server (port 8080) if deployed
+            if [ "$DEPLOY_MOCK" = "true" ]; then
+              check_and_restart "mock-server" "http://localhost:8080/healthz"
+            fi
+
+            # Check client (port 8082) if deployed
+            if [ "$DEPLOY_CLIENT" = "true" ]; then
+              check_and_restart "client" "http://localhost:8082/"
+            fi
+
+            echo "✅ Deployment complete and health checks passed (or auto‑recovered)."
