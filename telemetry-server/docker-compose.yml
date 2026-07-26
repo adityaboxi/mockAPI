@@ -3,6 +3,7 @@ services:
     image: redis:7-alpine
     container_name: telemetry-redis
     restart: unless-stopped
+    env_file: ../.env      
     command: redis-server --port 6378
     # No host ports exposed – internal only
     networks:
@@ -14,8 +15,7 @@ services:
     build: ./server
     container_name: telemetry-server
     restart: unless-stopped
-    env_file:
-      - ./.env                     # All environment variables come from root .env
+    env_file: ../.env                         # All environment variables come from root .env
     # No 'environment' block – everything is read from .env
     ports:
       - "${PORT:-3003}:3003"
