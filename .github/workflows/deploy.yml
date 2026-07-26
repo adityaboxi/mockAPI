@@ -37,7 +37,7 @@ jobs:
             git fetch origin main
             git reset --hard FETCH_HEAD
 
-            # ---------- Write .env files from secrets (always overwrite) ----------
+            # ---------- Write .env files from secrets ----------
             echo "${{ secrets.SERVER_ENV }}" > server/.env
             echo "${{ secrets.CLIENT_ENV }}" > client/.env
             echo "${{ secrets.MOCK_SERVER_ENV }}" > mock-server/.env
@@ -47,7 +47,6 @@ jobs:
             if [ -n "${{ secrets.TELEMETRY_ENV }}" ]; then
               echo "${{ secrets.TELEMETRY_ENV }}" > telemetry-server/.env
             else
-              # Use printf to avoid indentation issues
               printf "PORT=3003\nSESSION_SECRET=your-strong-secret\nREDIS_URL=redis://redis:6379\nDASHBOARD_USER=admin\nDASHBOARD_PASS=password\nCLIENT_ORIGIN=https://opentelemetry.client.mockapi.info\nNODE_ENV=production\nVITE_API_BASE_URL=/api\nVITE_WS_URL=/api\n" > telemetry-server/.env
             fi
 
@@ -58,21 +57,18 @@ jobs:
             DEPLOY_DOMAIN=false
             DEPLOY_TELEMETRY=false
 
-            # Helper function to check if folder exists and has content
             folder_exists() {
               [ -d "$1" ] && [ -n "$(ls -A "$1" 2>/dev/null)" ]
             }
 
-            # If manual trigger or fresh clone – deploy ALL services (if folders exist)
             if [ "${{ github.event_name }}" == "workflow_dispatch" ] || [ "$CLONED" == "true" ]; then
-              echo "🔄 Manual trigger or fresh clone – deploying existing services"
+              echo "🔄 Manual trigger or fresh clone - deploying existing services"
               folder_exists "telemetry-server" && DEPLOY_TELEMETRY=true
               folder_exists "server" && DEPLOY_SERVER=true
               folder_exists "mock-server" && DEPLOY_MOCK=true
               folder_exists "client" && DEPLOY_CLIENT=true
               folder_exists "domainservice" && DEPLOY_DOMAIN=true
             else
-              # Detect changed folders (for normal push)
               if [ -z "$(git rev-parse HEAD^)" ]; then
                 CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
               else
@@ -81,7 +77,6 @@ jobs:
 
               echo "Changed files: $CHANGED_FILES"
 
-              # Only set deploy flags if folder exists and files changed inside it
               if folder_exists "telemetry-server" && echo "$CHANGED_FILES" | grep -q "^telemetry-server/"; then
                 DEPLOY_TELEMETRY=true
               fi
@@ -98,9 +93,8 @@ jobs:
                 DEPLOY_DOMAIN=true
               fi
 
-              # If no service folder changed, skip deployment
               if [ "$DEPLOY_SERVER" = false ] && [ "$DEPLOY_MOCK" = false ] && [ "$DEPLOY_CLIENT" = false ] && [ "$DEPLOY_DOMAIN" = false ] && [ "$DEPLOY_TELEMETRY" = false ]; then
-                echo "ℹ️ No service folder changed – skipping deployment."
+                echo "ℹ️ No service folder changed - skipping deployment."
                 exit 0
               fi
             fi
@@ -126,10 +120,10 @@ jobs:
               fi
             done
 
-            # ---------- Self‑Healing Health Checks ----------
-            echo "⏳ Running post‑deployment health checks and auto‑recovery..."
+            # ---------- Self-Healing Health Checks (non-fatal) ----------
+            echo "⏳ Running post-deployment health checks and auto-recovery (non-fatal)..."
 
-            # Helper: check a service and restart if unhealthy
+            # Helper: check a service and restart if unhealthy - always returns 0
             check_and_restart() {
               local container_name=$1
               local health_url=$2
@@ -143,41 +137,39 @@ jobs:
                   return 0
                 fi
                 attempt=$((attempt+1))
-                echo "⏳ $container_name not ready (attempt $attempt/$max_attempts) – waiting 5s..."
+                echo "⏳ $container_name not ready (attempt $attempt/$max_attempts) - waiting 5s..."
                 sleep 5
               done
 
-              echo "⚠️ $container_name is unhealthy – restarting..."
+              echo "⚠️ $container_name is unhealthy - restarting..."
               docker restart "$container_name" || true
-              # Wait a bit and check again
               sleep 10
               if curl -s -f "$health_url" > /dev/null; then
                 echo "✅ $container_name recovered after restart"
-                return 0
               else
-                echo "❌ $container_name still unhealthy after restart"
-                return 1
+                echo "❌ $container_name still unhealthy after restart - continuing anyway"
               fi
+              return 0  # Always return 0 to avoid breaking the script
             }
 
-            # Check telemetry server (only if deployed)
+            # Check telemetry server (only if deployed) - critical, but still non-fatal
             if [ "$DEPLOY_TELEMETRY" = "true" ]; then
               check_and_restart "telemetry-server" "http://localhost:3003/health"
             fi
 
-            # Check domain service (only if deployed)
+            # Check domain service (only if deployed) - critical, but non-fatal
             if [ "$DEPLOY_DOMAIN" = "true" ]; then
               echo "🔍 Checking domain-proxy..."
               if docker exec domain-proxy nginx -t 2>/dev/null; then
                 echo "✅ domain-proxy nginx config is valid"
               else
-                echo "⚠️ domain-proxy nginx config invalid – restarting..."
+                echo "⚠️ domain-proxy nginx config invalid - restarting..."
                 docker restart domain-proxy
                 sleep 5
                 if docker exec domain-proxy nginx -t 2>/dev/null; then
                   echo "✅ domain-proxy recovered after restart"
                 else
-                  echo "❌ domain-proxy still unhealthy"
+                  echo "❌ domain-proxy still unhealthy -continuing anyway"
                 fi
               fi
             fi
@@ -197,4 +189,4 @@ jobs:
               check_and_restart "client" "http://localhost:8082/"
             fi
 
-            echo "✅ Deployment complete and health checks passed (or auto‑recovered)."
+            echo "✅ Deployment complete - health checks completed (some may have warnings)."

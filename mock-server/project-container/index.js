@@ -29,8 +29,6 @@ const PORT = process.env.PORT || 3000;
 const REDIS_URL = process.env.INTERNAL_REDIS_URL || process.env.REDIS_URL || 'redis://redis-internal:6379';
 
 
-
-
 // Local fallback for rate limiting (if Redis is down)
 const localRateLimitStore = new Map();
 let redisWasDown = false; // tracks if Redis was previously unavailable

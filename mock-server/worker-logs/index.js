@@ -6,7 +6,7 @@ const Redis = require('ioredis');
 const nodemailer = require('nodemailer');
 const { Worker } = require('bullmq');
 
-// ---------- MODELS -------------
+// ---------- MODELS ---------------
 const ApiCallLog = require('./models/ApiCallLog');
 const BlockedIP = require('./models/BlockedIP');
 const TeamLatency = require('./models/TeamLatency');

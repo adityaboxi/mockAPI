@@ -227,7 +227,7 @@ const startServer = async () => {
   require('./queues/emailQueue');
   console.log('[Queue] ✅ Email worker loaded');
 
-  // ---------- CORS ------------
+  // ---------- CORS ---------------
   app.use(cors({
     origin: process.env.CLIENT_URL || 'http://localhost:8082',
     credentials: true,
