@@ -135,6 +135,10 @@ fi
 
 if [ "$DEPLOY_TELEMETRY" = "true" ]; then
   echo "📦 Building telemetry-server (via docker-compose build)..."
+  # ─── Source .env so client build args (VITE_*) are available ──
+  set -a
+  source telemetry-server/.env
+  set +a
   (cd telemetry-server && docker-compose build)
 fi
 
