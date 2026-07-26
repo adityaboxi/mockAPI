@@ -109,24 +109,28 @@ fi
 if [ "$DEPLOY_DOMAIN" = "true" ]; then
   echo "🔄 Deploying Domain Service (Nginx reverse proxy)..."
 
-  # ─── Check SSL certificates (corrected) ──────────────────
-  # We check for the actual certificate files, not directories.
-  CERT_FILES=(
-    "/etc/letsencrypt/live/opentelemetry.client.mockapi.info/fullchain.pem"  # covers api, opentelemetry.client, opentelemetry.server
+  # ─── Check the actual certificate files nginx uses ──────
+  # These paths match the ssl_certificate directives in nginx.conf
+  NEEDED_CERTS=(
+    "/etc/letsencrypt/live/opentelemetry.client.mockapi.info/fullchain.pem"
     "/etc/letsencrypt/live/client.mockapi.info/fullchain.pem"
     "/etc/letsencrypt/live/server.mockapi.info/fullchain.pem"
   )
-  MISSING_CERTS=false
-  for cert in "${CERT_FILES[@]}"; do
+  MISSING=false
+  for cert in "${NEEDED_CERTS[@]}"; do
     if [ ! -f "$cert" ]; then
       echo "⚠️ Missing certificate: $cert"
-      MISSING_CERTS=true
+      MISSING=true
     fi
   done
 
-  if [ "$MISSING_CERTS" = true ]; then
-    echo "❌ Some SSL certificates are missing. The container may fail to start."
-    echo "   Please obtain certificates for all subdomains before deploying."
+  if [ "$MISSING" = true ]; then
+    echo "❌ Some SSL certificates are missing."
+    echo "   To fix, run:"
+    echo "     docker stop domain-proxy"
+    echo "     sudo certbot certonly --standalone -d opentelemetry.client.mockapi.info -d api.mockapi.info -d opentelemetry.server.mockapi.info"
+    echo "     sudo certbot certonly --standalone -d client.mockapi.info -d server.mockapi.info"
+    echo "     docker start domain-proxy"
   fi
 
   # Stop and remove old container
@@ -201,7 +205,3 @@ if [ "$DEPLOY_DOMAIN" = "true" ]; then
 fi
 
 echo "✅ Deployment complete for selected services."
-
-
-
-
