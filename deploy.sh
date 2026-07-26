@@ -109,12 +109,9 @@ fi
 if [ "$DEPLOY_DOMAIN" = "true" ]; then
   echo "🔄 Deploying Domain Service (Nginx reverse proxy)..."
 
-  # ─── Check the actual certificate files nginx uses ──────
-  # These paths match the ssl_certificate directives in nginx.conf
+  # ─── Check the single certificate that covers all domains ──
   NEEDED_CERTS=(
     "/etc/letsencrypt/live/opentelemetry.client.mockapi.info/fullchain.pem"
-    "/etc/letsencrypt/live/client.mockapi.info/fullchain.pem"
-    "/etc/letsencrypt/live/server.mockapi.info/fullchain.pem"
   )
   MISSING=false
   for cert in "${NEEDED_CERTS[@]}"; do
@@ -125,11 +122,10 @@ if [ "$DEPLOY_DOMAIN" = "true" ]; then
   done
 
   if [ "$MISSING" = true ]; then
-    echo "❌ Some SSL certificates are missing."
-    echo "   To fix, run:"
+    echo "❌ SSL certificate is missing."
+    echo "   To obtain a certificate that covers all five domains, run:"
     echo "     docker stop domain-proxy"
-    echo "     sudo certbot certonly --standalone -d opentelemetry.client.mockapi.info -d api.mockapi.info -d opentelemetry.server.mockapi.info"
-    echo "     sudo certbot certonly --standalone -d client.mockapi.info -d server.mockapi.info"
+    echo "     sudo certbot certonly --standalone -d opentelemetry.client.mockapi.info -d api.mockapi.info -d opentelemetry.server.mockapi.info -d client.mockapi.info -d server.mockapi.info"
     echo "     docker start domain-proxy"
   fi
 

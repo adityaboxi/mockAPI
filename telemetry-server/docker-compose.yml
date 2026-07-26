@@ -1,15 +1,12 @@
-version: '3.8'
-
 services:
   redis:
     image: redis:7-alpine
     container_name: telemetry-redis
     restart: unless-stopped
     command: redis-server --port 6378
+    # No host ports exposed – internal only
     networks:
       - shared-net
-    ports:
-      - "6378:6378"
     volumes:
       - redis_data:/data
 
@@ -18,18 +15,10 @@ services:
     container_name: telemetry-server
     restart: unless-stopped
     env_file:
-      - ./.env
-    environment:
-      - PORT=${PORT:-3003}
-      - SESSION_SECRET=${SESSION_SECRET}
-      - JWT_SECRET=${JWT_SECRET}
-      - DASHBOARD_USER=${DASHBOARD_USER:-admin}
-      - DASHBOARD_PASS=${DASHBOARD_PASS:-password}
-      - CLIENT_ORIGIN=${CLIENT_ORIGIN}
-      - NODE_ENV=${NODE_ENV:-development}
-      - REDIS_URL=${REDIS_URL:-redis://redis:6378}
+      - ./.env                     # All environment variables come from root .env
+    # No 'environment' block – everything is read from .env
     ports:
-      - "3003:3003"
+      - "${PORT:-3003}:3003"
     depends_on:
       - redis
     networks:
@@ -39,6 +28,7 @@ services:
     build:
       context: ./client
       args:
+        # These build-time variables are read from the root .env
         - VITE_API_BASE_URL=${VITE_API_BASE_URL}
         - VITE_WS_URL=${VITE_WS_URL}
     container_name: telemetry-client
@@ -50,7 +40,7 @@ services:
     networks:
       - shared-net
     environment:
-      - NODE_ENV=${NODE_ENV:-production}
+      - NODE_ENV=${NODE_ENV:-production}   # Optional, runtime env for container
 
 networks:
   shared-net:

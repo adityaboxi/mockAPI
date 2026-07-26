@@ -1,8 +1,121 @@
 <!DOCTYPE html>
-<html>
-<head><title>Telemetry Server - Maintenance</title></head>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Telemetry · Maintenance</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #0f0e17;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            padding: 1rem;
+        }
+        .container {
+            max-width: 600px;
+            width: 100%;
+            background: rgba(17, 17, 27, 0.9);
+            backdrop-filter: blur(12px);
+            border: 1px solid #313244;
+            border-radius: 24px;
+            padding: 3rem 2.5rem;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+        }
+        .icon {
+            font-size: 4rem;
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+        h1 {
+            color: #cdd6f4;
+            font-weight: 600;
+            font-size: 1.8rem;
+            margin-bottom: 0.5rem;
+        }
+        h1 span {
+            color: #89b4fa;
+        }
+        p {
+            color: #a6adc8;
+            font-size: 1rem;
+            line-height: 1.6;
+            margin-bottom: 1.5rem;
+        }
+        .status {
+            display: inline-block;
+            background: #f38ba8;
+            color: #1e1e2e;
+            font-weight: 600;
+            padding: 0.25rem 1.2rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            letter-spacing: 0.5px;
+            margin-bottom: 1.8rem;
+        }
+        .retry-btn {
+            display: inline-block;
+            padding: 0.7rem 2rem;
+            background: #89b4fa;
+            color: #1e1e2e;
+            border: none;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+            text-decoration: none;
+        }
+        .retry-btn:hover {
+            background: #74c7ec;
+            transform: scale(1.02);
+        }
+        .retry-btn:active {
+            transform: scale(0.98);
+        }
+        .footer {
+            margin-top: 2rem;
+            color: #6c7086;
+            font-size: 0.8rem;
+        }
+        .footer a {
+            color: #89b4fa;
+            text-decoration: none;
+        }
+        .footer a:hover {
+            text-decoration: underline;
+        }
+        @media (max-width: 480px) {
+            .container {
+                padding: 2rem 1.5rem;
+            }
+            h1 {
+                font-size: 1.4rem;
+            }
+        }
+    </style>
+</head>
 <body>
-  <h1>🚧 Telemetry Server is temporarily unavailable</h1>
-  <p>Please check back later.</p>
+    <div class="container">
+        <span class="icon">🔧</span>
+        <h1>Telemetry <span>is under maintenance</span></h1>
+        <p>
+            We’re currently upgrading our service topology dashboard.<br />
+            Please check back in a few minutes.
+        </p>
+        <div class="status">🚧 Scheduled maintenance</div>
+        <button class="retry-btn" onclick="window.location.reload()">🔄 Try again</button>
+        <div class="footer">
+            Need help? <a href="mailto:support@mockapi.info">Contact support</a>
+        </div>
+    </div>
 </body>
 </html>
