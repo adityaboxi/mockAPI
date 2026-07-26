@@ -13,7 +13,7 @@ docker network create shared-net 2>/dev/null || true
 
 # ─── 0. SET UP HEALTH MONITOR (idempotent) ─────────────────────
 setup_health_monitor() {
-  echo "⏳ Setting up health monitor..."
+  echo "⏳ Setting up health monitor (cron job)..."
   SCRIPT_PATH="/usr/local/bin/health-monitor.sh"
   CRON_JOB="* * * * * $SCRIPT_PATH"
 
@@ -52,7 +52,6 @@ EOF
 
   sudo chmod +x $SCRIPT_PATH
 
-  # Add cron job if it doesn't already exist
   if ! sudo crontab -l 2>/dev/null | grep -q "$SCRIPT_PATH"; then
     (sudo crontab -l 2>/dev/null; echo "$CRON_JOB") | sudo crontab -
     echo "✅ Cron job added."
@@ -80,14 +79,14 @@ retry() {
   return 1
 }
 
-# ─── Helper: check and restart unhealthy container (non‑fatal) ──
-check_and_restart() {
+# ─── Helper: wait for a service to become healthy (fatal) ──────
+wait_for_health() {
   local container_name=$1
   local health_url=$2
-  local max_attempts=8          # increased from 3 to 8
+  local max_attempts=18          # 18 * 10s = 3 minutes total
   local attempt=0
 
-  echo "🔍 Checking $container_name ..."
+  echo "🔍 Waiting for $container_name to become healthy..."
   while [ $attempt -lt $max_attempts ]; do
     if curl -s -f "$health_url" > /dev/null; then
       echo "✅ $container_name is healthy"
@@ -95,101 +94,57 @@ check_and_restart() {
     fi
     attempt=$((attempt+1))
     echo "⏳ $container_name not ready (attempt $attempt/$max_attempts) – waiting 10s..."
-    sleep 10                    # increased from 5 to 10
+    sleep 10
   done
 
-  # If still unhealthy, try a restart and check again
-  echo "⚠️ $container_name is unhealthy – restarting..."
-  docker restart "$container_name" || true
-  sleep 15
-  if curl -s -f "$health_url" > /dev/null; then
-    echo "✅ $container_name recovered after restart"
-    return 0
-  else
-    echo "❌ $container_name still unhealthy – but we continue anyway."
-    return 1
-  fi
+  echo "❌ $container_name failed to become healthy after $max_attempts attempts."
+  return 1
 }
 
-# ─── 1. TELEMETRY ─────────────────────────────────────────────
-if [ "$DEPLOY_TELEMETRY" = "true" ]; then
-  echo "🚀 Deploying telemetry server..."
-  (
-    cd telemetry-server
-    docker-compose down
-    docker rmi telemetry-server:latest 2>/dev/null || true
-    retry docker-compose up -d --build
-  )
-  echo "✅ Telemetry deployed."
-fi
+# ─── PHASE 1: BUILD ALL IMAGES ──────────────────────────────
+echo "═══════════════════════════════════════════════════════════"
+echo "🛠️  PHASE 1: Building all images..."
+echo "═══════════════════════════════════════════════════════════"
 
-# ─── 2. SERVER ──────────────────────────────────────────────────
-if [ "$DEPLOY_SERVER" = "true" ]; then
-  echo "🚀 Deploying server..."
-  (
-    cd server
-    docker-compose down
-    docker rmi mockapi-server:latest 2>/dev/null || true
-    retry docker-compose up -d --build
-  )
-  DEPLOY_MOCK=true
-  echo "✅ Server deployed. Mock‑server rebuild triggered."
-fi
-
-# ─── 3. MOCK‑SERVER ────────────────────────────────────────────
-if [ "$DEPLOY_MOCK" = "true" ]; then
-  echo "🚀 Deploying mock-server..."
-  (
-    cd mock-server
-    docker-compose down
-    docker rmi mockapi-mock-server:latest 2>/dev/null || true
-    retry docker-compose --profile build-only up -d --build
-  )
-  echo "✅ Mock‑server deployed."
-fi
-
-# ─── 4. CLIENT ──────────────────────────────────────────────────
-if [ "$DEPLOY_CLIENT" = "true" ]; then
-  echo "🚀 Deploying client..."
-  (
-    cd client
-    docker-compose down
-    docker rmi mockapi-react:latest 2>/dev/null || true
-    retry docker-compose up -d --build
-  )
-  echo "✅ Client deployed."
-fi
-
-# ─── 5. DOMAIN SERVICE ─────────────────────────────────────────
+# Domain service (uses plain Dockerfile)
 if [ "$DEPLOY_DOMAIN" = "true" ]; then
-  echo "🔄 Deploying Domain Service (Nginx reverse proxy)..."
+  echo "📦 Building domainservice..."
+  (cd domainservice && docker build -t domainservice:latest .)
+fi
 
-  # ─── Check the single certificate that covers all domains ──
-  NEEDED_CERTS=(
-    "/etc/letsencrypt/live/opentelemetry.client.mockapi.info/fullchain.pem"
-  )
-  MISSING=false
-  for cert in "${NEEDED_CERTS[@]}"; do
-    if [ ! -f "$cert" ]; then
-      echo "⚠️ Missing certificate: $cert"
-      MISSING=true
-    fi
-  done
+# Services that use docker-compose – build via compose
+if [ "$DEPLOY_SERVER" = "true" ]; then
+  echo "📦 Building server (via docker-compose build)..."
+  (cd server && docker-compose build)
+fi
 
-  if [ "$MISSING" = true ]; then
-    echo "❌ SSL certificate is missing."
-    echo "   To obtain a certificate that covers all five domains, run:"
-    echo "     docker stop domain-proxy"
-    echo "     sudo certbot certonly --standalone -d opentelemetry.client.mockapi.info -d api.mockapi.info -d opentelemetry.server.mockapi.info -d client.mockapi.info -d server.mockapi.info"
-    echo "     docker start domain-proxy"
-  fi
+if [ "$DEPLOY_MOCK" = "true" ]; then
+  echo "📦 Building mock-server (via docker-compose build)..."
+  (cd mock-server && docker-compose build)
+fi
 
-  # Stop and remove old container
+if [ "$DEPLOY_CLIENT" = "true" ]; then
+  echo "📦 Building client (via docker-compose build)..."
+  (cd client && docker-compose build)
+fi
+
+if [ "$DEPLOY_TELEMETRY" = "true" ]; then
+  echo "📦 Building telemetry-server (via docker-compose build)..."
+  (cd telemetry-server && docker-compose build)
+fi
+
+echo "✅ All images built successfully."
+
+# ─── PHASE 2: START CONTAINERS ──────────────────────────────
+echo "═══════════════════════════════════════════════════════════"
+echo "🚀 PHASE 2: Starting containers..."
+echo "═══════════════════════════════════════════════════════════"
+
+# Domain service (special – not using docker-compose)
+if [ "$DEPLOY_DOMAIN" = "true" ]; then
+  echo "🔄 Starting domain-proxy..."
   docker stop domain-proxy 2>/dev/null || true
   docker rm domain-proxy 2>/dev/null || true
-
-  cd domainservice
-  docker build -t domainservice:latest .
 
   docker run -d \
     --name domain-proxy \
@@ -201,60 +156,76 @@ if [ "$DEPLOY_DOMAIN" = "true" ]; then
     --add-host host.docker.internal:host-gateway \
     --restart unless-stopped \
     domainservice:latest
-
-  cd ..
-  echo "✅ Domain Service container started."
-
-  # Validate nginx config
-  echo "⏳ Waiting for domain service to become healthy..."
-  for i in {1..30}; do
-    if docker exec domain-proxy nginx -t 2>/dev/null; then
-      echo "✅ Nginx configuration is valid"
-      break
-    fi
-    sleep 1
-  done
-  if ! docker exec domain-proxy nginx -t 2>/dev/null; then
-    echo "⚠️ Nginx configuration test failed – check logs"
-    docker logs domain-proxy --tail 20
-  fi
+  echo "✅ domain-proxy started."
 fi
 
-# ─── 6. POST‑DEPLOYMENT HEALTH CHECKS (non‑fatal) ──────────────
-echo "⏳ Running post‑deployment health checks (warnings only)..."
-
-if [ "$DEPLOY_TELEMETRY" = "true" ]; then
-  check_and_restart "telemetry-server" "http://localhost:3003/health" || echo "⚠️ Telemetry health check failed – continuing."
-fi
-
+# Services with docker-compose
 if [ "$DEPLOY_SERVER" = "true" ]; then
-  check_and_restart "mockapi-app" "http://localhost:8081/health" || echo "⚠️ Server health check failed – continuing."
+  echo "🔄 Starting server..."
+  (cd server && docker-compose down && retry docker-compose up -d)
+  echo "✅ server started."
 fi
 
 if [ "$DEPLOY_MOCK" = "true" ]; then
-  check_and_restart "mock-server" "http://localhost:8080/healthz" || echo "⚠️ Mock-server health check failed – continuing."
+  echo "🔄 Starting mock-server..."
+  (cd mock-server && docker-compose down && retry docker-compose --profile build-only up -d)
+  echo "✅ mock-server started."
 fi
 
 if [ "$DEPLOY_CLIENT" = "true" ]; then
-  check_and_restart "client" "http://localhost:8082/" || echo "⚠️ Client health check failed – continuing."
+  echo "🔄 Starting client..."
+  (cd client && docker-compose down && retry docker-compose up -d)
+  echo "✅ client started."
 fi
 
+if [ "$DEPLOY_TELEMETRY" = "true" ]; then
+  echo "🔄 Starting telemetry-server..."
+  (cd telemetry-server && docker-compose down && retry docker-compose up -d)
+  echo "✅ telemetry-server started."
+fi
+
+# ─── PHASE 3: HEALTH CHECKS (fatal if any fails) ─────────────
+echo "═══════════════════════════════════════════════════════════"
+echo "🔍 PHASE 3: Health checks (sequential) - failing fast..."
+echo "═══════════════════════════════════════════════════════════"
+
+# Domain (nginx config test)
 if [ "$DEPLOY_DOMAIN" = "true" ]; then
-  echo "🔍 Checking domain-proxy..."
-  if docker exec domain-proxy nginx -t 2>/dev/null; then
-    echo "✅ domain-proxy nginx config is valid"
-  else
-    echo "⚠️ domain-proxy config invalid – restarting..."
-    docker restart domain-proxy
-    sleep 5
+  echo "🔍 Checking domain-proxy nginx config..."
+  for i in {1..10}; do
     if docker exec domain-proxy nginx -t 2>/dev/null; then
-      echo "✅ domain-proxy recovered"
-    else
-      echo "❌ domain-proxy still unhealthy – continuing anyway"
+      echo "✅ domain-proxy nginx config is valid"
+      break
     fi
-  fi
+    sleep 2
+    if [ $i -eq 10 ]; then
+      echo "❌ domain-proxy nginx config invalid after 10 attempts."
+      exit 1
+    fi
+  done
 fi
 
-# ─── Force exit 0 to never fail the workflow ──────────────────
-echo "✅ Deployment complete – health checks are advisory."
+# Server
+if [ "$DEPLOY_SERVER" = "true" ]; then
+  wait_for_health "mockapi-app" "http://localhost:8081" || exit 1
+fi
+
+# Mock-server
+if [ "$DEPLOY_MOCK" = "true" ]; then
+  wait_for_health "mock-server" "http://localhost:8080/healthz" || exit 1
+fi
+
+# Client
+if [ "$DEPLOY_CLIENT" = "true" ]; then
+  wait_for_health "client" "http://localhost:8082/" || exit 1
+fi
+
+# Telemetry
+if [ "$DEPLOY_TELEMETRY" = "true" ]; then
+  wait_for_health "telemetry-server" "http://localhost:3003/health" || exit 1
+fi
+
+echo "═══════════════════════════════════════════════════════════"
+echo "✅ All deployed services are healthy."
+echo "✅ Deployment complete."
 exit 0

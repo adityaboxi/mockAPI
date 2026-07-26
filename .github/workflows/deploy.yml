@@ -20,6 +20,7 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
             set -e
+            set -o pipefail
             cd /home/ubuntu
 
             # -----------------------------------------------------------
@@ -48,7 +49,7 @@ jobs:
             if [ -n "${{ secrets.TELEMETRY_ENV }}" ]; then
               echo "${{ secrets.TELEMETRY_ENV }}" > telemetry-server/.env
             else
-              # Production defaults - adjust as needed
+              # Production defaults – adjust as needed
               printf "PORT=3003\nSESSION_SECRET=your-strong-secret\nREDIS_URL=redis://redis:6379\nDASHBOARD_USER=admin\nDASHBOARD_PASS=password\nCLIENT_ORIGIN=https://opentelemetry.client.mockapi.info\nNODE_ENV=production\nVITE_API_BASE_URL=/api\nVITE_WS_URL=/api\n" > telemetry-server/.env
             fi
 
@@ -65,7 +66,6 @@ jobs:
               [ -d "$1" ] && [ -n "$(ls -A "$1" 2>/dev/null)" ]
             }
 
-            # If manual trigger or fresh clone - deploy all existing services
             if [ "${{ github.event_name }}" == "workflow_dispatch" ] || [ "$CLONED" == "true" ]; then
               echo "🔄 Manual trigger or fresh clone - deploying all existing services"
               folder_exists "telemetry-server" && DEPLOY_TELEMETRY=true
@@ -74,16 +74,13 @@ jobs:
               folder_exists "client" && DEPLOY_CLIENT=true
               folder_exists "domainservice" && DEPLOY_DOMAIN=true
             else
-              # Detect changed files (handles first commit gracefully)
               if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
                 CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
               else
-                # First commit – list all added files
                 CHANGED_FILES=$(git diff --name-only --diff-filter=A HEAD)
               fi
               echo "Changed files: $CHANGED_FILES"
 
-              # Only set deploy flag if the folder exists AND a file inside it changed
               if folder_exists "telemetry-server" && echo "$CHANGED_FILES" | grep -q "^telemetry-server/"; then
                 DEPLOY_TELEMETRY=true
               fi
@@ -101,7 +98,6 @@ jobs:
               fi
             fi
 
-            # If nothing to deploy, exit early
             if [ "$DEPLOY_SERVER" = false ] && [ "$DEPLOY_MOCK" = false ] && [ "$DEPLOY_CLIENT" = false ] && [ "$DEPLOY_DOMAIN" = false ] && [ "$DEPLOY_TELEMETRY" = false ]; then
               echo "ℹ️ No service folder changed - skipping deployment."
               exit 0
@@ -110,98 +106,16 @@ jobs:
             export DEPLOY_SERVER DEPLOY_MOCK DEPLOY_CLIENT DEPLOY_DOMAIN DEPLOY_TELEMETRY
 
             # -----------------------------------------------------------
-            # 4. HELPER FUNCTIONS
+            # 4. ENSURE NETWORKS EXIST
             # -----------------------------------------------------------
-            check_and_restart() {
-              local container_name=$1
-              local health_url=$2
-              local max_attempts=3
-              local attempt=0
-
-              echo "🔍 Checking $container_name ..."
-              while [ $attempt -lt $max_attempts ]; do
-                if curl -s -f "$health_url" > /dev/null; then
-                  echo "✅ $container_name is healthy"
-                  return 0
-                fi
-                attempt=$((attempt+1))
-                echo "⏳ $container_name not ready (attempt $attempt/$max_attempts) – waiting 5s..."
-                sleep 5
-              done
-
-              echo "⚠️ $container_name is unhealthy - restarting..."
-              docker restart "$container_name" || true
-              sleep 10
-              if curl -s -f "$health_url" > /dev/null; then
-                echo "✅ $container_name recovered after restart"
-                return 0
-              else
-                echo "❌ $container_name still unhealthy after restart - continuing anyway"
-                return 1
-              fi
-            }
-
-            # Ensure networks exist
             docker network create orch-net 2>/dev/null || true
             docker network create shared-net 2>/dev/null || true
 
             # -----------------------------------------------------------
-            # 5. DEPLOY WITH RETRY LOGIC
+            # 5. RUN DEPLOY.SH (BUILD → START → HEALTH CHECKS)
             # -----------------------------------------------------------
             chmod +x deploy.sh
-            echo "⏳ Starting deployment with retry logic..."
+            echo "🚀 Running deploy.sh – this will build, start, and health-check all services."
+            ./deploy.sh   # If this fails, the workflow stops here (set -e is on)
 
-            for attempt in 1 2 3; do
-              echo "🔄 Deployment attempt $attempt"
-              if ./deploy.sh; then
-                echo "✅ Deployment succeeded on attempt $attempt"
-                break
-              else
-                echo "⚠️ Deployment attempt $attempt failed."
-                if [ $attempt -eq 3 ]; then
-                  echo "❌ All 3 deployment attempts failed. Exiting."
-                  exit 1
-                fi
-                echo "⏳ Waiting 10 seconds before retry..."
-                sleep 10
-              fi
-            done
-
-            # -----------------------------------------------------------
-            # 6. POST‑DEPLOYMENT HEALTH CHECKS (NON-FATAL)
-            # -----------------------------------------------------------
-            echo "⏳ Running post‑deployment health checks and auto-recovery..."
-
-            if [ "$DEPLOY_TELEMETRY" = "true" ]; then
-              check_and_restart "telemetry-server" "http://localhost:3003/health"
-            fi
-
-            if [ "$DEPLOY_DOMAIN" = "true" ]; then
-              echo "🔍 Checking domain-proxy..."
-              if docker exec domain-proxy nginx -t 2>/dev/null; then
-                echo "✅ domain-proxy nginx config is valid"
-              else
-                echo "⚠️ domain-proxy nginx config invalid - restarting..."
-                docker restart domain-proxy
-                sleep 5
-                if docker exec domain-proxy nginx -t 2>/dev/null; then
-                  echo "✅ domain-proxy recovered"
-                else
-                  echo "❌ domain-proxy still unhealthy - continuing anyway"
-                fi
-              fi
-            fi
-
-            if [ "$DEPLOY_SERVER" = "true" ]; then
-              check_and_restart "mockapi-app" "http://localhost:8081/health"
-            fi
-
-            if [ "$DEPLOY_MOCK" = "true" ]; then
-              check_and_restart "mock-server" "http://localhost:8080/healthz"
-            fi
-
-            if [ "$DEPLOY_CLIENT" = "true" ]; then
-              check_and_restart "client" "http://localhost:8082/"
-            fi
-
-            echo "✅ Deployment complete - health checks completed (some may have warnings)."
+            echo "✅ Deployment and health checks passed."

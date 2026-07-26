@@ -83,7 +83,6 @@ function registerRoute(definition) {
       return true;
     }
   }
-
   try {
     router.on(definition.method, fullPath, () => {}, definition);
   } catch (_) {
