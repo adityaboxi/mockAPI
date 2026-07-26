@@ -83,6 +83,8 @@ function verifyToken(token) {
   }
 }
 
+
+
 // ─── Routes: Public ───────────────────────────────────────────
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', logs: logs.length, traces: traces.length });

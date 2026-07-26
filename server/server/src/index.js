@@ -368,6 +368,7 @@ const startServer = async () => {
     res.json({ timestamp: Date.now() });
   });
 
+  
   // ---- LATENCY REPORT ----
   app.post('/api/latency-report', authenticateToken, async (req, res) => {
     console.log(`[API] POST /api/latency-report (user: ${req.user.username})`, req.body);
