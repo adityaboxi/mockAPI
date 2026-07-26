@@ -47,17 +47,17 @@ jobs:
             if [ -n "${{ secrets.TELEMETRY_ENV }}" ]; then
               echo "${{ secrets.TELEMETRY_ENV }}" > telemetry-server/.env
             else
-              # Proper production defaults (no hardcoded values)
+              # Proper production defaults – NO indentation inside the HEREDOC
               cat > telemetry-server/.env <<'EOF'
             PORT=3003
             SESSION_SECRET=your-strong-secret
             REDIS_URL=redis://redis:6379
             DASHBOARD_USER=admin
             DASHBOARD_PASS=password
-            CLIENT_ORIGIN=https://api.mockapi.info
+            CLIENT_ORIGIN=https://opentelemetry.client.mockapi.info
             NODE_ENV=production
-            VITE_API_BASE_URL=/telemetry/api
-            VITE_WS_URL=/telemetry/api
+            VITE_API_BASE_URL=/api
+            VITE_WS_URL=/api
             EOF
             fi
 
@@ -180,7 +180,6 @@ jobs:
             if [ "$DEPLOY_DOMAIN" = "true" ]; then
               echo "🔍 Checking domain-proxy container status..."
               for i in {1..30}; do
-                # Check if container is running and responds with 200 or 301 (redirect)
                 if docker ps --filter "name=domain-proxy" --filter "status=running" | grep -q domain-proxy; then
                   STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost/ || echo "000")
                   if [ "$STATUS" = "200" ] || [ "$STATUS" = "301" ]; then

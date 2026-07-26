@@ -66,9 +66,24 @@ if [ "$DEPLOY_DOMAIN" = "true" ]; then
     exit 1
   fi
 
-  if [ ! -f "/etc/letsencrypt/live/api.mockapi.info/fullchain.pem" ]; then
-    echo "⚠️ SSL certificate not found at /etc/letsencrypt/live/api.mockapi.info/fullchain.pem"
-    echo "⚠️ The container may fail to start if certificates are missing."
+  # Check for required SSL certificates
+  CERT_DIRS=(
+    "/etc/letsencrypt/live/api.mockapi.info"
+    "/etc/letsencrypt/live/opentelemetry.client.mockapi.info"
+    "/etc/letsencrypt/live/opentelemetry.server.mockapi.info"
+  )
+  MISSING_CERTS=false
+  for dir in "${CERT_DIRS[@]}"; do
+    if [ ! -f "$dir/fullchain.pem" ] || [ ! -f "$dir/privkey.pem" ]; then
+      echo "⚠️ Missing certificate in $dir"
+      MISSING_CERTS=true
+    fi
+  done
+
+  if [ "$MISSING_CERTS" = true ]; then
+    echo "❌ Some SSL certificates are missing. The container may fail to start."
+    echo "   Please obtain certificates for all subdomains before deploying."
+    # We continue anyway – nginx will fail if they are missing, but we warn.
   fi
 
   docker stop domain-proxy 2>/dev/null || true
@@ -84,12 +99,27 @@ if [ "$DEPLOY_DOMAIN" = "true" ]; then
     -p 80:80 \
     -p 443:443 \
     -v /etc/letsencrypt:/etc/letsencrypt:ro \
+    -v /var/www/certbot:/var/www/certbot:ro \
     --add-host host.docker.internal:host-gateway \
     --restart unless-stopped \
     domainservice:latest
 
   cd ..
   echo "✅ Domain Service container started"
+
+  # Health check: wait for nginx to start and test config
+  echo "⏳ Waiting for domain service to become healthy..."
+  for i in {1..30}; do
+    if docker exec domain-proxy nginx -t 2>/dev/null; then
+      echo "✅ Nginx configuration is valid"
+      break
+    fi
+    sleep 1
+  done
+  if ! docker exec domain-proxy nginx -t 2>/dev/null; then
+    echo "⚠️ Nginx configuration test failed – check logs"
+    docker logs domain-proxy --tail 20
+  fi
 fi
 
 echo "✅ Deployment complete for selected services."
