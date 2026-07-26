@@ -87,7 +87,18 @@ function verifyToken(token) {
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', logs: logs.length, traces: traces.length });
 });
-
+app.get('/', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    message: 'Telemetry server is running',
+    endpoints: {
+      health: '/health',
+      logs: '/logs (requires auth)',
+      traces: '/traces (requires auth)',
+      ingest: '/ingest',
+    },
+  });
+});
 app.get('/check-auth', (req, res) => {
   if (req.session?.user) {
     return res.json({ authenticated: true, method: 'session', user: req.session.user.username });
