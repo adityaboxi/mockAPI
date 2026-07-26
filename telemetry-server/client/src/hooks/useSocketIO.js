@@ -5,17 +5,27 @@ export function useSocketIO(serverUrl, enabled, token, onLog, onTrace) {
   const [isConnected, setIsConnected] = useState(false);
   const socketRef = useRef(null);
 
+  // ─── Keep latest callbacks in refs ──────────────────────────
+  const onLogRef = useRef(onLog);
+  const onTraceRef = useRef(onTrace);
+
+  // Update refs when callbacks change (without re‑connecting)
   useEffect(() => {
-    // Allow connection even if token is missing (server will fallback to session cookie)
+    onLogRef.current = onLog;
+  }, [onLog]);
+
+  useEffect(() => {
+    onTraceRef.current = onTrace;
+  }, [onTrace]);
+
+  // ─── Socket lifecycle ───────────────────────────────────────
+  useEffect(() => {
     if (!enabled) return;
 
-    // Build the connection options
     const options = {
       withCredentials: true,
       transports: ['websocket', 'polling'],
     };
-
-    // Only add auth if token is provided
     if (token) {
       options.auth = { token };
     }
@@ -31,29 +41,28 @@ export function useSocketIO(serverUrl, enabled, token, onLog, onTrace) {
     socket.on('disconnect', (reason) => {
       console.log('[SocketIO] Disconnected:', reason);
       setIsConnected(false);
-
-      // If the server initiated the disconnect, manually reconnect
       if (reason === 'io server disconnect') {
-        socket.connect();
+        socket.connect(); // manually reconnect if server closed it
       }
     });
 
     socket.on('init', (data) => {
       console.log('[SocketIO] Initial logs:', data.logs?.length);
-      if (data.logs) data.logs.forEach((log) => onLog(log));
+      if (data.logs) {
+        data.logs.forEach((log) => onLogRef.current(log));
+      }
     });
 
     socket.on('log', (logData) => {
-      onLog(logData);
+      onLogRef.current(logData);
     });
 
     socket.on('trace', (traceData) => {
-      if (onTrace) onTrace(traceData);
+      if (onTraceRef.current) onTraceRef.current(traceData);
     });
 
     socket.on('connect_error', (err) => {
       console.error('[SocketIO] Connection error:', err.message);
-      // Optionally, you can check if it's an authentication error
       if (err.message === 'Authentication error: token missing' || err.message === 'Authentication error: invalid token') {
         console.warn('[SocketIO] Authentication failed – ensure you are logged in');
       }
@@ -63,13 +72,21 @@ export function useSocketIO(serverUrl, enabled, token, onLog, onTrace) {
       console.log(`[SocketIO] Reconnection attempt ${attempt}`);
     });
 
+    // ─── Cleanup ──────────────────────────────────────────────
     return () => {
       if (socketRef.current) {
         socketRef.current.disconnect();
         socketRef.current = null;
       }
     };
-  }, [serverUrl, enabled, token]); // token is a dependency
+  }, [serverUrl, enabled, token]); // only reconnect when URL/enabled/token change
 
-  return { isConnected, socket: socketRef.current };
+  // ─── Expose a manual disconnect method ──────────────────────
+  const disconnect = () => {
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+    }
+  };
+
+  return { isConnected, socket: socketRef.current, disconnect };
 }
