@@ -17,7 +17,6 @@ function App() {
   const [loginError, setLoginError] = useState('');
   const [jwtToken, setJwtToken] = useState(null);
 
-
   
   const { logs, addLog, getLogsForNode, errorLogsForNode, completedLogsForNode, stats } = useLogs();
   const { nodes, edges } = useNetwork(logs);

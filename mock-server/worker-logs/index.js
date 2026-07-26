@@ -18,7 +18,7 @@ const redisInternal = require('./config/redisInternal');
 
 console.log('[worker-logs] 🚀 Starting.....');
 
-// ---------- MongoDB ----------
+// --------- MongoDB ----------
 if (!process.env.MONGO_URI) {
   console.error('[worker-logs] ❌ MONGO_URI is not set');
   process.exit(1);
