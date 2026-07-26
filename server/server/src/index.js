@@ -225,7 +225,7 @@ const startServer = async () => {
 
   // Load email worker (just requires the file, the worker starts automatically)
   require('./queues/emailQueue');
-  console.log('[Queue] ✅ Email worker loaded');
+  console.log('[Queue] ✅ Emaill worker loaded');
 
   // ---------- CORS ---------------
   app.use(cors({
