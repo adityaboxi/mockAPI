@@ -13,8 +13,6 @@ const TeamLatency = require('./models/TeamLatency');
 const Project = require('./models/Project');
 const User = require('./models/User');
 
-
-
 // Redis client for caching (used by latency worker)
 const redisInternal = require('./config/redisInternal');
 

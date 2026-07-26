@@ -90,6 +90,7 @@ function registerRoute(definition) {
     return false;
   }
 
+  
   routeDefinitions.set(key, definition);
   registeredKeys.add(key);
   return true;

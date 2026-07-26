@@ -252,6 +252,8 @@ async function sendRecoveryEmail(recoveryInfo) {
     return;
   }
 
+
+  
   const subject = `🔄 Project  Container Recovered – ${projectName}`;
   const body = `
     Your project "${projectName}" (${projectId}) container was automatically recovered at ${recoveredAt.toISOString()}.

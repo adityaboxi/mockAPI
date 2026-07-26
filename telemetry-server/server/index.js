@@ -89,7 +89,6 @@ app.get('/health', (req, res) => {
 });
 
 
-
 app.get('/check-auth', (req, res) => {
   if (req.session?.user) {
     return res.json({ authenticated: true, method: 'session', user: req.session.user.username });
