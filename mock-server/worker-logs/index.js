@@ -16,8 +16,6 @@ const User = require('./models/User');
 // Redis client for caching (used by latency worker)
 const redisInternal = require('./config/redisInternal');
 
-
-
 console.log('[worker-logs] 🚀 Starting.....');
 
 // ---------- MongoDB ----------
