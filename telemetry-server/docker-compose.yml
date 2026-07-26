@@ -2,10 +2,8 @@ services:
   redis:
     image: redis:7-alpine
     container_name: telemetry-redis
-    restart: unless-stopped
-    env_file: ../.env      
+    restart: unless-stopped  
     command: redis-server --port 6378
-    # No host ports exposed – internal only
     networks:
       - shared-net
     volumes:
@@ -15,8 +13,7 @@ services:
     build: ./server
     container_name: telemetry-server
     restart: unless-stopped
-    env_file: ../.env                         # All environment variables come from root .env
-    # No 'environment' block – everything is read from .env
+    env_file: ./.env                         # Only server needs runtime env
     ports:
       - "${PORT:-3003}:3003"
     depends_on:
@@ -28,19 +25,17 @@ services:
     build:
       context: ./client
       args:
-        # These build-time variables are read from the root .env
         - VITE_API_BASE_URL=${VITE_API_BASE_URL}
         - VITE_WS_URL=${VITE_WS_URL}
     container_name: telemetry-client
     restart: unless-stopped
+    # No env_file – client doesn't need runtime environment variables
     ports:
       - "8083:80"
     depends_on:
       - server
     networks:
       - shared-net
-    environment:
-      - NODE_ENV=${NODE_ENV:-production}   # Optional, runtime env for container
 
 networks:
   shared-net:
