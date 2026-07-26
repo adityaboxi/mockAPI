@@ -27,7 +27,9 @@ services:
     container_name: mockapi-app
     env_file: .env
     environment:
-      - CONTAINER_NAME=mockapi-app  
+      - CONTAINER_NAME=mockapi-app
+      - NODE_ENV=production
+      - PORT=3000
     networks:
       - backend
       - orch-net
@@ -37,23 +39,28 @@ services:
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   app-2:
     <<: *app-base
     container_name: mockapi-app-2
     environment:
       - CONTAINER_NAME=mockapi-app-2
+      - NODE_ENV=production
+      - PORT=3000
     extra_hosts:
       - "host.docker.internal:host-gateway"
-
-  # ---------- REMOVE app-3 COMPLETELY ----------
-  # app-3:
-  #   <<: *app-base
-  #   container_name: mockapi-app-3
-  #   environment:
-  #     - CONTAINER_NAME=mockapi-app-3
-  #   extra_hosts:
-  #     - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   bullmq-worker:
     build:
