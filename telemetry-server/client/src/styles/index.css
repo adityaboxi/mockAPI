@@ -5,8 +5,25 @@
 @layer base {
   * { @apply m-0 p-0 box-border; }
   body { @apply bg-[#1e1e2e] text-[#cdd6f4] font-mono antialiased h-screen overflow-hidden; }
-  ::-webkit-scrollbar { @apply w-1 h-1; }
-  ::-webkit-scrollbar-track { @apply bg-transparent; }
-  ::-webkit-scrollbar-thumb { @apply bg-[#313244] rounded-full; }
   ::selection { @apply bg-[#89b4fa]/30; }
+
+  /* ─── Global scrollbar styles ──────────────────────────── */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #313244 transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: #313244;
+    border-radius: 9999px;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: #45475a;
+  }
 }
