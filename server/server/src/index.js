@@ -325,7 +325,7 @@ app.post('/api/subscribeproject', authenticateToken, subscribeRouter);
 app.post('/api/change-password', authenticateToken, changePassword);
  // ================================================================
   // ROUTES
-  // ==============================================================
+  // =================================================================
   console.log('[Server] 📡 Registering routes...');
 
   // Auth routes
