@@ -1,14 +1,13 @@
 require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 const Project = require('../models/Project');
 const ProjectApiHistory = require('../models/ProjectApiHistory');
 const SystemEventLog = require('../models/SystemEventLog');
 const { storeMockDefinition } = require('../utils/redisMock');
 const { addMockSyncJob } = require('../queues/mockSyncQueue');
 
-
-
-
 const ALLOWED_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
+
 function buildActualFullUrl(protocol, host, projectId, version, urlPath, pathParams, queryParams) {
   const resolvedPath = (urlPath || '')
     .split('/')
@@ -41,9 +40,17 @@ async function add_api(req, res) {
   const aiResponseBool = airesponse === true || airesponse === 'true';
 
   try {
+    // ─── 1. Fetch project ──────────────────────────────────
     const project = await Project.findOne({ id: project_id });
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
+    }
+
+    // ─── 1.1 Check if project is active ──────────────────
+    if (!project.isActive) {
+      return res.status(403).json({
+        error: 'Cannot add APIs to an inactive project. Please activate the project first.'
+      });
     }
 
     if (!project.members.includes(username)) {
@@ -51,7 +58,15 @@ async function add_api(req, res) {
       await project.save();
     }
 
-    // ---- ProjectHistory ----
+    // ─── 2. Check API limit based on subscription ──────────
+    const maxApis = project.issubdcribe ? 30 : 5;
+    if (project.noofApis >= maxApis) {
+      return res.status(403).json({
+        error: `API limit reached. ${project.issubdcribe ? 'Subscribed projects can have up to 30 APIs.' : 'Unsubscribed projects can have up to 5 APIs. Please subscribe to increase the limit.'}`
+      });
+    }
+
+    // ─── 3. Project history ────────────────────────────────
     let projectHistory = await ProjectApiHistory.findOne({ projectCode: project.invitationCode });
     if (!projectHistory) {
       projectHistory = new ProjectApiHistory({
@@ -69,7 +84,7 @@ async function add_api(req, res) {
       return res.status(409).json({ error: 'URL path already exists. Use /update-api to add a new version.' });
     }
 
-    // ---- Extract fields --
+    // ─── 4. Extract fields ──────────────────────────────────
     const {
       protocol,
       method,
@@ -122,7 +137,7 @@ async function add_api(req, res) {
       protocol, host, customId, version, urlpath, pathParams, queryParams
     );
 
-    // ---- Build version object ----
+    // ─── 5. Build version object ──────────────────────────
     const newVersionObj = {
       protocol,
       method,
@@ -159,7 +174,11 @@ async function add_api(req, res) {
     projectHistory.endpoints.push(newEndpoint);
     await projectHistory.save();
 
-    // ---- Prepare definition data for Redis & worker ----
+    // ─── 6. Increment project API count ──────────────────
+    project.noofApis += 1;
+    await project.save();
+
+    // ─── 7. Store in Redis & queue ──────────────────────
     const definitionData = {
       projectId: customId,
       version,
@@ -167,14 +186,11 @@ async function add_api(req, res) {
       urlpath,
       apihistorydata: newVersionObj,
     };
-    
-
 
     await storeMockDefinition(customId, version, method, urlpath, definitionData);
-
     await addMockSyncJob('set', definitionData);
 
-    // ---- Creaystem event log ----
+    // ─── 8. Log event ────────────────────────────────────
     const newLog = await SystemEventLog.create({
       projectId: project_id,
       method: method.toUpperCase(),
@@ -203,4 +219,3 @@ async function add_api(req, res) {
 }
 
 module.exports = add_api;
-

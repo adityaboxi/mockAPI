@@ -124,6 +124,10 @@ const endpointSubSchema = new mongoose.Schema({
     type: String,
     trim: true,
   }],
+  noofVersions: {
+    type: Number,
+    default: 0
+  }
 }, {
   timestamps: true,
   _id: true

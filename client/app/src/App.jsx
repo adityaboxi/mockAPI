@@ -16,7 +16,8 @@ import Dashboard from './pages/Dashboard';
 import ApiToolsPage from './pages/ApiToolsPage';
 import NetworkTest from './pages/NetworkTest';      // (used inside ApiToolsPage)
 import OpenApi from './pages/OpenApi';              // (used inside ApiToolsPage)
-
+import ForgotPassword from './pages/ForgotPassword';
+import ChangePassword from "./pages/ChangePassword";
 // ─── Components ────────────────────────────────────────────────────
 import TitleUpdater from './components/TitleUpdater';
 
@@ -44,6 +45,10 @@ function App() {
         {/* Tools & Analytics */}
         <Route path="/tools" element={<ApiToolsPage />} />
         <Route path="/dashboard" element={<Dashboard />} />
+<Route path="/forgot-password" element={<ForgotPassword />} />
+
+
+<Route path="/change-password" element={<ChangePassword />} />
 
         {/* Fallback – any unknown route goes home */}
         <Route path="*" element={<Navigate to="/home" replace />} />

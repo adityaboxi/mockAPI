@@ -46,7 +46,15 @@ const projectSchema = new mongoose.Schema({
   updatedAt: {
     type: Date,
     default: Date.now
-  }
+  },
+  issubdcribe:{
+    type: Boolean,
+    default: false
+  },
+  noofApis:{
+    type: Number,
+    default: 0
+  },
 }, {
   timestamps: true
 });

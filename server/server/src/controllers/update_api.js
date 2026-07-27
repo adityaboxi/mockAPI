@@ -33,7 +33,6 @@ async function update_api(req, res) {
   const { project_id, urlpath, apihistorydata, airesponse } = req.body;
   const username = req.user?.username;
 
-
   if (!project_id || !urlpath || !apihistorydata) {
     return res.status(400).json({ error: 'Missing required fields: project_id, urlpath, apihistorydata' });
   }
@@ -41,40 +40,59 @@ async function update_api(req, res) {
   const aiResponseBool = airesponse === true || airesponse === 'true';
 
   try {
+    // ─── 1. Fetch project ──────────────────────────────────
     const project = await Project.findOne({ id: project_id });
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
-   
+
+    // ─── 1.1 Check if project is active ──────────────────
+    if (!project.isActive) {
+      return res.status(403).json({
+        error: 'Cannot update APIs in an inactive project. Please activate the project first.'
+      });
+    }
+
     if (!project.members.includes(username)) {
       project.members.push(username);
       await project.save();
     }
 
-    // ---- ProjectHistory ----
+    // ─── 2. Fetch project history ──────────────────────────
     const projectHistory = await ProjectApiHistory.findOne({ projectCode: project.invitationCode });
     if (!projectHistory) {
-     return res.status(404).json({ error: 'No API history found. Use /add-api first.' });
-    }
-   
-    if (!projectHistory.accessByUsernames.includes(username)) {
-     projectHistory.accessByUsernames.push(username);
+      return res.status(404).json({ error: 'No API history found. Use /add-api first.' });
     }
 
-    // ---- Find endpoint ----
+    if (!projectHistory.accessByUsernames.includes(username)) {
+      projectHistory.accessByUsernames.push(username);
+    }
+
+    // ─── 3. Find the endpoint ──────────────────────────────
     const endpointIndex = projectHistory.endpoints.findIndex(ep => ep.baseUrlPath === urlpath);
     if (endpointIndex === -1) {
       return res.status(404).json({ error: 'URL path not found. Use /add-api to create it.' });
     }
 
     const endpoint = projectHistory.endpoints[endpointIndex];
+
+    // ─── 4. Version limit check (based on subscription) ────
+    const maxVersions = project.issubdcribe ? 20 : 5;
+    const currentVersions = endpoint.versions.length;
+    if (currentVersions >= maxVersions) {
+      return res.status(403).json({
+        error: `Version limit reached. ${project.issubdcribe ? 'Subscribed projects can have up to 20 versions per endpoint.' : 'Unsubscribed projects can have up to 5 versions per endpoint. Please subscribe to increase the limit.'}`
+      });
+    }
+
+    // ─── 5. Determine new version number ──────────────────
     const existingVersions = endpoint.versions || [];
     const lastNum = existingVersions.length > 0
       ? parseInt(existingVersions[existingVersions.length - 1].version.replace('v', ''), 10)
       : 0;
     const newVersion = `v${lastNum + 1}`;
 
-    // ---- Extract fields ----
+    // ─── 6. Extract fields ──────────────────────────────────
     const {
       protocol,
       method,
@@ -124,7 +142,7 @@ async function update_api(req, res) {
 
     const actualFullUrl = buildActualFullUrl(protocol, host, customId, newVersion, urlpath, pathParams, queryParams);
 
-    // ---- Build new version object ----
+    // ─── 7. Build new version object ──────────────────────
     const newVersionObj = {
       protocol,
       method,
@@ -150,12 +168,13 @@ async function update_api(req, res) {
       updatedAt: new Date(),
     };
 
-    // ---- Update endpoint ----
+    // ─── 8. Push new version and update counts ──────────
     endpoint.versions.push(newVersionObj);
+    endpoint.noofVersions = endpoint.versions.length; // keep field in sync
     endpoint.updatedAt = new Date();
     await projectHistory.save();
 
-    // ---- Prepare definition data for Redis & worker ----
+    // ─── 9. Store in Redis and queue ──────────────────────
     const definitionData = {
       projectId: customId,
       version: newVersion,
@@ -165,10 +184,9 @@ async function update_api(req, res) {
     };
 
     await storeMockDefinition(customId, newVersion, method, urlpath, definitionData);
-
     await addMockSyncJob('set', definitionData);
 
-    // ---- Create system event log ----
+    // ─── 10. Create system event log ──────────────────────
     const newLog = await SystemEventLog.create({
       projectId: project_id,
       method: method.toUpperCase(),

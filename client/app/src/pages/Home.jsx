@@ -125,9 +125,7 @@ function Home() {
           <span>Projects</span>
         </button>
         <div className={`w-px h-5 ${isWhiteTheme ? "bg-gray-200" : "bg-zinc-700"}`} />
-        <span className={`text-xs ${mutedText}`}>
-          {isProjectListOpen ? `${projects?.length || 0} workspaces` : ""}
-        </span>
+     
       </div>
 
       {/* Center: Project name */}

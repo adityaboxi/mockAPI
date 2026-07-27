@@ -192,6 +192,32 @@ const Setting = () => {
           </div>
         </div>
 
+        {/* ─── 🔑 Change Password (NEW) ─── */}
+        <div
+          onClick={() => navigate("/change-password")}
+          className={`
+            p-4 rounded-xl border transition-all duration-200 cursor-pointer group
+            ${cardBg} ${borderColor} ${cardShadow} ${cardHover}
+            flex items-center justify-between gap-4
+          `}
+        >
+          <div className="space-y-0.5 select-none min-w-0 flex-1">
+            <h3 className="text-xs font-semibold tracking-wide">🔑 Change Password</h3>
+            <p className={`text-[11px] leading-relaxed ${mutedText}`}>
+              Update your password by verifying your current one.
+            </p>
+          </div>
+          <div
+            className={`
+              px-3.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-200
+              ${actionBtn} ${actionBtnHover}
+              whitespace-nowrap shrink-0
+            `}
+          >
+            Update
+          </div>
+        </div>
+
         {/* Subscription / Session */}
         <div
           className={`

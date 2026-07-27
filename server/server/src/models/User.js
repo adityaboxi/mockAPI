@@ -42,6 +42,10 @@ const userSchema = new mongoose.Schema({
   latency:{
     type: Number,
     default: 0
+  },
+  noofProjects:{
+    type: Number,
+    default: 0
   }
 }, { 
   timestamps: true 

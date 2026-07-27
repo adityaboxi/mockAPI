@@ -311,8 +311,19 @@ const startServer = async () => {
   const unsubscribe = require('./controllers/unsubscribe');
   const { ask_ai, getAiResult } = require('./controllers/ask_ai');
   const delete_project = require('./controllers/delete_project');
-
-  // ================================================================
+const subscribeRouter = require('./controllers/subscribeproject');
+const unsubscribeProject = require('./controllers/unsubscribeproject');
+const forgotPassword = require('./controllers/forgot_password');
+const verifyForgotOtp = require('./controllers/verify_forgot_otp');
+const resetPassword = require('./controllers/reset_password');
+const changePassword = require('./controllers/changePassword');
+app.post('/api/forgot-password', forgotPassword);
+app.post('/api/verify-forgot-otp', verifyForgotOtp);
+app.post('/api/reset-password', resetPassword);
+app.post('/api/unsubscribeproject', authenticateToken, unsubscribeProject);
+app.post('/api/subscribeproject', authenticateToken, subscribeRouter);
+app.post('/api/change-password', authenticateToken, changePassword);
+ // ================================================================
   // ROUTES
   // ==============================================================
   console.log('[Server] 📡 Registering routes...');
