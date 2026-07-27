@@ -4,6 +4,8 @@ import { authenticateUser } from "../auth/authenticateUser";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 
+
+
 function Login() {
   const navigate = useNavigate();
   const { login } = useAuth();
@@ -61,13 +63,13 @@ function Login() {
         className={`p-8 rounded-2xl border w-full max-w-sm transition-colors duration-200 ${cardBg} ${borderColor} ${shadow}`}
       >
         {/* Logo / Branding */}
-        <div className="text-center mb-6">
-          <div className="text-3xl mb-1">🚀</div>
-          <h1 className={`text-lg font-semibold ${isWhiteTheme ? "text-gray-800" : "text-white"}`}>
-            MockAPI
-          </h1>
-          <p className={`text-xs ${labelText}`}>Sign in to your account</p>
-        </div>
+      <div className="text-center mb-6">
+  <img src="/logo-2.svg" alt="Logo" className="block mx-auto w-8 h-8 mb-1" />
+  <h1 className={`text-lg font-semibold ${isWhiteTheme ? "text-gray-800" : "text-white"}`}>
+    MockAPI
+  </h1>
+  <p className={`text-xs ${labelText}`}>Sign in to your account</p>
+</div>
 
         {/* Username */}
         <div className="mb-4">
