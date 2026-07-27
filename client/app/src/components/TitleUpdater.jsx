@@ -1,5 +1,3 @@
-
-
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 
@@ -11,11 +9,17 @@ const matchers = [
   { test: (path) => path === '/signup', title: 'MockAPI - Sign Up' },
   { test: (path) => path === '/otp', title: 'MockAPI - Verify OTP' },
   { test: (path) => path === '/terms', title: 'MockAPI - Terms & Conditions' },
-  { test: (path) => path === '/setting', title: 'MockAPI - Settings' },
+  { test: (path) => path === '/setting', title: 'MockAPI - Settings' }, // if used
+  { test: (path) => path === '/settings', title: 'MockAPI - Settings' },
   { test: (path) => path === '/manageaccount', title: 'MockAPI - Manage Account' },
   { test: (path) => path === '/subscribe', title: 'MockAPI - Subscribe' },
   { test: (path) => path === '/projects', title: 'MockAPI - Projects' },
-  { test: (path) => path === '/settings', title: 'MockAPI - Settings' },
+
+  // ─── NEW PAGES ──────────────────────────────────────
+  { test: (path) => path === '/forgot-password', title: 'MockAPI - Forgot Password' },
+  { test: (path) => path === '/change-password', title: 'MockAPI - Change Password' },
+  { test: (path) => path === '/dashboard', title: 'MockAPI - Dashboard' },
+  { test: (path) => path === '/tools', title: 'MockAPI - Tools' },
 
   // Pattern matches (regex)
   { test: (path) => /^\/project\/[^/]+$/.test(path), title: 'MockAPI - Project Details' },
