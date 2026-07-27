@@ -1,16 +1,10 @@
-// controllers/ask_ai.js
-require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+require('../opentelemetry/universal-logger');
 
 const { redisClient } = require('../config/redis');
 const crypto = require('crypto');
 const aiQueue = require('../queues/aiQueue');
 const User = require('../models/User');
 
-// ---------- Helper Functions ----------
-
-/**
- * Recursively sort object keys to ensure consistent cache key generation.
- */
 function sortObjectKeys(obj) {
   if (obj === null || typeof obj !== 'object') return obj;
   if (Array.isArray(obj)) return obj.map(sortObjectKeys);
@@ -22,7 +16,6 @@ function sortObjectKeys(obj) {
     }, {});
 }
 
-
 function getCacheKey(payload) {
   const sortedPayload = sortObjectKeys(payload);
   const jsonStr = JSON.stringify(sortedPayload);
@@ -30,14 +23,12 @@ function getCacheKey(payload) {
   return `ai:response:${hash}`;
 }
 
-
 function getOriginalKey(payload) {
   const sortedPayload = sortObjectKeys(payload);
   const jsonStr = JSON.stringify(sortedPayload);
   const hash = crypto.createHash('md5').update(jsonStr).digest('hex');
   return `ai:original:${hash}`;
 }
-
 
 function generateSampleResponse(userInput) {
   return {
@@ -62,9 +53,6 @@ function generateSampleResponse(userInput) {
   };
 }
 
-/**
- * Merge the AI suggestion with the original user input (fallback).
- */
 function buildFinalResponse(aiResponse, userInput) {
   return {
     protocol: aiResponse.protocol ?? userInput.protocol ?? 'https',
@@ -88,10 +76,8 @@ function buildFinalResponse(aiResponse, userInput) {
   };
 }
 
-// ---------- Controllers ----------
 async function ask_ai(req, res) {
   try {
-    // 1. Authentication and user validation
     if (!req.user) {
       console.warn('[ask-ai] No user object – missing authentication middleware');
       return res.status(401).json({ error: 'Authentication required' });
@@ -101,18 +87,27 @@ async function ask_ai(req, res) {
     let username = null;
     let isSubscribed = false;
 
-    if (!isGuest) {
-      username = req.user.username;
-      if (!username) {
-        console.warn('[ask-ai] No username in token for non-guest');
-        return res.status(401).json({ error: 'Invalid user token' });
-      }
-      const userDoc = await User.findOne({ username });
-      if (!userDoc) {
-        console.warn(`[ask-ai] User not found: ${username}`);
-        return res.status(404).json({ error: 'User not found' });
-      }
-      isSubscribed = userDoc.subscribe === true;
+    // ─── Guest check ──────────────────────────────────────────────
+    if (isGuest) {
+      return res.status(403).json({ error: 'Guests cannot use AI features. Please sign up.' });
+    }
+
+    // ─── Fetch user and check subscription ──────────────────────
+    username = req.user.username;
+    if (!username) {
+      console.warn('[ask-ai] No username in token for non-guest');
+      return res.status(401).json({ error: 'Invalid user token' });
+    }
+    const userDoc = await User.findOne({ username });
+    if (!userDoc) {
+      console.warn(`[ask-ai] User not found: ${username}`);
+      return res.status(404).json({ error: 'User not found' });
+    }
+    isSubscribed = userDoc.subscribe === true;
+
+    // ─── Subscription check ──────────────────────────────────────
+    if (!isSubscribed) {
+      return res.status(403).json({ error: 'Subscription required to use AI features' });
     }
 
     // 2. Validate input
@@ -121,7 +116,7 @@ async function ask_ai(req, res) {
       return res.status(400).json({ error: 'Invalid input' });
     }
 
-    // 3. Check Redis cache for the AI response
+    // 3. Check Redis cache
     const cacheKey = getCacheKey(userInput);
     const cached = await redisClient.get(cacheKey);
     if (cached) {
@@ -130,19 +125,19 @@ async function ask_ai(req, res) {
       return res.status(200).json(result);
     }
 
-    // 4. Store the original payload for reverse_ai (with same TTL)
+    // 4. Store original payload for reverse_ai
     const ttl = parseInt(process.env.TTL_REVERSE_AI_RESPONSE, 10) || 120;
     const originalKey = getOriginalKey(userInput);
     await redisClient.setEx(originalKey, ttl, JSON.stringify(userInput));
     console.log(`[ask-ai] Stored original payload under: ${originalKey}`);
 
-    // 5. Enqueue the AI job
+    // 5. Enqueue AI job
     const job = await aiQueue.add('generate-ai', {
       userInput,
       userId: username,
       isGuest,
       isSubscribed,
-      cacheKey, // passes the key where the worker should store the AI response
+      cacheKey,
     });
 
     console.log(`[ask-ai] 🔥 Job enqueued: ${job.id} for user ${username || 'guest'}`);
@@ -154,7 +149,6 @@ async function ask_ai(req, res) {
       geminiInput: userInput.geminiInput?.substring(0, 50) + '...',
     });
 
-    // 6. Return 202 Accepted with jobId
     return res.status(202).json({
       jobId: job.id,
       status: 'queued',
@@ -164,7 +158,6 @@ async function ask_ai(req, res) {
     return res.status(500).json({ error: 'Failed to enqueue AI request' });
   }
 }
-
 
 async function getAiResult(req, res) {
   try {
@@ -185,7 +178,6 @@ async function getAiResult(req, res) {
       console.log(`[getAiResult] Failed reason:`, job.failedReason);
       return res.json({ status: 'failed', error: job.failedReason });
     } else {
-      // 'waiting', 'active', 'delayed', etc.
       return res.json({ status: 'pending' });
     }
   } catch (error) {

@@ -55,6 +55,10 @@ const projectSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  noofmemebers:{
+    type: Number,
+    default: 1
+  }
 }, {
   timestamps: true
 });
