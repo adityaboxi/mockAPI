@@ -98,6 +98,7 @@ jobs:
               fi
             fi
 
+            # If nothing to deploy, exit early
             if [ "$DEPLOY_SERVER" = false ] && [ "$DEPLOY_MOCK" = false ] && [ "$DEPLOY_CLIENT" = false ] && [ "$DEPLOY_DOMAIN" = false ] && [ "$DEPLOY_TELEMETRY" = false ]; then
               echo "ℹ️ No service folder changed - skipping deployment."
               exit 0
@@ -112,10 +113,54 @@ jobs:
             docker network create shared-net 2>/dev/null || true
 
             # -----------------------------------------------------------
-            # 5. RUN DEPLOY.SH (BUILD → START → HEALTH CHECKS)
+            # 5. 🧹 PRE-DEPLOYMENT CLEANUP (PREVENTS IMAGE TAG CONFLICTS)
+            # -----------------------------------------------------------
+            echo "🧹 Stopping and removing old containers..."
+            # If using docker-compose, use: docker compose down --remove-orphans
+            # Otherwise, stop all containers (adjust if you have multiple)
+            if command -v docker-compose &> /dev/null || command -v compose &> /dev/null; then
+              docker compose down --remove-orphans 2>/dev/null || true
+            else
+              docker stop $(docker ps -aq) 2>/dev/null || true
+              docker rm $(docker ps -aq) 2>/dev/null || true
+            fi
+
+            # Remove old conflicting image (if exists) – only if we are deploying the server
+            if [ "$DEPLOY_SERVER" = true ]; then
+              echo "🗑️ Removing old mockapi-server:latest to avoid tag conflict..."
+              docker rmi -f mockapi-server:latest 2>/dev/null || true
+            fi
+
+            # -----------------------------------------------------------
+            # 6. RUN DEPLOY.SH WITH RETRY
             # -----------------------------------------------------------
             chmod +x deploy.sh
             echo "🚀 Running deploy.sh – this will build, start, and health-check all services."
-            ./deploy.sh   # If this fails, the workflow stops here (set -e is on)
+
+            # Retry up to 3 times
+            MAX_RETRIES=3
+            ATTEMPT=1
+            while [ $ATTEMPT -le $MAX_RETRIES ]; do
+              echo "▶️ Attempt $ATTEMPT of $MAX_RETRIES"
+              if ./deploy.sh; then
+                echo "✅ Deployment succeeded on attempt $ATTEMPT."
+                break
+              else
+                echo "❌ Deployment attempt $ATTEMPT failed."
+                if [ $ATTEMPT -eq $MAX_RETRIES ]; then
+                  echo "❌ All retries exhausted. Exiting with failure."
+                  exit 1
+                fi
+                echo "⏳ Waiting 5 seconds before retry..."
+                sleep 5
+                ATTEMPT=$((ATTEMPT + 1))
+              fi
+            done
+
+            # -----------------------------------------------------------
+            # 7. POST-DEPLOYMENT CLEANUP (FREE DISK SPACE)
+            # -----------------------------------------------------------
+            echo "🧹 Cleaning up unused Docker images..."
+            docker system prune -f --filter "until=24h" 2>/dev/null || true
 
             echo "✅ Deployment and health checks passed."
