@@ -234,6 +234,10 @@ if [ "$DEPLOY_TELEMETRY" = "true" ]; then
   wait_for_health "telemetry-server" "http://localhost:3003/health" || exit 1
 fi
 
+# ─── COOLDOWN ──────────────────────────────────────────────────
+echo "⏳ All services healthy. Waiting 15 seconds cooldown before finishing deployment..."
+sleep 15
+
 echo "═══════════════════════════════════════════════════════════"
 echo "✅ All deployed services are healthy."
 echo "✅ Deployment complete."
