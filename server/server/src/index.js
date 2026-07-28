@@ -380,100 +380,118 @@ app.post('/api/change-password', authenticateToken, changePassword);
   });
 
   // ------ LATENCY REPORT -------
-  app.post('/api/latency-report', authenticateToken, async (req, res) => {
-    console.log(`[API] POST /api/latency-report (user: ${req.user.username})`, req.body);
-    try {
-      const { project_id, rtts } = req.body;
-      if (!project_id) {
-        console.warn('[API] Missing project_id in latency-report');
-        return res.status(400).json({ error: 'Missing project_id' });
-      }
+app.post('/api/latency-report', authenticateToken, async (req, res) => {
+  console.log(`[API] POST /api/latency-report (user: ${req.user.username})`, req.body);
+  try {
+    const { project_id, rtts } = req.body;
+    if (!project_id) {
+      console.warn('[API] Missing project_id in latency-report');
+      return res.status(400).json({ error: 'Missing project_id' });
+    }
 
-      let avgRtt;
-      if (Array.isArray(rtts) && rtts.length > 0) {
-        const sum = rtts.reduce((a, b) => a + b, 0);
-        avgRtt = Math.round(sum / rtts.length);
-      } else if (typeof rtts === 'number') {
-        avgRtt = Math.round(rtts);
-      } else {
-        console.warn('[API] Invalid rtts format:', rtts);
-        return res.status(400).json({ error: 'Invalid rtts, expected array or number' });
-      }
-      console.log(`[API] Computed avgRtt: ${avgRtt}ms`);
+    let avgRtt;
+    if (Array.isArray(rtts) && rtts.length > 0) {
+      const sum = rtts.reduce((a, b) => a + b, 0);
+      avgRtt = Math.round(sum / rtts.length);
+    } else if (typeof rtts === 'number') {
+      avgRtt = Math.round(rtts);
+    } else {
+      console.warn('[API] Invalid rtts format:', rtts);
+      return res.status(400).json({ error: 'Invalid rtts, expected array or number' });
+    }
+    console.log(`[API] Computed avgRtt: ${avgRtt}ms`);
 
-      const username = req.user.username;
+    const username = req.user.username;
 
-      // 1. Update User's latency field
-      console.log(`[DB] Updating user ${username} latency to ${avgRtt}`);
-      const user = await User.findOneAndUpdate(
-        { username },
-        { latency: avgRtt },
-        { new: true }
-      );
-      if (!user) {
-        console.warn(`[DB] User ${username} not found`);
-      } else {
-        console.log(`[DB] User ${username} updated`);
-      }
+    // 1. Update User's latency field
+    console.log(`[DB] Updating user ${username} latency to ${avgRtt}`);
+    const user = await User.findOneAndUpdate(
+      { username },
+      { latency: avgRtt },
+      { new: true }
+    );
+    if (!user) {
+      console.warn(`[DB] User ${username} not found`);
+    } else {
+      console.log(`[DB] User ${username} updated`);
+    }
 
-      // 2. Update or create TeamLatency for this user + project
-      console.log(`[DB] Updating TeamLatency for ${username} in project ${project_id}`);
-      let teamLat = await TeamLatency.findOne({ project_id, username });
-      if (teamLat) {
-        const total = teamLat.averageRtt * teamLat.sampleCount + avgRtt;
-        teamLat.sampleCount += 1;
-        teamLat.averageRtt = Math.round(total / teamLat.sampleCount);
-        await teamLat.save();
-        console.log(`[DB] TeamLatency updated: avg=${teamLat.averageRtt}, samples=${teamLat.sampleCount}`);
-      } else {
-        teamLat = await TeamLatency.create({
-          project_id,
-          username,
-          averageRtt: avgRtt,
-          sampleCount: 1,
-        });
-        console.log(`[DB] TeamLatency created: avg=${avgRtt}`);
-      }
-
-      // 3. Recalculate global ProjectLatency
-      console.log(`[DB] Recalculating ProjectLatency for project ${project_id}`);
-      const allTeamLatencies = await TeamLatency.find({ project_id });
-      let projectAvg = null;
-      if (allTeamLatencies.length > 0) {
-        const total = allTeamLatencies.reduce((sum, doc) => sum + doc.averageRtt, 0);
-        projectAvg = Math.round(total / allTeamLatencies.length);
-        console.log(`[DB] ProjectLatency computed: ${projectAvg}ms from ${allTeamLatencies.length} members`);
-
-        await ProjectLatency.findOneAndUpdate(
-          { project_id },
-          {
-            averageRtt: projectAvg,
-            sampleCount: allTeamLatencies.length,
-          },
-          { upsert: true, new: true }
-        );
-      }
-
-      // 4. Enqueue a job for further processing
-      console.log(`[Queue] Adding latency job to bullmq-latency-store for ${username}`);
-      latencyQueue.add('store-member-latency', {
+    // 2. Update or create TeamLatency for this user + project
+    console.log(`[DB] Updating TeamLatency for ${username} in project ${project_id}`);
+    let teamLat = await TeamLatency.findOne({ project_id, username });
+    if (teamLat) {
+      const total = teamLat.averageRtt * teamLat.sampleCount + avgRtt;
+      teamLat.sampleCount += 1;
+      teamLat.averageRtt = Math.round(total / teamLat.sampleCount);
+      await teamLat.save();
+      console.log(`[DB] TeamLatency updated: avg=${teamLat.averageRtt}, samples=${teamLat.sampleCount}`);
+    } else {
+      teamLat = await TeamLatency.create({
         project_id,
         username,
-        rtt: avgRtt,
-      }).catch(err => console.error('[Queue] Failed to add latency job:', err));
-
-      res.json({
-        success: true,
-        userLatency: avgRtt,
-        teamLatency: teamLat.averageRtt,
-        projectAverage: projectAvg,
+        averageRtt: avgRtt,
+        sampleCount: 1,
       });
-
-    } catch (err) {
-      console.error('[API] Error in latency-report:', err);
-      res.status(500).json({ error: 'Failed to save latency report' });
+      console.log(`[DB] TeamLatency created: avg=${avgRtt}`);
     }
-  });
+
+    // 3. Recalculate global ProjectLatency
+    console.log(`[DB] Recalculating ProjectLatency for project ${project_id}`);
+    const allTeamLatencies = await TeamLatency.find({ project_id });
+    let projectAvg = null;
+    if (allTeamLatencies.length > 0) {
+      const total = allTeamLatencies.reduce((sum, doc) => sum + doc.averageRtt, 0);
+      projectAvg = Math.round(total / allTeamLatencies.length);
+      console.log(`[DB] ProjectLatency computed: ${projectAvg}ms from ${allTeamLatencies.length} members`);
+
+      await ProjectLatency.findOneAndUpdate(
+        { project_id },
+        {
+          averageRtt: projectAvg,
+          sampleCount: allTeamLatencies.length,
+        },
+        { upsert: true, new: true }
+      );
+    }
+
+    // =============================================================
+    // ★ NEW: Send the PROJECT AVERAGE to BullMQ for OpenResty
+    // =============================================================
+    if (projectAvg !== null && projectAvg > 0) {
+      try {
+        await latencyQueue.add('update-project-avg', {
+          project_id,
+          averageRtt: projectAvg,
+        });
+        console.log(`[Queue] ✅ Enqueued project average for ${project_id}: ${projectAvg}ms`);
+      } catch (err) {
+        console.error('[Queue] Failed to enqueue project average:', err);
+        // Non‑critical – we don't fail the whole request
+      }
+    }
+
+    // 4. Enqueue a job for further processing (per‑user, keep existing)
+    console.log(`[Queue] Adding latency job to bullmq-latency-store for ${username}`);
+    latencyQueue.add('store-member-latency', {
+      project_id,
+      username,
+      rtt: avgRtt,
+    }).catch(err => console.error('[Queue] Failed to add latency job:', err));
+
+    res.json({
+      success: true,
+      userLatency: avgRtt,
+      teamLatency: teamLat.averageRtt,
+      projectAverage: projectAvg,
+    });
+
+  } catch (err) {
+    console.error('[API] Error in latency-report:', err);
+    res.status(500).json({ error: 'Failed to save latency report' });
+  }
+});
+
+
 
   // ================================================================
   //  ASYNC OPENAPI IMPORT WITH JOB ID

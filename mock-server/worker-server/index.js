@@ -744,14 +744,27 @@ const mockSyncWorker = new Worker(
 // WORKER 3: LATENCY STORE (Internal Redis)
 // ================================================================
 console.log('[worker-server] 📡 Creating latency-store worker...');
+// Inside worker-server.js – replace the existing latencyWorker
+
 const latencyWorker = new Worker(
-  'latency-store',
+  'bullmq-latency-store',
   async (job) => {
-    console.log(`[latency-store] 📨 Received job ${job.id}:`, JSON.stringify(job.data, null, 2));
-    const { project_id, username, rtt } = job.data;
-    const key = `latency:${project_id}:${username}`;
-    await internalRedis.set(key, rtt);
-    console.log(`[latency-store] ✅ Saved ${username} RTT: ${rtt}ms for project ${project_id}`);
+    const { project_id, username, rtt, averageRtt } = job.data;
+
+    if (averageRtt !== undefined && averageRtt !== null) {
+      // ✅ Store the team average under the key OpenResty expects
+      const key = `team:latency:${project_id}`;
+      await internalRedis.setEx(key, 60, String(averageRtt));
+      console.log(`[latency-worker] Stored team:latency:${project_id} = ${averageRtt}ms`);
+      return;
+    }
+
+    // Per‑user RTT – store with the "user:" prefix
+    if (project_id && username) {
+      const key = `user:latency:${project_id}:${username}`;
+      await internalRedis.set(key, String(rtt || 0));
+      console.log(`[latency-worker] Stored ${key} = ${rtt}ms`);
+    }
   },
   {
     connection: connectionOpts,
