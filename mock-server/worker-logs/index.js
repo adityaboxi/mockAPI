@@ -1,4 +1,5 @@
 
+require('./opentelemetry/universal-logger');  // <-- Add this line FIRST
 
 require('dotenv').config();
 const mongoose = require('mongoose');

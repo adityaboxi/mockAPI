@@ -1,4 +1,5 @@
 // bullmq-worker/workers/aiWorker.js
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 const { Worker } = require('bullmq');
 const { Groq } = require('groq-sdk');
 const { redisClient } = require('../config/redis');

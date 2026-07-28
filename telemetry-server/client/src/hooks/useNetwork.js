@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { DataSet } from 'vis-data';
 import { NODE_DEFS, FIXED_EDGES } from './diagramData';
 
@@ -9,11 +9,12 @@ const DYNAMIC_EDGES_TO_BACKEND = [
 ];
 
 let dynamicNodeCount = 0;
-const DYNAMIC_START_X = 390;
+const DYNAMIC_START_X = 600;   // placed to the right of Redis nodes
 const DYNAMIC_START_Y = 200;
 const DYNAMIC_Y_STEP = 40;
 
 export function useNetwork(logs) {
+  // ─── Static nodes ──────────────────────────────────────────────
   const [nodes] = useState(() => {
     const ds = new DataSet();
     Object.entries(NODE_DEFS).forEach(([id, def]) => {
@@ -33,6 +34,7 @@ export function useNetwork(logs) {
     return ds;
   });
 
+  // ─── Static edges ──────────────────────────────────────────────
   const [edges] = useState(() => {
     const ds = new DataSet();
     FIXED_EDGES.forEach((def, index) => {
@@ -48,21 +50,24 @@ export function useNetwork(logs) {
     return ds;
   });
 
-  const processedContainers = useRef(new Set());
-
-  // Dynamically map new containers received in runtime logs
+  // ─── Dynamically add new containers and edges ──────────────────
   useEffect(() => {
-    const newContainers = logs
-      .map((log) => log.container)
-      .filter((name) => name && !NODE_DEFS[name] && !processedContainers.current.has(name));
+    // Find containers that are not static and not yet added
+    const existingNodeIds = new Set(nodes.getIds());
 
-    newContainers.forEach((name) => {
+    logs.forEach((log) => {
+      const container = log.container;
+      if (!container) return;
+      if (NODE_DEFS[container]) return;          // static – skip
+      if (existingNodeIds.has(container)) return; // already added
+
+      // ── Add node ──
       const yPos = DYNAMIC_START_Y + dynamicNodeCount * DYNAMIC_Y_STEP;
       dynamicNodeCount++;
 
       nodes.add({
-        id: name,
-        label: name,
+        id: container,
+        label: container,
         shape: 'box',
         font: { color: '#cdd6f4', size: 12, face: 'monospace' },
         margin: 10,
@@ -73,38 +78,47 @@ export function useNetwork(logs) {
         fixed: true,
       });
 
-      edges.add({
-        id: `dyn-edge-openresty-${name}`,
-        from: DYNAMIC_EDGES_FROM_OPENRESTY.from,
-        to: name,
-        arrows: 'to',
-        smooth: false,
-        width: 1,
-        color: { color: '#89b4fa' },
-        label: DYNAMIC_EDGES_FROM_OPENRESTY.label,
-      });
+      // ── Edge from openresty to container ──
+      const edgeOpenId = `dyn-edge-openresty-${container}`;
+      if (!edges.get(edgeOpenId)) {
+        edges.add({
+          id: edgeOpenId,
+          from: DYNAMIC_EDGES_FROM_OPENRESTY.from,
+          to: container,
+          arrows: 'to',
+          smooth: false,
+          width: 1,
+          color: { color: '#89b4fa' },
+          label: DYNAMIC_EDGES_FROM_OPENRESTY.label,
+        });
+      }
 
+      // ── Edges from container to backends ──
       DYNAMIC_EDGES_TO_BACKEND.forEach(({ to, dashes }) => {
-        if (nodes.get(to)) {
-          edges.add({
-            id: `dyn-edge-${name}-${to}`,
-            from: name,
-            to,
-            dashes: dashes || false,
-            arrows: 'to',
-            smooth: false,
-            width: 1,
-            color: { color: '#6c7086' },
-            label: to === 'mongodb-atlas' ? 'store' : 'session',
-          });
+        if (nodes.get(to)) {   // only if the target node exists
+          const edgeBackId = `dyn-edge-${container}-${to}`;
+          if (!edges.get(edgeBackId)) {
+            edges.add({
+              id: edgeBackId,
+              from: container,
+              to,
+              dashes: dashes || false,
+              arrows: 'to',
+              smooth: false,
+              width: 1,
+              color: { color: '#6c7086' },
+              label: to === 'mongodb-atlas' ? 'store' : 'session',
+            });
+          }
         }
       });
 
-      processedContainers.current.add(name);
+      // Remember that we've added this container
+      existingNodeIds.add(container);
     });
   }, [logs, nodes, edges]);
 
-  // Dynamically highlight nodes matching live error status
+  // ─── Update node borders based on recent logs ──────────────────
   const updateNodeStatus = useCallback(() => {
     const recent = logs.slice(0, 30);
     nodes.forEach((node) => {

@@ -8,6 +8,10 @@
   },
   "dependencies": {
     "bullmq": "^5.0.0",
+     "@opentelemetry/exporter-logs-otlp-http": "^0.221.0",
+    "@opentelemetry/resources": "^2.10.0",
+    "@opentelemetry/sdk-logs": "^0.221.0",
+    "@opentelemetry/semantic-conventions": "^1.43.0",
     "dotenv": "^16.0.0",
     "groq-sdk": "^0.5.0",
     "redis": "^6.0.0"

@@ -1,4 +1,5 @@
 // bullmq-worker/index.js
+require('./opentelemetry/universal-logger');  // <-- Add this line FIRST
 require('dotenv').config();
 const { connectRedis } = require('./config/redis');
 const aiWorker = require('./workers/aiWorker');

@@ -8,6 +8,10 @@
     "dev": "nodemon index.js"
   },
   "dependencies": {
+    "@opentelemetry/exporter-logs-otlp-http": "^0.221.0",
+    "@opentelemetry/resources": "^2.10.0",
+    "@opentelemetry/sdk-logs": "^0.221.0",
+    "@opentelemetry/semantic-conventions": "^1.43.0",
     "bcryptjs": "^2.4.3",
     "bullmq": "^5.34.3",
     "cron": "^3.1.7",
@@ -15,7 +19,6 @@
     "dotenv": "^16.4.5",
     "ioredis": "^5.6.0",
     "mongoose": "^8.9.5",
-    "nodemailer": "^6.9.16"
+    "nodemailer": "^9.0.3"
   }
 }
-

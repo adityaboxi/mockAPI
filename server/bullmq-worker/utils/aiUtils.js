@@ -1,4 +1,5 @@
 // bullmq-worker/utils/aiUtils.js
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 const crypto = require('crypto');
 
 function sortObjectKeys(obj) {

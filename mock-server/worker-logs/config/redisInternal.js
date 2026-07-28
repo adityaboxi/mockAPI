@@ -1,3 +1,5 @@
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 const redis = require('redis');
 
 const INTERNAL_REDIS_URL = process.env.INTERNAL_REDIS_URL || 'redis://redis-internal:6379';

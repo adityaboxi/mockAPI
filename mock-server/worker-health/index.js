@@ -1,4 +1,6 @@
 require('dotenv').config();
+require('./opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 const mongoose = require('mongoose');
 const Redis = require('ioredis');
 const Docker = require('dockerode');

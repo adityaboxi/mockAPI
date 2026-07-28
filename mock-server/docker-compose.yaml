@@ -8,6 +8,14 @@ services:
     networks:
       - orch-net
     restart: unless-stopped
+    environment:
+      - CONTAINER_NAME=redis-internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
   # ======================== PROJECT CONTAINER BUILDER ========================
   project-container-builder:
@@ -16,6 +24,7 @@ services:
     profiles:
       - build-only
     command: echo "Image built"
+    # No need for CONTAINER_NAME or healthcheck – it's a build‑only service.
 
   # ======================== WORKER SERVER (Project containers) ========================
   worker-server:
@@ -32,6 +41,15 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
+    environment:
+      - CONTAINER_NAME=worker-server
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   worker-server-2:
     build: ./worker-server
@@ -47,8 +65,17 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
+    environment:
+      - CONTAINER_NAME=worker-server-2
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
-  # ✅ Corrected worker-health
+  # ======================== WORKER HEALTH ========================
   worker-health:
     build:
       context: ./worker-health
@@ -64,6 +91,15 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
+    environment:
+      - CONTAINER_NAME=worker-health
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   # ======================== OPENRESTY (API Gateway) ========================
   openresty:
@@ -77,12 +113,19 @@ services:
       - INTERNAL_REDIS_PORT=${INTERNAL_REDIS_PORT}
       - EXTERNAL_REDIS_HOST=${EXTERNAL_REDIS_HOST}
       - EXTERNAL_REDIS_PORT=${EXTERNAL_REDIS_PORT}
+      - CONTAINER_NAME=openresty
     networks:
       - orch-net
       - shared-net
     depends_on:
       - redis-internal
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   # ======================== WORKER LOGS (BullMQ consumers) ========================
   worker-logs:
@@ -97,6 +140,15 @@ services:
     depends_on:
       - redis-internal
     restart: unless-stopped
+    environment:
+      - CONTAINER_NAME=worker-logs
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   redis_data:

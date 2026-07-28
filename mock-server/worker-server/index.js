@@ -1,3 +1,5 @@
+require('./opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 require('dotenv').config();
 const { Worker, Queue } = require('bullmq');
 const Docker = require('dockerode');

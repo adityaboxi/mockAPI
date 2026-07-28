@@ -1,3 +1,5 @@
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 const mongoose = require('mongoose');
 
 const versionSubSchema = new mongoose.Schema({

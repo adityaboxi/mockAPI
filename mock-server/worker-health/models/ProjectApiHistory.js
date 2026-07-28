@@ -1,3 +1,5 @@
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 const mongoose = require('mongoose');
 
 // Version Sub-Schema (stores all configuration for a single API version)

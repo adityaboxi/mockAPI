@@ -1,3 +1,5 @@
+require('./opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 const express = require('express');
 const cookieParser = require('cookie-parser');
 const compression = require('compression');

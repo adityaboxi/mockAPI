@@ -1,4 +1,5 @@
 // bullmq-worker/config/redis.js
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 const redis = require('redis');
 
 const REDIS_URL = process.env.REDIS_URL;
