@@ -201,4 +201,3 @@ function NodeDetails({ nodeId, logs = [], errorLogs = [], completedLogs = [], on
 
 export default NodeDetails;
 
-

@@ -70,7 +70,7 @@ const io = new Server(server, {
 });
 console.log('[Socket] ✅ Socket.IO server initialized');
 
-let pubClient, subClient; // may remain undefined if adapter fails
+let pubClient, subClient;
 let mainRedisClient;
 let aiSubscriber, logSubscriber, historySubscriber;
 let latencyQueue, projectQueue, mockSyncQueue, openapiImportQueue;
@@ -78,8 +78,6 @@ let heartbeatInterval, dataPollingInterval;
 
 // -----------------------------------------------------------------
 //  HELPER: aggregateAllLatencies
-//  Returns a Map of "projectId::path::method" -> avg latency (ms)
-//  over the last 24h, based on total_latency (server + team + user).
 // -----------------------------------------------------------------
 async function aggregateAllLatencies(projectIds) {
   console.log(`[DB] aggregateAllLatencies called for ${projectIds.length} projects`);
@@ -131,7 +129,7 @@ const startServer = async () => {
     process.exit(1);
   }
   if (!process.env.CLIENT_URL) {
-    console.warn('[WARN] CLIENT_URL   not set, defaulting to http://localhost:8082');
+    console.warn('[WARN] CLIENT_URL not set, defaulting to http://localhost:8082');
   }
 
   console.log('[Server] 🔌 Connecting to MongoDB...');
@@ -140,9 +138,9 @@ const startServer = async () => {
 
   console.log('[Server] 🔌 Connecting to Redis...');
   mainRedisClient = await connectRedis();
-  console.log('[Server] ✅ Redis  connected');
+  console.log('[Server] ✅ Redis connected');
 
-  // -------------- Redis adapter for Socket.IO (multi-instance scaling) ----------
+  // -------------- Redis adapter for Socket.IO ----------
   try {
     console.log('[Socket] Setting up Redis adapter...');
     pubClient = createClient({ url: process.env.REDIS_URL });
@@ -178,7 +176,7 @@ const startServer = async () => {
   aiSubscriber.on('error', (err) => console.error('[AI Pub/Sub] Redis error:', err));
   console.log('[Redis] ✅ AI Pub/Sub listener started');
 
-  // ---------- Redis Pub/Sub listener for new API logs (real-time dashboard) ----------
+  // ---------- Redis Pub/Sub listener for new API logs ----------
   console.log('[Redis] Setting up log Pub/Sub listener...');
   logSubscriber = mainRedisClient.duplicate();
   await logSubscriber.connect();
@@ -195,7 +193,7 @@ const startServer = async () => {
   logSubscriber.on('error', (err) => console.error('[Log Pub/Sub] Redis error:', err));
   console.log('[Redis] ✅ Log Pub/Sub listener started');
 
-  // ---------- 🆕 Redis Pub/Sub listener for API history updates ----------
+  // ---------- Redis Pub/Sub listener for API history updates ----------
   console.log('[Redis] Setting up API history Pub/Sub listener...');
   historySubscriber = mainRedisClient.duplicate();
   await historySubscriber.connect();
@@ -223,9 +221,9 @@ const startServer = async () => {
 
   console.log('[Queue] ✅ Queues initialized: latency-store, projectQueue, mockSyncQueue, openapi-import');
 
-  // Load email worker (just requires the file, the worker starts automatically)
+  // Load email worker
   require('./queues/emailQueue');
-  console.log('[Queue] ✅ Emaill worker loaded');
+  console.log('[Queue] ✅ Email worker loaded');
 
   // ---------- CORS ---------------
   app.use(cors({
@@ -311,21 +309,16 @@ const startServer = async () => {
   const unsubscribe = require('./controllers/unsubscribe');
   const { ask_ai, getAiResult } = require('./controllers/ask_ai');
   const delete_project = require('./controllers/delete_project');
-const subscribeRouter = require('./controllers/subscribeproject');
-const unsubscribeProject = require('./controllers/unsubscribeproject');
-const forgotPassword = require('./controllers/forgot_password');
-const verifyForgotOtp = require('./controllers/verify_forgot_otp');
-const resetPassword = require('./controllers/reset_password');
-const changePassword = require('./controllers/changePassword');
-app.post('/api/forgot-password', forgotPassword);
-app.post('/api/verify-forgot-otp', verifyForgotOtp);
-app.post('/api/reset-password', resetPassword);
-app.post('/api/unsubscribeproject', authenticateToken, unsubscribeProject);
-app.post('/api/subscribeproject', authenticateToken, subscribeRouter);
-app.post('/api/change-password', authenticateToken, changePassword);
- // ================================================================
+  const subscribeRouter = require('./controllers/subscribeproject');
+  const unsubscribeProject = require('./controllers/unsubscribeproject');
+  const forgotPassword = require('./controllers/forgot_password');
+  const verifyForgotOtp = require('./controllers/verify_forgot_otp');
+  const resetPassword = require('./controllers/reset_password');
+  const changePassword = require('./controllers/changePassword');
+
+  // ================================================================
   // ROUTES
-  // =================================================================
+  // ================================================================
   console.log('[Server] 📡 Registering routes...');
 
   // Auth routes
@@ -369,233 +362,134 @@ app.post('/api/change-password', authenticateToken, changePassword);
 
   app.post('/api/logs', authenticateToken, logs);
 
+  app.post('/api/forgot-password', forgotPassword);
+  app.post('/api/verify-forgot-otp', verifyForgotOtp);
+  app.post('/api/reset-password', resetPassword);
+  app.post('/api/unsubscribeproject', authenticateToken, unsubscribeProject);
+  app.post('/api/subscribeproject', authenticateToken, subscribeRouter);
+  app.post('/api/change-password', authenticateToken, changePassword);
+
   app.get('/', (req, res) => {
     res.json({ status: 'ok', message: 'Server is running' });
   });
 
-  const upload = multer({ storage: multer.memoryStorage() });
   // ---- LATENCY TEST -----
   app.get('/api/latency-test', (req, res) => {
     res.json({ timestamp: Date.now() });
   });
 
-  // ------ LATENCY REPORT -------
-app.post('/api/latency-report', authenticateToken, async (req, res) => {
-  console.log(`[API] POST /api/latency-report (user: ${req.user.username})`, req.body);
-  try {
-    const { project_id, rtts } = req.body;
-    if (!project_id) {
-      console.warn('[API] Missing project_id in latency-report');
-      return res.status(400).json({ error: 'Missing project_id' });
-    }
+  // ---- LATENCY REPORT ----
+  app.post('/api/latency-report', authenticateToken, async (req, res) => {
+    console.log(`[API] POST /api/latency-report (user: ${req.user.username})`, req.body);
+    try {
+      const { project_id, rtts } = req.body;
+      if (!project_id) {
+        console.warn('[API] Missing project_id in latency-report');
+        return res.status(400).json({ error: 'Missing project_id' });
+      }
 
-    let avgRtt;
-    if (Array.isArray(rtts) && rtts.length > 0) {
-      const sum = rtts.reduce((a, b) => a + b, 0);
-      avgRtt = Math.round(sum / rtts.length);
-    } else if (typeof rtts === 'number') {
-      avgRtt = Math.round(rtts);
-    } else {
-      console.warn('[API] Invalid rtts format:', rtts);
-      return res.status(400).json({ error: 'Invalid rtts, expected array or number' });
-    }
-    console.log(`[API] Computed avgRtt: ${avgRtt}ms`);
+      let avgRtt;
+      if (Array.isArray(rtts) && rtts.length > 0) {
+        const sum = rtts.reduce((a, b) => a + b, 0);
+        avgRtt = Math.round(sum / rtts.length);
+      } else if (typeof rtts === 'number') {
+        avgRtt = Math.round(rtts);
+      } else {
+        console.warn('[API] Invalid rtts format:', rtts);
+        return res.status(400).json({ error: 'Invalid rtts, expected array or number' });
+      }
+      console.log(`[API] Computed avgRtt: ${avgRtt}ms`);
 
-    const username = req.user.username;
+      const username = req.user.username;
 
-    // 1. Update User's latency field
-    console.log(`[DB] Updating user ${username} latency to ${avgRtt}`);
-    const user = await User.findOneAndUpdate(
-      { username },
-      { latency: avgRtt },
-      { new: true }
-    );
-    if (!user) {
-      console.warn(`[DB] User ${username} not found`);
-    } else {
-      console.log(`[DB] User ${username} updated`);
-    }
+      // 1. Update User's latency field
+      console.log(`[DB] Updating user ${username} latency to ${avgRtt}`);
+      const user = await User.findOneAndUpdate(
+        { username },
+        { latency: avgRtt },
+        { new: true }
+      );
+      if (!user) {
+        console.warn(`[DB] User ${username} not found`);
+      } else {
+        console.log(`[DB] User ${username} updated`);
+      }
 
-    // 2. Update or create TeamLatency for this user + project
-    console.log(`[DB] Updating TeamLatency for ${username} in project ${project_id}`);
-    let teamLat = await TeamLatency.findOne({ project_id, username });
-    if (teamLat) {
-      const total = teamLat.averageRtt * teamLat.sampleCount + avgRtt;
-      teamLat.sampleCount += 1;
-      teamLat.averageRtt = Math.round(total / teamLat.sampleCount);
-      await teamLat.save();
-      console.log(`[DB] TeamLatency updated: avg=${teamLat.averageRtt}, samples=${teamLat.sampleCount}`);
-    } else {
-      teamLat = await TeamLatency.create({
+      // 2. Update or create TeamLatency
+      console.log(`[DB] Updating TeamLatency for ${username} in project ${project_id}`);
+      let teamLat = await TeamLatency.findOne({ project_id, username });
+      if (teamLat) {
+        const total = teamLat.averageRtt * teamLat.sampleCount + avgRtt;
+        teamLat.sampleCount += 1;
+        teamLat.averageRtt = Math.round(total / teamLat.sampleCount);
+        await teamLat.save();
+        console.log(`[DB] TeamLatency updated: avg=${teamLat.averageRtt}, samples=${teamLat.sampleCount}`);
+      } else {
+        teamLat = await TeamLatency.create({
+          project_id,
+          username,
+          averageRtt: avgRtt,
+          sampleCount: 1,
+        });
+        console.log(`[DB] TeamLatency created: avg=${avgRtt}`);
+      }
+
+      // 3. Recalculate global ProjectLatency
+      console.log(`[DB] Recalculating ProjectLatency for project ${project_id}`);
+      const allTeamLatencies = await TeamLatency.find({ project_id });
+      let projectAvg = null;
+      if (allTeamLatencies.length > 0) {
+        const total = allTeamLatencies.reduce((sum, doc) => sum + doc.averageRtt, 0);
+        projectAvg = Math.round(total / allTeamLatencies.length);
+        console.log(`[DB] ProjectLatency computed: ${projectAvg}ms from ${allTeamLatencies.length} members`);
+
+        await ProjectLatency.findOneAndUpdate(
+          { project_id },
+          {
+            averageRtt: projectAvg,
+            sampleCount: allTeamLatencies.length,
+          },
+          { upsert: true, new: true }
+        );
+      }
+
+      // Send the PROJECT AVERAGE to BullMQ for OpenResty
+      if (projectAvg !== null && projectAvg > 0) {
+        try {
+          await latencyQueue.add('update-project-avg', {
+            project_id,
+            averageRtt: projectAvg,
+          });
+          console.log(`[Queue] ✅ Enqueued project average for ${project_id}: ${projectAvg}ms`);
+        } catch (err) {
+          console.error('[Queue] Failed to enqueue project average:', err);
+        }
+      }
+
+      // Enqueue per-user job
+      console.log(`[Queue] Adding latency job to bullmq-latency-store for ${username}`);
+      latencyQueue.add('store-member-latency', {
         project_id,
         username,
-        averageRtt: avgRtt,
-        sampleCount: 1,
-      });
-      console.log(`[DB] TeamLatency created: avg=${avgRtt}`);
-    }
-
-    // 3. Recalculate global ProjectLatency
-    console.log(`[DB] Recalculating ProjectLatency for project ${project_id}`);
-    const allTeamLatencies = await TeamLatency.find({ project_id });
-    let projectAvg = null;
-    if (allTeamLatencies.length > 0) {
-      const total = allTeamLatencies.reduce((sum, doc) => sum + doc.averageRtt, 0);
-      projectAvg = Math.round(total / allTeamLatencies.length);
-      console.log(`[DB] ProjectLatency computed: ${projectAvg}ms from ${allTeamLatencies.length} members`);
-
-      await ProjectLatency.findOneAndUpdate(
-        { project_id },
-        {
-          averageRtt: projectAvg,
-          sampleCount: allTeamLatencies.length,
-        },
-        { upsert: true, new: true }
-      );
-    }
-
-    // =============================================================
-    // ★ NEW: Send the PROJECT AVERAGE to BullMQ for OpenResty
-    // =============================================================
-    if (projectAvg !== null && projectAvg > 0) {
-      try {
-        await latencyQueue.add('update-project-avg', {
-          project_id,
-          averageRtt: projectAvg,
-        });
-        console.log(`[Queue] ✅ Enqueued project average for ${project_id}: ${projectAvg}ms`);
-      } catch (err) {
-        console.error('[Queue] Failed to enqueue project average:', err);
-        // Non‑critical – we don't fail the whole request
-      }
-    }
-
-    // 4. Enqueue a job for further processing (per‑user, keep existing)
-    console.log(`[Queue] Adding latency job to bullmq-latency-store for ${username}`);
-    latencyQueue.add('store-member-latency', {
-      project_id,
-      username,
-      rtt: avgRtt,
-    }).catch(err => console.error('[Queue] Failed to add latency job:', err));
-
-    res.json({
-      success: true,
-      userLatency: avgRtt,
-      teamLatency: teamLat.averageRtt,
-      projectAverage: projectAvg,
-    });
-
-  } catch (err) {
-    console.error('[API] Error in latency-report:', err);
-    res.status(500).json({ error: 'Failed to save latency report' });
-  }
-});
-
-
-
-  // ================================================================
-  //  ASYNC OPENAPI IMPORT WITH JOB ID
-  // ================================================================
-  app.post('/api/import-openapi', authenticateToken, upload.single('file'), async (req, res) => {
-    console.log(`[API] POST /api/import-openapi (user: ${req.user.username}), file: ${req.file?.originalname}`);
-    try {
-      if (!req.file) {
-        console.warn('[API] No file uploaded');
-        return res.status(400).json({ error: 'No file uploaded' });
-      }
-
-      const fileBuffer = req.file.buffer;
-      const fileName = req.file.originalname || '';
-      const isJson = fileName.endsWith('.json') || (req.file.mimetype === 'application/json');
-      console.log(`[API] Parsing ${isJson ? 'JSON' : 'YAML'} file: ${fileName}`);
-
-      let spec;
-      try {
-        spec = isJson
-          ? JSON.parse(fileBuffer.toString('utf-8'))
-          : yaml.load(fileBuffer.toString('utf-8'));
-        console.log('[API] Spec parsed successfully');
-      } catch (parseErr) {
-        console.error('[API] Parse error:', parseErr);
-        return res.status(400).json({ error: 'Invalid file format: ' + parseErr.message });
-      }
-      if (!spec || !spec.paths) {
-        console.warn('[API] No paths found in spec');
-        return res.status(400).json({ error: 'No paths found in OpenAPI spec' });
-      }
-
-      // ✅ FIX: Use UI-provided project name; fall back to spec title if not provided
-      const projectName = req.body.projectName?.trim() || spec.info?.title || 'Imported Project';
-      console.log(`[API] Using project name: "${projectName}"`);
-
-      // Enqueue job to openapi-import queue
-      const job = await openapiImportQueue.add('import', {
-        projectName,
-        spec,
-        username: req.user.username,
-      });
-
-      console.log(`[API] Enqueued import job ${job.id} for project "${projectName}"`);
-      res.status(202).json({
-        jobId: job.id,
-        message: 'Import job queued. Poll /api/import-status/:jobId for progress.'
-      });
-    } catch (err) {
-      console.error('[API] Error in import-openapi:', err);
-      res.status(500).json({ error: 'Failed to queue import: ' + err.message });
-    }
-  });
-
-  // ---- IMPORT STATUS ENDPOINT ----
-  app.get('/api/import-status/:jobId', authenticateToken, async (req, res) => {
-    const { jobId } = req.params;
-    console.log(`[API] GET /api/import-status/${jobId} (user: ${req.user.username})`);
-
-    try {
-      const job = await openapiImportQueue.getJob(jobId);
-      if (!job) {
-        console.warn(`[API] Job ${jobId} not found`);
-        return res.status(404).json({ error: 'Job not found' });
-      }
-
-      const state = await job.getState();
-      const progress = job.progress || 0;
-      const result = job.returnvalue;
-
-      let status = 'processing';
-      let message = 'Processing...';
-      let detail = '';
-
-      if (state === 'completed') {
-        status = 'completed';
-        message = '✅ Import completed successfully';
-        detail = result ? `Imported ${result.endpoints} endpoints from ${result.name}` : '';
-      } else if (state === 'failed') {
-        status = 'failed';
-        message = '❌ Import failed';
-        detail = job.failedReason || 'Unknown error';
-      } else if (state === 'waiting' || state === 'active' || state === 'delayed') {
-        status = 'processing';
-        message = `⏳ Import in progress (${Math.round(progress)}%)`;
-        detail = 'The import job is being processed.';
-      } else {
-        status = 'unknown';
-        message = `Job state: ${state}`;
-      }
+        rtt: avgRtt,
+      }).catch(err => console.error('[Queue] Failed to add latency job:', err));
 
       res.json({
-        jobId,
-        status,
-        progress,
-        message,
-        detail,
-        result: state === 'completed' ? result : undefined,
+        success: true,
+        userLatency: avgRtt,
+        teamLatency: teamLat.averageRtt,
+        projectAverage: projectAvg,
       });
+
     } catch (err) {
-      console.error('[API] Error checking status:', err);
-      res.status(500).json({ error: 'Failed to check job status' });
+      console.error('[API] Error in latency-report:', err);
+      res.status(500).json({ error: 'Failed to save latency report' });
     }
   });
+
+  // ---- IMPORT ROUTES ----
+  // This handles /api/import-openapi and /api/import-status/:jobId
+  app.use('/api', importRoutes);
 
   // ---- DASHBOARD DATA ----
   app.get('/api/dashboard-data', authenticateToken, async (req, res) => {
@@ -625,7 +519,6 @@ app.post('/api/latency-report', authenticateToken, async (req, res) => {
       const projectIds = projects.map(p => p.id);
       console.log(`[DB] Project IDs: ${projectIds.join(', ')}`);
 
-      // Fetch latencies
       const latencyDocs = await ProjectLatency.find({
         project_id: { $in: projectIds }
       }).lean();
@@ -636,7 +529,6 @@ app.post('/api/latency-report', authenticateToken, async (req, res) => {
       }).lean();
       const historyMap = new Map(histories.map(h => [h.projectID, h]));
 
-      // Fetch user RTT from Redis
       const rttKeys = projectIds.map(id => `latency:${id}:${username}`);
       const networkRttMap = new Map();
       if (mainRedisClient) {
@@ -653,10 +545,8 @@ app.post('/api/latency-report', authenticateToken, async (req, res) => {
         });
       }
 
-      // Aggregate server latencies
       const latStatsMap = await aggregateAllLatencies(projectIds);
 
-      // Enrich projects
       const enriched = projects.map(project => {
         const rttDoc = latencyMap.get(project.id);
         const projectRtt = rttDoc ? rttDoc.averageRtt : null;
@@ -781,9 +671,6 @@ app.post('/api/latency-report', authenticateToken, async (req, res) => {
       res.status(500).json({ error: 'Failed to fetch latency stats' });
     }
   });
-
-  // ---- ASYNC IMPORT ROUTES (legacy, kept for compatibility) ----
-  app.use('/api', importRoutes);
 
   // ================================================================
   // SOCKET.IO EVENTS
@@ -910,7 +797,7 @@ app.post('/api/latency-report', authenticateToken, async (req, res) => {
 
   const PORT = process.env.PORT || 3000;
   server.listen(PORT, () => {
-    console.log(`[Server] ✅ Lis tening on port ${PORT}`);
+    console.log(`[Server] ✅ Listening on port ${PORT}`);
   });
 };
 
@@ -918,8 +805,3 @@ startServer().catch((err) => {
   console.error('[Server] ❌ Fatal startup error:', err);
   process.exit(1);
 });
-
-
-
-
-

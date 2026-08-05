@@ -2,7 +2,8 @@
 import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
-import NetworkTest from './NetworkTest';
+import { useAuth } from '../context/AuthContext';
+import NetworkTest from './NetworkTest'; // ✅ Correct path - same directory
 import OpenApi from './OpenApi';
 
 // ---------- Helper functions (persist width) ----------
@@ -24,21 +25,15 @@ const setStoredWidth = (key, value) => {
 };
 
 // ---------- Component ----------
-function ApiToolsPage({ projectId: propProjectId }) {
+function ApiToolsPage() {
   const navigate = useNavigate();
   const { theme } = useTheme();
+  const { user } = useAuth();
   const isWhiteTheme = theme === 'white';
 
-  // ---- Project ID (from prop or localStorage) ----
-  const projectId = useMemo(() => {
-    if (propProjectId) return propProjectId;
-    try {
-      const stored = localStorage.getItem('apiToolsProjectId');
-      return stored || 'default-project-id';
-    } catch {
-      return 'default-project-id';
-    }
-  }, [propProjectId]);
+  // ---- Project ID state ----
+  const [selectedProjectId, setSelectedProjectId] = useState(null);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // ---- Split pane state ----
   const containerRef = useRef(null);
@@ -52,6 +47,20 @@ function ApiToolsPage({ projectId: propProjectId }) {
   // ---- Refs for drag (throttling) ----
   const rafIdRef = useRef(null);
   const dragStartRef = useRef({ x: 0, width: 0 });
+
+  // ---- Project selection handler ----
+  const handleProjectSelect = useCallback((projectId) => {
+    setSelectedProjectId(projectId);
+    try {
+      localStorage.setItem('apiToolsProjectId', projectId);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handleProjectRefresh = useCallback(() => {
+    setRefreshKey(prev => prev + 1);
+  }, []);
 
   // ---- Responsive handler ----
   const handleResize = useCallback(() => {
@@ -168,19 +177,19 @@ function ApiToolsPage({ projectId: propProjectId }) {
       <header className={`h-12 shrink-0 flex items-center px-5 border-b ${headerBg} ${borderColor}`}>
         <div className="flex items-center gap-5">
           <button
-            onClick={() => navigate('/setting')}
+            onClick={() => navigate('/dashboard')}
             className={`
               flex items-center gap-2 text-sm font-medium transition-all duration-200
               ${isWhiteTheme ? 'text-gray-500 hover:text-gray-800' : 'text-zinc-400 hover:text-white'}
               focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded
               ${isWhiteTheme ? 'focus:ring-offset-white' : 'focus:ring-offset-zinc-900'}
             `}
-            aria-label="Go back"
+            aria-label="Go to Dashboard"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
             </svg>
-            <span>Back</span>
+            <span>Dashboard</span>
           </button>
 
           <div className={`w-px h-5 ${isWhiteTheme ? 'bg-gray-200' : 'bg-zinc-700'}`} />
@@ -192,7 +201,7 @@ function ApiToolsPage({ projectId: propProjectId }) {
 
         <div className="flex-1 flex items-center justify-end gap-3">
           <span className={`text-xs font-mono ${mutedText}`}>
-            Project: <span className="font-semibold">{projectId}</span>
+            {user?.username || 'Guest'}
           </span>
         </div>
       </header>
@@ -203,7 +212,7 @@ function ApiToolsPage({ projectId: propProjectId }) {
         className="flex-1 flex min-h-0"
         style={{ flexDirection: isMobile ? 'column' : 'row' }}
       >
-        {/* Left Panel – OpenApi */}
+        {/* Left Panel – OpenApi with Project Selector */}
         <div
           className="overflow-auto"
           style={{
@@ -211,7 +220,12 @@ function ApiToolsPage({ projectId: propProjectId }) {
             height: isMobile ? '50%' : '100%',
           }}
         >
-          <OpenApi />
+          <OpenApi
+            key={refreshKey}
+            selectedProjectId={selectedProjectId}
+            onProjectSelect={handleProjectSelect}
+            onProjectRefresh={handleProjectRefresh}
+          />
         </div>
 
         {/* Divider – visible only on desktop */}
@@ -259,7 +273,7 @@ function ApiToolsPage({ projectId: propProjectId }) {
             height: isMobile ? '50%' : '100%',
           }}
         >
-          <NetworkTest projectId={projectId} />
+          <NetworkTest projectId={selectedProjectId} />
         </div>
       </div>
     </div>

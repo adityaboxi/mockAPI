@@ -1,5 +1,5 @@
 // src/pages/OpenApi.jsx
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useTheme } from '../context/ThemeContext';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
@@ -28,18 +28,24 @@ function validateOpenApiSpec(content, isJson) {
 }
 
 // ---------- Component ----------
-function OpenApi() {
+function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
   const { theme } = useTheme();
   const isWhiteTheme = theme === 'white';
 
-  const [projectName, setProjectName] = useState('');
+  // ─── State ──────────────────────────────────────────────────────
+  const [projects, setProjects] = useState([]);
+  const [loadingProjects, setLoadingProjects] = useState(true);
+  const [projectError, setProjectError] = useState(null);
+  const [projectName, setProjectName] = useState(''); // ✅ ADD THIS
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [status, setStatus] = useState({ type: '', message: '', detail: '' });
+  const [status, setStatus] = useState({ type: '', message: '', detail: '', code: '' });
   const [dragActive, setDragActive] = useState(false);
   const [jobId, setJobId] = useState(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [importedEndpoints, setImportedEndpoints] = useState(0);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const fileInputRef = useRef(null);
   const abortControllerRef = useRef(null);
@@ -47,6 +53,7 @@ function OpenApi() {
   const mountedRef = useRef(true);
   const lastJobIdRef = useRef(null);
 
+  // ─── Lifecycle ──────────────────────────────────────────────────
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -56,6 +63,47 @@ function OpenApi() {
     };
   }, []);
 
+  // ─── When selected project changes, update project name ──────
+  useEffect(() => {
+    if (selectedProjectId) {
+      const selected = projects.find(p => p.id === selectedProjectId);
+      if (selected) {
+        setProjectName(selected.projectname || selected.id);
+      }
+    }
+  }, [selectedProjectId, projects]);
+
+  // ─── Fetch user's projects ─────────────────────────────────────
+  const fetchProjects = useCallback(async () => {
+    setLoadingProjects(true);
+    setProjectError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/projects`, {
+        credentials: 'include',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (!mountedRef.current) return;
+      
+      const projs = Array.isArray(data) ? data : [];
+      setProjects(projs);
+      
+      // If no project selected and we have projects, select first one
+      if (!selectedProjectId && projs.length > 0) {
+        onProjectSelect?.(projs[0].id);
+      }
+    } catch (err) {
+      if (mountedRef.current) setProjectError(err.message);
+    } finally {
+      if (mountedRef.current) setLoadingProjects(false);
+    }
+  }, [selectedProjectId, onProjectSelect]);
+
+  useEffect(() => {
+    fetchProjects();
+  }, [fetchProjects]);
+
+  // ─── Validate file ──────────────────────────────────────────────
   const validateFile = useCallback(async (file) => {
     if (!file) return { valid: false, error: 'No file selected' };
     if (file.size > MAX_FILE_SIZE) {
@@ -80,46 +128,52 @@ function OpenApi() {
     }
   }, []);
 
+  // ─── Handle file selection ──────────────────────────────────────
   const handleFileChange = async (e) => {
     const f = e.target.files[0];
     if (!f) return;
-    setStatus({ type: '', message: '', detail: '' });
+    setStatus({ type: '', message: '', detail: '', code: '' });
     const result = await validateFile(f);
     if (!result.valid) {
-      setStatus({ type: 'error', message: 'Invalid file', detail: result.error });
+      setStatus({ type: 'error', message: 'Invalid file', detail: result.error, code: 'INVALID_FILE' });
       setFile(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
     setFile(f);
-    setStatus({ type: '', message: '', detail: '' });
+    setImportedEndpoints(0);
+    setStatus({ type: '', message: '', detail: '', code: '' });
   };
 
+  // ─── Drag & Drop handlers ──────────────────────────────────────
   const handleDrop = async (e) => {
     e.preventDefault();
     setDragActive(false);
     const f = e.dataTransfer.files[0];
     if (!f) return;
-    setStatus({ type: '', message: '', detail: '' });
+    setStatus({ type: '', message: '', detail: '', code: '' });
     const result = await validateFile(f);
     if (!result.valid) {
-      setStatus({ type: 'error', message: 'Invalid file', detail: result.error });
+      setStatus({ type: 'error', message: 'Invalid file', detail: result.error, code: 'INVALID_FILE' });
       setFile(null);
       return;
     }
     setFile(f);
-    setStatus({ type: '', message: '', detail: '' });
+    setImportedEndpoints(0);
+    setStatus({ type: '', message: '', detail: '', code: '' });
   };
 
   const handleDragOver = (e) => {
     e.preventDefault();
     setDragActive(true);
   };
+
   const handleDragLeave = (e) => {
     e.preventDefault();
     setDragActive(false);
   };
 
+  // ─── Clear all state ────────────────────────────────────────────
   const handleClear = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -131,14 +185,16 @@ function OpenApi() {
     }
     setFile(null);
     setProjectName('');
-    setStatus({ type: '', message: '', detail: '' });
+    setStatus({ type: '', message: '', detail: '', code: '' });
     setUploadProgress(0);
     setJobId(null);
     setLoading(false);
     setRetryCount(0);
+    setImportedEndpoints(0);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
+  // ─── Poll job status ────────────────────────────────────────────
   const pollJobStatus = useCallback(async (jobId, attempts = 0) => {
     if (!mountedRef.current) return;
     const MAX_ATTEMPTS = 90;
@@ -147,6 +203,7 @@ function OpenApi() {
         type: 'error',
         message: '⏰ Import timed out',
         detail: 'The import is taking too long. You can retry or check server logs.',
+        code: 'TIMEOUT'
       });
       setLoading(false);
       setUploadProgress(0);
@@ -159,33 +216,43 @@ function OpenApi() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
       if (!mountedRef.current) return;
+
       if (data.progress !== undefined) setUploadProgress(data.progress);
       setStatus({
         type: data.status === 'completed' ? 'success' : 'loading',
         message: data.message || 'Processing...',
         detail: data.detail || '',
+        code: data.status || 'processing'
       });
+
       if (data.status === 'completed') {
         setLoading(false);
         setUploadProgress(100);
+        if (data.result?.endpoints) {
+          setImportedEndpoints(data.result.endpoints);
+        }
+        fetchProjects();
+        onProjectRefresh?.();
         setFile(null);
-        setProjectName('');
         if (fileInputRef.current) fileInputRef.current.value = '';
         setJobId(null);
         setRetryCount(0);
         return;
       }
+
       if (data.status === 'failed') {
         setStatus({
           type: 'error',
           message: '❌ Import failed',
           detail: data.detail || 'The import job failed.',
+          code: 'IMPORT_FAILED'
         });
         setLoading(false);
         setUploadProgress(0);
         setJobId(null);
         return;
       }
+
       pollTimeoutRef.current = setTimeout(() => {
         pollJobStatus(jobId, attempts + 1);
       }, 2000);
@@ -195,19 +262,40 @@ function OpenApi() {
         type: 'error',
         message: '❌ Status check failed',
         detail: err.message || 'Unable to retrieve job status',
+        code: 'STATUS_CHECK_FAILED'
       });
       setLoading(false);
       setJobId(null);
     }
-  }, []);
+  }, [fetchProjects, onProjectRefresh]);
 
+  // ─── Import handler ────────────────────────────────────────────
   const handleImport = useCallback(async () => {
     if (!file || loading) return;
-    const trimmedName = projectName.trim();
-    if (!trimmedName) {
-      setStatus({ type: 'error', message: 'Project name required', detail: 'Please enter a project name.' });
+    
+    // 🚨 CRITICAL: Check if project is selected
+    if (!selectedProjectId) {
+      setStatus({
+        type: 'error',
+        message: '⚠️ No project selected',
+        detail: 'Please select a project from the left sidebar first.',
+        code: 'NO_PROJECT_SELECTED'
+      });
       return;
     }
+
+    // Check if selected project exists in the list
+    const selectedProject = projects.find(p => p.id === selectedProjectId);
+    if (!selectedProject) {
+      setStatus({
+        type: 'error',
+        message: '⚠️ Project not found',
+        detail: 'The selected project no longer exists. Please refresh and select again.',
+        code: 'PROJECT_NOT_FOUND'
+      });
+      return;
+    }
+
     if (abortControllerRef.current) abortControllerRef.current.abort();
     if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
 
@@ -218,11 +306,13 @@ function OpenApi() {
     setUploadProgress(0);
     setJobId(null);
     setRetryCount(0);
-    setStatus({ type: 'loading', message: '⏳ Uploading...', detail: 'Preparing file...' });
+    setImportedEndpoints(0);
+    setStatus({ type: 'loading', message: '⏳ Uploading...', detail: 'Preparing file...', code: '' });
 
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('projectName', trimmedName);
+    formData.append('projectId', selectedProjectId);
+    formData.append('projectName', selectedProject.projectname || selectedProject.id);
 
     try {
       const response = await fetch(`${API_BASE}/api/import-openapi`, {
@@ -231,44 +321,72 @@ function OpenApi() {
         body: formData,
         signal: controller.signal,
       });
-      if (!response.ok) {
-        let errorMsg = `Server responded with ${response.status}`;
-        try {
-          const errorData = await response.json();
-          if (errorData.error) errorMsg = errorData.error;
-        } catch (_) {}
-        throw new Error(errorMsg);
-      }
+
       const data = await response.json();
+
+      if (!response.ok) {
+        // Handle specific error codes from backend
+        if (data.code === 'PROJECT_NOT_FOUND') {
+          setStatus({
+            type: 'error',
+            message: '⚠️ Project not found or access denied',
+            detail: data.message || 'You do not have access to this project. Please select another project.',
+            code: 'PROJECT_NOT_FOUND'
+          });
+          // Refresh project list to update state
+          fetchProjects();
+          setLoading(false);
+          setUploadProgress(0);
+          return;
+        }
+
+        let errorMsg = data.error || `Server responded with ${response.status}`;
+        setStatus({
+          type: 'error',
+          message: '❌ Import failed',
+          detail: errorMsg,
+          code: data.code || 'UNKNOWN_ERROR'
+        });
+        setLoading(false);
+        setUploadProgress(0);
+        abortControllerRef.current = null;
+        return;
+      }
+
       if (!mountedRef.current) return;
+
       setJobId(data.jobId);
       setStatus({
         type: 'loading',
         message: '⏳ Import queued...',
-        detail: `Job ${data.jobId} is being processed.`,
+        detail: `Job ${data.jobId} is being processed by BullMQ.`,
+        code: 'QUEUED'
       });
       setUploadProgress(10);
       lastJobIdRef.current = data.jobId;
+
       pollTimeoutRef.current = setTimeout(() => {
         pollJobStatus(data.jobId, 0);
       }, 2000);
     } catch (err) {
       if (!mountedRef.current) return;
       if (err.name === 'AbortError') {
-        setStatus({ type: 'error', message: '⏹️ Upload cancelled', detail: 'The import was aborted.' });
+        setStatus({ type: 'error', message: '⏹️ Upload cancelled', detail: 'The import was aborted.', code: 'ABORTED' });
       } else {
         setStatus({
           type: 'error',
           message: '❌ Import failed',
           detail: err.message || 'Unknown error occurred',
+          code: 'NETWORK_ERROR'
         });
       }
       setLoading(false);
       setUploadProgress(0);
       abortControllerRef.current = null;
     }
-  }, [file, loading, projectName, pollJobStatus]);
+  }, [file, loading, selectedProjectId, projects, pollJobStatus, fetchProjects]);
 
+  // ─── Retry handler ─────────────────────────────────────────────
   const handleRetry = useCallback(() => {
     if (lastJobIdRef.current) {
       setRetryCount(prev => prev + 1);
@@ -281,9 +399,19 @@ function OpenApi() {
     } else {
       handleImport();
     }
-  }, [retryCount, handleImport]);
+  }, [retryCount, handleImport, pollJobStatus]);
 
-  // ─── Theme-aware styles ──────────────────────────────────────────
+  // ─── Filter projects ────────────────────────────────────────────
+  const filteredProjects = useMemo(() => {
+    if (!searchTerm.trim()) return projects;
+    const term = searchTerm.toLowerCase();
+    return projects.filter(proj =>
+      (proj.projectname || proj.id)?.toLowerCase().includes(term) ||
+      proj.id?.toLowerCase().includes(term)
+    );
+  }, [projects, searchTerm]);
+
+  // ─── Theme-aware styles ────────────────────────────────────────
   const pageBg = isWhiteTheme ? 'bg-gray-50' : 'bg-zinc-950';
   const textPrimary = isWhiteTheme ? 'text-gray-800' : 'text-white';
   const textMuted = isWhiteTheme ? 'text-gray-500' : 'text-zinc-400';
@@ -317,146 +445,287 @@ function OpenApi() {
   const statusLoading = isWhiteTheme
     ? 'bg-blue-50 border-blue-200 text-blue-700'
     : 'bg-blue-500/10 border-blue-500/20 text-blue-400';
+  const sidebarBg = isWhiteTheme ? 'bg-white' : 'bg-zinc-900';
+  const noProjectBg = isWhiteTheme ? 'bg-gray-100' : 'bg-zinc-800/30';
 
   const inputClass = `w-full rounded-lg px-4 py-2.5 text-sm outline-none transition-all duration-200 border ${inputBg} ${inputBorder} ${inputFocus} ${inputText} ${inputPlaceholder}`;
 
+  const selectedProject = projects.find(p => p.id === selectedProjectId);
+
   // ─── Render ──────────────────────────────────────────────────────
   return (
-    <div className={`p-6 max-w-3xl mx-auto transition-colors duration-200 ${pageBg} ${textPrimary} min-h-full`}>
-      <h1 className="text-2xl font-semibold mb-2">📂 Import OpenAPI</h1>
-      <p className={`text-sm ${textMuted} mb-6`}>
-        Upload a JSON or YAML file to automatically create all endpoints.
-      </p>
-
-      {/* Project Name */}
-      <div className="mb-5">
-        <label htmlFor="projectName" className={`block text-sm font-medium ${textMuted} mb-1.5`}>
-          Project Name <span className="text-red-400" aria-hidden="true">*</span>
-        </label>
-        <input
-          id="projectName"
-          type="text"
-          value={projectName}
-          onChange={(e) => setProjectName(e.target.value)}
-          placeholder="Enter project name (e.g., my-api-project)"
-          className={inputClass}
-          disabled={loading}
-        />
-        <p className={`text-xs ${textMini} mt-1`}>
-          This name will be used to identify your project in the dashboard.
-        </p>
-      </div>
-
-      {/* File Drop Zone */}
-      <div
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        className={`
-          border-2 border-dashed rounded-xl p-12 text-center transition-all duration-200 cursor-pointer
-          ${dragActive ? `${dropActiveBorder} ${dropActiveBg}` : `${dropBorder} ${dropBg}`}
-          focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2
-          ${isWhiteTheme ? 'focus:ring-offset-white' : 'focus:ring-offset-zinc-950'}
-        `}
-        onClick={() => fileInputRef.current?.click()}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            fileInputRef.current?.click();
-          }
-        }}
-      >
-        <div className="text-5xl mb-2">📄</div>
-        <div className={`${isWhiteTheme ? 'text-gray-700' : 'text-zinc-300'}`}>
-          <strong className="text-indigo-400">Click to browse</strong> or drag & drop
-        </div>
-        <div className={`text-sm ${textMuted} mt-1`}>JSON / YAML files only (max 10 MB)</div>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".json,.yaml,.yml"
-          onChange={handleFileChange}
-          className="hidden"
-        />
-      </div>
-
-      {/* File info */}
-      {file && (
-        <div className={`mt-4 flex items-center justify-between border rounded-xl px-4 py-3 ${fileInfoBg} ${fileInfoBorder}`}>
-          <span className={`truncate max-w-[200px] ${isWhiteTheme ? 'text-gray-800' : 'text-zinc-300'}`}>
-            {file.name}
+    <div className={`flex h-full ${pageBg} transition-colors duration-200`}>
+      {/* ====== LEFT SIDEBAR: Project List ====== */}
+      <div className={`w-64 shrink-0 border-r flex flex-col ${sidebarBg} ${borderColor}`}>
+        <div className={`px-4 py-3 border-b ${borderColor} text-xs font-semibold uppercase ${textMuted} flex justify-between items-center`}>
+          <span className="flex items-center gap-2">
+            <span>📁</span> Projects
           </span>
-          <span className={`text-sm ${textMini}`}>{(file.size / 1024).toFixed(1)} KB</span>
           <button
-            onClick={handleClear}
-            className={`text-red-400 hover:text-red-300 text-xl leading-none transition-colors`}
-            aria-label="Remove selected file"
+            onClick={fetchProjects}
+            className={`${textMuted} hover:${isWhiteTheme ? 'text-gray-700' : 'text-zinc-300'} transition-colors`}
+            aria-label="Refresh projects"
           >
-            ✕
+            ⟳
           </button>
         </div>
-      )}
 
-      {/* Progress bar */}
-      {loading && (
-        <div className={`mt-4 w-full ${progressBg} rounded-full h-2.5`}>
-          <div
-            className="bg-blue-500 h-2.5 rounded-full transition-all duration-300"
-            style={{ width: `${uploadProgress}%` }}
+        <div className="p-3">
+          <input
+            type="text"
+            placeholder="Search projects..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className={`w-full rounded-lg px-3 py-1.5 text-sm outline-none transition-all duration-200 border ${inputBg} ${inputBorder} ${inputFocus} ${inputText} ${inputPlaceholder}`}
+            aria-label="Search projects"
           />
         </div>
-      )}
 
-      {/* Buttons */}
-      <div className="mt-6 flex gap-3 flex-wrap">
-        <button
-          onClick={handleImport}
-          disabled={!file || loading || !projectName.trim()}
-          className={`flex-1 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${buttonPrimary} disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${isWhiteTheme ? 'focus:ring-offset-white' : 'focus:ring-offset-zinc-950'}`}
-        >
-          {loading ? `⏳ ${Math.round(uploadProgress)}%` : '🚀 Import'}
-        </button>
-        <button
-          onClick={handleClear}
-          className={`px-6 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${buttonSecondary} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${isWhiteTheme ? 'focus:ring-offset-white' : 'focus:ring-offset-zinc-950'}`}
-        >
-          {loading ? 'Cancel' : 'Clear'}
-        </button>
-        {status.type === 'error' && jobId && (
-          <button
-            onClick={handleRetry}
-            className={`px-6 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${buttonRetry} focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 ${isWhiteTheme ? 'focus:ring-offset-white' : 'focus:ring-offset-zinc-950'}`}
-          >
-            🔁 Retry
-          </button>
-        )}
+        <div className="flex-1 overflow-y-auto px-2 py-2">
+          {loadingProjects ? (
+            <div className={`text-sm text-center py-4 ${textMuted} animate-pulse`}>
+              Loading projects...
+            </div>
+          ) : projectError ? (
+            <div className={`text-sm text-center py-4 text-red-400`}>
+              Error: {projectError}
+            </div>
+          ) : filteredProjects.length === 0 ? (
+            <div className={`text-sm text-center py-4 ${textMuted}`}>
+              {searchTerm ? 'No matching projects' : 'No projects found. Create one first.'}
+            </div>
+          ) : (
+            <ul className="space-y-1">
+              {filteredProjects.map((proj) => {
+                const isSelected = selectedProjectId === proj.id;
+                const displayName = proj.projectname || proj.id;
+                return (
+                  <li key={proj.id}>
+                    <button
+                      onClick={() => onProjectSelect?.(proj.id)}
+                      className={`
+                        w-full text-left px-3 py-2 rounded-lg text-sm transition-all duration-150
+                        ${isSelected
+                          ? isWhiteTheme
+                            ? 'bg-blue-100 text-blue-700 border-l-2 border-blue-500'
+                            : 'bg-blue-500/10 text-blue-400 border-l-2 border-blue-500'
+                          : isWhiteTheme
+                            ? 'text-gray-600 hover:bg-gray-100 hover:text-gray-800'
+                            : 'text-zinc-400 hover:bg-zinc-800/40 hover:text-zinc-200'
+                        }
+                      `}
+                      aria-selected={isSelected}
+                      role="option"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="truncate">{displayName}</span>
+                        <span className={`text-xs ${isSelected ? (isWhiteTheme ? 'text-blue-600' : 'text-blue-300') : textMuted}`}>
+                          {proj.isCreator ? '👑' : '👤'}
+                        </span>
+                      </div>
+                      <div className={`text-[10px] ${textMuted} truncate`}>
+                        {proj.id}
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        <div className={`px-4 py-2 border-t ${borderColor} text-xs ${textMuted}`}>
+          {selectedProject && (
+            <span className="truncate block">
+              Selected: <span className="font-medium">{selectedProject.projectname || selectedProject.id}</span>
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* Status messages */}
-      {status.type && (
-        <div
-          className={`mt-4 p-4 rounded-xl border ${
-            status.type === 'success'
-              ? statusSuccess
-              : status.type === 'error'
-              ? statusError
-              : statusLoading
-          }`}
-          role="alert"
-          aria-live="polite"
-        >
-          <div className="font-medium">{status.message}</div>
-          {status.detail && <div className="text-sm opacity-70 mt-1">{status.detail}</div>}
-        </div>
-      )}
+      {/* ====== MAIN CONTENT: Upload Area ====== */}
+      <div className={`flex-1 overflow-auto p-6 max-w-3xl mx-auto ${pageBg} ${textPrimary}`}>
+        <h1 className="text-2xl font-semibold mb-2">📂 Import OpenAPI</h1>
+        <p className={`text-sm ${textMuted} mb-6`}>
+          Upload a JSON or YAML file to automatically create all endpoints for the selected project.
+        </p>
 
-      {status.type === 'success' && (
-        <div className={`mt-4 text-xs ${textMini} text-center border-t ${borderColor} pt-3`}>
-          💡 You can now view your new project in the Dashboard.
+        {/* Project Selection Status */}
+        <div className={`mb-6 p-4 rounded-xl border ${selectedProject ? fileInfoBg : noProjectBg} ${fileInfoBorder}`}>
+          <div className="flex items-center justify-between">
+            <span className={`text-sm ${textMuted}`}>Selected Project</span>
+            <span className={`text-sm font-mono font-medium ${selectedProject ? textPrimary : 'text-yellow-400'}`}>
+              {selectedProject?.projectname || selectedProject?.id || '⚠️ No project selected'}
+            </span>
+          </div>
+          {!selectedProject && (
+            <p className={`text-xs ${textMuted} mt-1`}>
+              Please select a project from the left sidebar to import APIs into.
+            </p>
+          )}
         </div>
-      )}
+
+        {/* Project Name (auto-filled from selection) */}
+        <div className="mb-5">
+          <label htmlFor="projectName" className={`block text-sm font-medium ${textMuted} mb-1.5`}>
+            Project Name <span className="text-red-400" aria-hidden="true">*</span>
+          </label>
+          <input
+            id="projectName"
+            type="text"
+            value={projectName}
+            onChange={(e) => setProjectName(e.target.value)}
+            placeholder="Enter project name (e.g., my-api-project)"
+            className={inputClass}
+            disabled={loading || !!selectedProjectId}
+          />
+          <p className={`text-xs ${textMini} mt-1`}>
+            {selectedProjectId 
+              ? 'Project name is auto-filled from the selected project.' 
+              : 'This name will be used to identify your project in the dashboard.'}
+          </p>
+        </div>
+
+        {/* File Drop Zone - disabled if no project */}
+        <div
+          onDragOver={selectedProject ? handleDragOver : undefined}
+          onDragLeave={selectedProject ? handleDragLeave : undefined}
+          onDrop={selectedProject ? handleDrop : undefined}
+          className={`
+            border-2 border-dashed rounded-xl p-12 text-center transition-all duration-200
+            ${!selectedProject
+              ? 'opacity-50 cursor-not-allowed border-zinc-700 bg-zinc-800/20'
+              : dragActive
+                ? `${dropActiveBorder} ${dropActiveBg} cursor-pointer`
+                : `${dropBorder} ${dropBg} cursor-pointer`
+            }
+            focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:ring-offset-2
+            ${isWhiteTheme ? 'focus:ring-offset-white' : 'focus:ring-offset-zinc-950'}
+          `}
+          onClick={() => selectedProject && fileInputRef.current?.click()}
+          role="button"
+          tabIndex={selectedProject ? 0 : -1}
+          onKeyDown={(e) => {
+            if ((e.key === 'Enter' || e.key === ' ') && selectedProject) {
+              e.preventDefault();
+              fileInputRef.current?.click();
+            }
+          }}
+        >
+          <div className="text-5xl mb-2">📄</div>
+          <div className={`${isWhiteTheme ? 'text-gray-700' : 'text-zinc-300'}`}>
+            <strong className="text-indigo-400">Click to browse</strong> or drag & drop
+          </div>
+          <div className={`text-sm ${textMuted} mt-1`}>
+            JSON / YAML files only (max 10 MB)
+            {!selectedProject && <span className="block text-yellow-400 mt-2">⚠️ Select a project first</span>}
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,.yaml,.yml"
+            onChange={handleFileChange}
+            className="hidden"
+            disabled={!selectedProject}
+          />
+        </div>
+
+        {/* File info */}
+        {file && (
+          <div className={`mt-4 flex items-center justify-between border rounded-xl px-4 py-3 ${fileInfoBg} ${fileInfoBorder}`}>
+            <span className={`truncate max-w-[200px] ${isWhiteTheme ? 'text-gray-800' : 'text-zinc-300'}`}>
+              {file.name}
+            </span>
+            <span className={`text-sm ${textMini}`}>{(file.size / 1024).toFixed(1)} KB</span>
+            <button
+              onClick={handleClear}
+              className={`text-red-400 hover:text-red-300 text-xl leading-none transition-colors`}
+              aria-label="Remove selected file"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* Progress bar */}
+        {loading && (
+          <div className={`mt-4 w-full ${progressBg} rounded-full h-2.5`}>
+            <div
+              className="bg-blue-500 h-2.5 rounded-full transition-all duration-300"
+              style={{ width: `${uploadProgress}%` }}
+            />
+          </div>
+        )}
+
+        {/* Buttons */}
+        <div className="mt-6 flex gap-3 flex-wrap">
+          <button
+            onClick={handleImport}
+            disabled={!file || loading || !selectedProject}
+            className={`flex-1 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${buttonPrimary} disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${isWhiteTheme ? 'focus:ring-offset-white' : 'focus:ring-offset-zinc-950'}`}
+          >
+            {loading ? `⏳ ${Math.round(uploadProgress)}%` : '🚀 Import'}
+          </button>
+          <button
+            onClick={handleClear}
+            className={`px-6 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${buttonSecondary} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${isWhiteTheme ? 'focus:ring-offset-white' : 'focus:ring-offset-zinc-950'}`}
+          >
+            {loading ? 'Cancel' : 'Clear'}
+          </button>
+          {status.type === 'error' && jobId && (
+            <button
+              onClick={handleRetry}
+              className={`px-6 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${buttonRetry} focus:outline-none focus:ring-2 focus:ring-yellow-500 focus:ring-offset-2 ${isWhiteTheme ? 'focus:ring-offset-white' : 'focus:ring-offset-zinc-950'}`}
+            >
+              🔁 Retry
+            </button>
+          )}
+        </div>
+
+        {/* Status messages */}
+        {status.type && (
+          <div
+            className={`mt-4 p-4 rounded-xl border ${
+              status.type === 'success'
+                ? statusSuccess
+                : status.type === 'error'
+                ? statusError
+                : statusLoading
+            }`}
+            role="alert"
+            aria-live="polite"
+          >
+            <div className="font-medium">{status.message}</div>
+            {status.detail && <div className="text-sm opacity-70 mt-1">{status.detail}</div>}
+            {status.type === 'success' && importedEndpoints > 0 && (
+              <div className="text-sm mt-2 font-medium">
+                ✅ Imported {importedEndpoints} endpoints successfully into the project!
+              </div>
+            )}
+            {status.type === 'success' && (
+              <div className="text-xs mt-1 opacity-70">
+                🔄 The project container is being updated with the new routes.
+              </div>
+            )}
+          </div>
+        )}
+
+        {status.type === 'success' && (
+          <div className={`mt-4 text-xs ${textMini} text-center border-t ${borderColor} pt-3`}>
+            💡 The endpoints are now being synced to your project container via BullMQ.
+          </div>
+        )}
+
+        {/* BullMQ Info */}
+        <div className={`mt-6 text-xs ${textMini} text-center border-t ${borderColor} pt-4`}>
+          <span className="flex items-center justify-center gap-2">
+            <span>⚙️</span>
+            <span>APIs are processed asynchronously via BullMQ workers</span>
+            <span>•</span>
+            <span>Project container sync in progress</span>
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
