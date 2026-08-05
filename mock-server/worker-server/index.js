@@ -1191,6 +1191,7 @@ async function startup() {
   console.log(`[Startup] ✅ Worker server ready. Pool size: ${POOL_SIZE}, concurrency: ${WORKER_CONCURRENCY}`);
 }
 
+
 startup().catch(err => {
   console.error('[Startup] ❌ Fatal error:', err);
   process.exit(1);
