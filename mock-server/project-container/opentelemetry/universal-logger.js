@@ -12,6 +12,7 @@ const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const MAX_QUEUE_SIZE = 1000;      // Max logs in memory (~200 KB). Prevents OOM.
 const BATCH_INTERVAL = 3000;      // Flush every 3 seconds.
 
+
 let logQueue = [];
 let flushTimer = null;
 

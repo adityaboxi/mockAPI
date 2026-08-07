@@ -10,6 +10,8 @@ export const useAuth = () => {
   return context;
 };
 
+
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -18,7 +20,7 @@ export const AuthProvider = ({ children }) => {
   // Track in-flight requests to prevent duplicate calls
   const pendingRequests = useRef(new Map());
 
-  // Environment variables
+  //  Environment variables
   const GUEST_SESSION_URL = import.meta.env.VITE_API_URL_GUEST_SESSION;
   const SYNC_AUTH_URL = import.meta.env.VITE_API_URL_SYNCAUTH;
   const SUBSCRIBE_URL = import.meta.env.VITE_API_URL_SUBSCRIBE;

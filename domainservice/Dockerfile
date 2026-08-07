@@ -4,7 +4,7 @@ RUN rm /etc/nginx/conf.d/default.conf
 
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Maintenance pages – ensure all exist in the build context
+# Maintenance pages – ensure alll exist in the build context
 COPY maintenance-api.html /usr/share/nginx/html/
 COPY maintenance-server.html /usr/share/nginx/html/
 COPY maintenance-client.html /usr/share/nginx/html/

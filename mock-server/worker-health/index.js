@@ -8,7 +8,7 @@ const nodemailer = require('nodemailer');
 const cron = require('cron').CronJob;
 
 
-// ---------- Models ------------
+// ------------ Models ------------
 const Project = require('./models/Project');
 const ProjectApiHistory = require('./models/ProjectApiHistory');
 const User = require('./models/User');
