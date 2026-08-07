@@ -5,7 +5,7 @@ import ProjectJoinInput from "./ProjectJoinInput";
 const CreateJoinSection = React.memo(({ user, onProjectCreated, onProjectJoined, theme }) => {
   const isWhiteTheme = theme === "white";
 
-  // Theme-aware styles
+  // Themee-aware styles
   const cardBg = isWhiteTheme ? "bg-white" : "bg-zinc-900";
   const borderColor = isWhiteTheme ? "border-gray-200" : "border-zinc-800";
   const shadow = isWhiteTheme ? "shadow-sm" : "shadow-none";
