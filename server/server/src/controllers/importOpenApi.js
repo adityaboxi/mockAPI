@@ -24,13 +24,39 @@ const importQueue = new Queue('openapi-import', { connection: connectionOpts });
 const projectQueue = new Queue('projectQueue', { connection: connectionOpts });
 const mockSyncQueue = new Queue('mockSyncQueue', { connection: connectionOpts });
 
-// ---------- Helper: Generate Project ID ----------
+// ---------- Helper: Generate Project ID (username_projectName) ----------
 function generateProjectId(username, projectName) {
   const sanitized = projectName.replace(/[^a-zA-Z0-9]/g, '_');
   return `${username}_${sanitized}`;
 }
 
-// ---------- Helper: Extract endpoints from spec ----------
+// ---------- Helper: Build actual full URL with project ID ----------
+function buildActualFullUrl(protocol, host, projectId, version, urlPath, pathParams, queryParams) {
+  // Resolve path parameters
+  let resolvedPath = urlPath || '';
+  pathParams.forEach(({ key, value }) => {
+    resolvedPath = resolvedPath.replace(new RegExp(`:${key}`, 'g'), value || `{${key}}`);
+  });
+  
+  // Remove leading slash if present
+  if (resolvedPath.startsWith('/')) resolvedPath = resolvedPath.slice(1);
+  
+  // Build the full URL: protocol://host/p/projectId/version/path
+  let fullUrl = `${protocol}://${host}/p/${projectId}/${resolvedPath}`;
+  
+  // Add query parameters
+  if (queryParams?.length) {
+    const qs = queryParams
+      .filter(q => q.key && q.value)
+      .map(q => `${encodeURIComponent(q.key)}=${encodeURIComponent(q.value)}`)
+      .join('&');
+    if (qs) fullUrl += `?${qs}`;
+  }
+  
+  return fullUrl;
+}
+
+// ---------- Helper: Extract endpoints from spec (only paths) ----------
 function extractEndpointsFromSpec(spec) {
   const basePath = spec.basePath || '';
   const endpointsMap = {};
@@ -53,13 +79,16 @@ function extractEndpointsFromSpec(spec) {
         method: method.toUpperCase(),
         urlPath: versionedPath,
         version: version,
-        protocol: 'https',
+        protocol: 'https', // Will be overridden by worker
         statusCode: 200,
         requestBody: operation?.requestBody?.content?.['application/json']?.schema?.example || null,
         responseBody: operation?.responses?.['200']?.content?.['application/json']?.schema?.example || null,
         summary: operation?.summary || '',
         description: operation?.description || '',
         operationId: operation?.operationId || `${method}_${rawPath.replace(/\//g, '_')}`,
+        // Extract path parameters from the path
+        pathParams: [],
+        queryParams: operation?.parameters?.filter(p => p.in === 'query').map(p => ({ key: p.name, value: '' })) || [],
       });
     });
   });
@@ -92,7 +121,7 @@ async function importOpenApi(req, res) {
     }
 
     // =============================================================
-    // STEP 2: DETERMINE PROJECT ID
+    // STEP 2: DETERMINE PROJECT ID (username_projectName)
     // =============================================================
     let finalProjectId = projectId;
 
@@ -115,8 +144,8 @@ async function importOpenApi(req, res) {
     const existingProject = await Project.findOne({ 
       id: finalProjectId,
       $or: [
-        { username: username },                    // User is the creator
-        { members: { $in: [username] } }          // User is a member
+        { username: username },
+        { members: { $in: [username] } }
       ]
     });
 
@@ -172,7 +201,7 @@ async function importOpenApi(req, res) {
     }
 
     // =============================================================
-    // STEP 6: EXTRACT ENDPOINTS
+    // STEP 6: EXTRACT ENDPOINTS (ONLY PATHS, NO DOMAIN)
     // =============================================================
     const endpoints = extractEndpointsFromSpec(spec);
     console.log(`[import-openapi] Extracted ${endpoints.length} endpoints`);
@@ -185,7 +214,32 @@ async function importOpenApi(req, res) {
     }
 
     // =============================================================
-    // STEP 7: SAVE TO PROJECT API HISTORY
+    // STEP 7: BUILD FULL URLs USING PROJECT ID
+    // =============================================================
+    const protocol = process.env.PROTOCOL || 'http';
+    const host = process.env.HOST || 'localhost:8080';
+    
+    // Build full URLs for each endpoint using the project ID
+    for (const endpoint of endpoints) {
+      for (const ver of endpoint.versions) {
+        // Build the full URL: protocol://host/p/projectId/version/path
+        const fullUrl = buildActualFullUrl(
+          protocol,
+          host,
+          finalProjectId,
+          ver.version,
+          ver.urlPath,
+          ver.pathParams || [],
+          ver.queryParams || []
+        );
+        ver.actualFullUrl = fullUrl;
+        ver.protocol = protocol;
+        console.log(`[import-openapi] 🔗 Built URL: ${fullUrl}`);
+      }
+    }
+
+    // =============================================================
+    // STEP 8: SAVE TO PROJECT API HISTORY
     // =============================================================
     let projectHistory = await ProjectApiHistory.findOne({ projectID: finalProjectId });
 
@@ -206,7 +260,7 @@ async function importOpenApi(req, res) {
     }
 
     // =============================================================
-    // STEP 8: CREATE SYSTEM EVENT LOGS
+    // STEP 9: CREATE SYSTEM EVENT LOGS
     // =============================================================
     const systemLogs = [];
     for (const endpoint of endpoints) {
@@ -214,7 +268,7 @@ async function importOpenApi(req, res) {
         systemLogs.push({
           projectId: finalProjectId,
           username: username,
-          action: 'updated',
+          action: 'created',
           method: ver.method,
           url: ver.urlPath,
           version: ver.version,
@@ -232,7 +286,7 @@ async function importOpenApi(req, res) {
     }
 
     // =============================================================
-    // STEP 9: PUBLISH TO REDIS
+    // STEP 10: PUBLISH TO REDIS FOR REAL-TIME UPDATES
     // =============================================================
     try {
       const redisClient = new IORedis(connectionOpts);
@@ -244,10 +298,10 @@ async function importOpenApi(req, res) {
     }
 
     // =============================================================
-    // STEP 10: ENQUEUE BULLMQ JOBS
+    // STEP 11: ENQUEUE BULLMQ JOBS
     // =============================================================
     
-    // 10a. Enqueue project container job
+    // 11a. Enqueue project container job (ensure container is running)
     await projectQueue.add('create-or-update-project', {
       action: 'update',
       projectId: finalProjectId,
@@ -255,10 +309,11 @@ async function importOpenApi(req, res) {
     });
     console.log(`[import-openapi] Enqueued project container job for: ${finalProjectId}`);
 
-    // 10b. Enqueue mock sync jobs for each API
+    // 11b. Enqueue mock sync jobs for each API
     let apiCount = 0;
     for (const endpoint of endpoints) {
       for (const ver of endpoint.versions) {
+        // Build the version data for the mock sync
         await mockSyncQueue.add('sync-api', {
           action: 'set',
           projectId: finalProjectId,
@@ -266,12 +321,13 @@ async function importOpenApi(req, res) {
             version: ver.version,
             method: ver.method,
             urlPath: ver.urlPath,
-            protocol: ver.protocol || 'https',
+            protocol: ver.protocol || protocol,
             requestBody: ver.requestBody,
             responseBody: ver.responseBody,
             statusCode: ver.statusCode || 200,
             summary: ver.summary || '',
             description: ver.description || '',
+            actualFullUrl: ver.actualFullUrl,
           }
         });
         apiCount++;
@@ -279,7 +335,7 @@ async function importOpenApi(req, res) {
     }
     console.log(`[import-openapi] Enqueued ${apiCount} API sync jobs for: ${finalProjectId}`);
 
-    // 10c. Enqueue the main import job for status tracking
+    // 11c. Enqueue the main import job for status tracking
     const job = await importQueue.add('import', {
       projectId: finalProjectId,
       projectName: existingProject.projectname,
@@ -292,7 +348,7 @@ async function importOpenApi(req, res) {
     console.log(`[import-openapi] Job enqueued: ${job.id} for user ${username}`);
 
     // =============================================================
-    // STEP 11: RETURN SUCCESS RESPONSE
+    // STEP 12: RETURN SUCCESS RESPONSE
     // =============================================================
     res.status(202).json({
       success: true,
@@ -315,5 +371,3 @@ async function importOpenApi(req, res) {
 }
 
 module.exports = { importOpenApi, upload };
-
-

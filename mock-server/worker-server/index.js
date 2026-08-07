@@ -8,8 +8,6 @@ const http = require('http');
 const { v4: uuidv4 } = require('uuid');
 const mongoose = require('mongoose');
 
-
-
 // ---------- MODELS -------------
 const Project = require('./models/Project');
 const ProjectApiHistory = require('./models/ProjectApiHistory');
@@ -744,22 +742,18 @@ const mockSyncWorker = new Worker(
 // WORKER 3: LATENCY STORE (Internal Redis)
 // ================================================================
 console.log('[worker-server] 📡 Creating latency-store worker...');
-// Inside worker-server.js – replace the existing latencyWorker
-
 const latencyWorker = new Worker(
   'bullmq-latency-store',
   async (job) => {
     const { project_id, username, rtt, averageRtt } = job.data;
 
     if (averageRtt !== undefined && averageRtt !== null) {
-      // ✅ Store the team average under the key OpenResty expects
       const key = `team:latency:${project_id}`;
       await internalRedis.setEx(key, 60, String(averageRtt));
       console.log(`[latency-worker] Stored team:latency:${project_id} = ${averageRtt}ms`);
       return;
     }
 
-    // Per‑user RTT – store with the "user:" prefix
     if (project_id && username) {
       const key = `user:latency:${project_id}:${username}`;
       await internalRedis.set(key, String(rtt || 0));
@@ -778,7 +772,7 @@ const latencyWorker = new Worker(
 );
 
 // ================================================================
-// WORKER 4: OPENAPI IMPORT (MODIFIED - Only adds APIs to existing project container)
+// WORKER 4: OPENAPI IMPORT (BUILDS FULL URLS WITH PROJECT ID)
 // ================================================================
 console.log('[worker-server] 📡 Creating openapi-import worker...');
 const importWorker = new Worker(
@@ -793,7 +787,6 @@ const importWorker = new Worker(
     // ─── STEP 1: Determine project ID ────────────────────────────────
     let finalProjectId = existingProjectId;
 
-    // If no projectId provided, generate one from username and projectName
     if (!finalProjectId && projectName) {
       const sanitized = projectName.replace(/[^a-zA-Z0-9]/g, '_');
       finalProjectId = `${username}_${sanitized}`;
@@ -806,7 +799,6 @@ const importWorker = new Worker(
     console.log(`[openapi-import] 📌 Using project ID: ${finalProjectId}`);
 
     // ─── STEP 2: Check if project exists ──────────────────────────────
-    // 🚨 CRITICAL: Only update existing project - DO NOT CREATE NEW
     const existingProject = await Project.findOne({ 
       id: finalProjectId,
       $or: [
@@ -822,7 +814,12 @@ const importWorker = new Worker(
     console.log(`[openapi-import] ✅ Project exists: ${finalProjectId} (${existingProject.projectname})`);
     await job.updateProgress(20);
 
-    // ─── STEP 3: Extract endpoints from spec ──────────────────────────
+    // ─── STEP 3: Get protocol from environment ─────────────────────────
+    const protocol = process.env.PROTOCOL || 'http';
+    const host = process.env.HOST || 'localhost:8080';
+    console.log(`[openapi-import] 📌 Using protocol: ${protocol}, host: ${host}`);
+
+    // ─── STEP 4: Extract endpoints from spec and build URLs ───────────
     const basePath = spec.basePath || '';
     const endpointsMap = {};
 
@@ -836,6 +833,13 @@ const importWorker = new Worker(
         const version = 'v1';
         const versionedPath = `/${version}${fullPath}`;
 
+        // Remove leading slash for URL building
+        let cleanPath = versionedPath;
+        if (cleanPath.startsWith('/')) cleanPath = cleanPath.slice(1);
+
+        // ✅ BUILD THE FULL URL: protocol://host/p/projectId/version/path
+        const actualFullUrl = `${protocol}://${host}/p/${finalProjectId}/${cleanPath}`;
+
         if (!endpointsMap[fullPath]) {
           endpointsMap[fullPath] = { baseUrlPath: fullPath, versions: [] };
         }
@@ -844,36 +848,37 @@ const importWorker = new Worker(
           method: method.toUpperCase(),
           urlPath: versionedPath,
           version: version,
-          protocol: 'https',
+          protocol: protocol,
           statusCode: 200,
           requestBody: operation?.requestBody?.content?.['application/json']?.schema?.example || null,
           responseBody: operation?.responses?.['200']?.content?.['application/json']?.schema?.example || null,
           summary: operation?.summary || '',
           description: operation?.description || '',
           operationId: operation?.operationId || `${method}_${rawPath.replace(/\//g, '_')}`,
+          actualFullUrl: actualFullUrl,
         });
+
+        console.log(`[openapi-import] 🔗 Built URL: ${actualFullUrl}`);
       });
     });
 
     const endpointsArray = Object.values(endpointsMap);
-    console.log(`[openapi-import] 📊 Extracted ${endpointsArray.length} endpoints from spec`);
+    console.log(`[openapi-import] 📊 Extracted ${endpointsArray.length} endpoints from spec (protocol: ${protocol})`);
     await job.updateProgress(40);
 
     if (endpointsArray.length === 0) {
       throw new Error('No valid endpoints found in the OpenAPI spec');
     }
 
-    // ─── STEP 4: Save to ProjectApiHistory ─────────────────────────────
+    // ─── STEP 5: Save to ProjectApiHistory ─────────────────────────────
     let projectHistory = await ProjectApiHistory.findOne({ projectID: finalProjectId });
 
     if (projectHistory) {
-      // Update existing history
       projectHistory.endpoints = endpointsArray;
       projectHistory.updatedAt = new Date();
       await projectHistory.save();
       console.log(`[openapi-import] ✅ Updated ProjectApiHistory for: ${finalProjectId}`);
     } else {
-      // Create new history for existing project
       projectHistory = new ProjectApiHistory({
         projectID: finalProjectId,
         projectCode: finalProjectId,
@@ -885,7 +890,7 @@ const importWorker = new Worker(
     }
     await job.updateProgress(60);
 
-    // ─── STEP 5: Create SystemEventLog entries ────────────────────────
+    // ─── STEP 6: Create SystemEventLog entries ────────────────────────
     console.log(`[openapi-import] 📝 Creating SystemEventLog entries for ${endpointsArray.length} endpoints...`);
     const systemLogs = [];
     for (const endpoint of endpointsArray) {
@@ -893,7 +898,7 @@ const importWorker = new Worker(
         systemLogs.push({
           projectId: finalProjectId,
           username: username,
-          action: 'updated',
+          action: 'imported',
           method: ver.method,
           url: ver.urlPath,
           version: ver.version,
@@ -910,7 +915,7 @@ const importWorker = new Worker(
     }
     await job.updateProgress(70);
 
-    // ─── STEP 6: Publish to Redis for real-time updates ──────────────
+    // ─── STEP 7: Publish to Redis for real-time updates ──────────────
     try {
       await externalRedis.publish('api_history_update', JSON.stringify({ projectId: finalProjectId }));
       console.log(`[openapi-import] 📤 Published API history update for ${finalProjectId}`);
@@ -918,18 +923,15 @@ const importWorker = new Worker(
       console.error('[openapi-import] Failed to publish history update:', err);
     }
 
-    // ─── STEP 7: Update project container (no new container created) ──
-    // 🚨 CRITICAL: This does NOT create a new container - it only updates existing one
+    // ─── STEP 8: Update project container ──────────────────────────────
     console.log(`[openapi-import] 🏗️ Ensuring project container is running for ${finalProjectId}`);
     
-    // Check if container exists and is running
     const containerName = `proj-${finalProjectId}`;
     const containerInfo = await getContainerInfo(containerName);
     
     if (containerInfo && containerInfo.isRunning) {
       console.log(`[openapi-import] ✅ Container ${containerName} is running`);
       
-      // Sync routes to the existing container
       const synced = await syncProjectContainer(containerName);
       if (!synced) {
         console.warn(`[openapi-import] ⚠️ Sync failed for ${containerName}, will retry with mockSyncQueue`);
@@ -947,7 +949,7 @@ const importWorker = new Worker(
     }
     await job.updateProgress(80);
 
-    // ─── STEP 8: Enqueue mock sync jobs for each API ──────────────────
+    // ─── STEP 9: Enqueue mock sync jobs for each API ──────────────────
     console.log(`[openapi-import] 📤 Queuing API sync jobs...`);
     const mockSyncQueue = new Queue('mockSyncQueue', { connection: connectionOpts });
     let apiCount = 0;
@@ -960,25 +962,25 @@ const importWorker = new Worker(
             version: ver.version,
             method: ver.method,
             urlPath: ver.urlPath,
-            protocol: ver.protocol || 'https',
+            protocol: ver.protocol || protocol,
             requestBody: ver.requestBody,
             responseBody: ver.responseBody,
             statusCode: ver.statusCode || 200,
             summary: ver.summary || '',
             description: ver.description || '',
+            actualFullUrl: ver.actualFullUrl,
           }
         });
         apiCount++;
       }
     }
-    console.log(`[openapi-import] 📤 Queued ${apiCount} API sync jobs for project ${finalProjectId}`);
+    console.log(`[openapi-import] 📤 Queued ${apiCount} API sync jobs for project ${finalProjectId} (protocol: ${protocol})`);
     await job.updateProgress(95);
 
-    // ─── STEP 9: Enqueue project container job to ensure it's running ──
-    // This will wake up the container if paused, but NOT create a new one
+    // ─── STEP 10: Enqueue project container job ──────────────────────────
     const projectQueue = new Queue('projectQueue', { connection: connectionOpts });
     await projectQueue.add('ensure-running', {
-      action: 'update',  // Using 'update' not 'create' - this prevents new container creation
+      action: 'update',
       projectId: finalProjectId,
       isActive: true
     });
@@ -992,8 +994,10 @@ const importWorker = new Worker(
       projectId: finalProjectId,
       projectName: existingProject.projectname,
       apiCount: apiCount,
+      protocol: protocol,
+      host: host,
       status: 'completed',
-      message: `Successfully imported ${endpointsArray.length} endpoints with ${apiCount} API versions`
+      message: `Successfully imported ${endpointsArray.length} endpoints with ${apiCount} API versions using ${protocol}://${host}/p/${finalProjectId}/`
     };
 
     console.log(`[openapi-import] ✅ Job ${job.id} completed:`, result);
@@ -1165,7 +1169,7 @@ async function startup() {
 
   await ensureProjectImage();
 
-  // Clean up old BullMQ keys (only for our queues)
+  // Clean up old BullMQ keys
   console.log('[Startup] 🧹 Cleaning up old BullMQ keys...');
   const ourQueuePrefixes = ['bull:projectQueue:', 'bull:mockSyncQueue:', 'bull:latency-store:', 'bull:openapi-import:'];
   for (const prefix of ourQueuePrefixes) {
@@ -1177,7 +1181,6 @@ async function startup() {
       }
     } catch (_) {}
   }
-  // Also clean internal Redis (just in case)
   try {
     const keys = await internalRedis.keys('bull:*');
     if (keys.length) {
@@ -1190,7 +1193,6 @@ async function startup() {
 
   console.log(`[Startup] ✅ Worker server ready. Pool size: ${POOL_SIZE}, concurrency: ${WORKER_CONCURRENCY}`);
 }
-
 
 startup().catch(err => {
   console.error('[Startup] ❌ Fatal error:', err);

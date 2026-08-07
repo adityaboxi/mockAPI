@@ -31,8 +31,8 @@ function MainContent() {
   const isWhiteTheme = theme === 'white';
   const w = isWhiteTheme;
 
-  // All state (unchanged)
-  const [protocol, setProtocol] = useState('http');
+  // All state
+  const [protocol, setProtocol] = useState('http'); // ✅ Changed default to 'http'
   const [method, setMethod] = useState('GET');
   const [urlPath, setUrlPath] = useState('');
   const [pathParams, setPathParams] = useState([]);
@@ -118,7 +118,8 @@ function MainContent() {
 
   useEffect(() => {
     if (!currentVersionData) return;
-    setProtocol(currentVersionData.protocol || 'https');
+    // ✅ Use the protocol from currentVersionData or default to 'http'
+    setProtocol(currentVersionData.protocol || 'http');
     setMethod(currentVersionData.method || 'GET');
     setUrlPath(currentVersionData.urlPath || '');
     setIncludeAIResponse(currentVersionData.airesponse === true || currentVersionData.includeAiresponse === true);
@@ -257,19 +258,29 @@ function MainContent() {
     );
   };
 
+  // ✅ FIXED: buildFinalUrl uses the selected protocol
   const buildFinalUrl = () => {
     let finalUrl = MOCK_API_BASE_URL;
+    
+    // Replace protocol in base URL with selected protocol
+    // If MOCK_API_BASE_URL is "https://api.mockapi.info", change to "http://api.mockapi.info" if protocol is http
+    const baseUrlWithoutProtocol = MOCK_API_BASE_URL.replace(/^https?:\/\//, '');
+    finalUrl = `${protocol}://${baseUrlWithoutProtocol}`;
+    
     let path = urlPath || '';
     path = path.replace(/[^a-zA-Z0-9/:_-]/g, '').replace(/\/+/g, '/');
     if (path.startsWith('/')) path = path.substring(1);
     if (path.endsWith('/')) path = path.slice(0, -1);
+    
     pathParams.forEach(param => {
       const placeholder = `:${param.key}`;
       let value = param.value || `{${param.key}}`;
       value = value.replace(/[^a-zA-Z0-9_-]/g, '');
       path = path.replace(new RegExp(placeholder, 'g'), value);
     });
+    
     if (path) finalUrl += '/' + path;
+    
     const activeParams = queryParams.filter(q => q.key && q.value);
     if (activeParams.length > 0) {
       const queryStrings = [];
@@ -286,7 +297,7 @@ function MainContent() {
   const finalUrl = useMemo(() => buildFinalUrl(), [protocol, urlPath, pathParams, queryParams]);
 
   const copyToClipboard = async () => {
-    const urlToCopy = currentVersionData?.actualFullUrl;
+    const urlToCopy = currentVersionData?.actualFullUrl || finalUrl;
     if (!urlToCopy) return;
     await navigator.clipboard.writeText(urlToCopy);
     setCopied(true);
@@ -400,9 +411,9 @@ function MainContent() {
     }
   };
 
-  // AI handlers (identical)
+  // AI handlers
   const applyAiResult = useCallback((result) => {
-    setProtocol(result.protocol || 'https');
+    setProtocol(result.protocol || 'http');
     setMethod(result.method || 'GET');
     setUrlPath(result.urlPath || '');
     setPathParams(result.pathParams || []);
@@ -567,7 +578,7 @@ function MainContent() {
       const result = await response.json();
       if (result.previousData) {
         const prev = result.previousData;
-        setProtocol(prev.protocol || 'https');
+        setProtocol(prev.protocol || 'http');
         setMethod(prev.method || 'GET');
         setUrlPath(prev.urlPath || '');
         setPathParams(prev.pathParams || []);
@@ -665,7 +676,6 @@ function MainContent() {
   const [serverUrl, setServerUrl] = useState('');
 
   // ─── THEME‑AWARE STYLES ─────────────────────────────────────
-  // More refined, card‑like appearance
   const cardBg = w ? "bg-white" : "bg-zinc-900";
   const borderColor = w ? "border-gray-200" : "border-zinc-800";
   const cardBorder = `border ${borderColor}`;
@@ -717,7 +727,7 @@ function MainContent() {
       <div className={`flex-1 h-full overflow-y-auto px-6 py-6 space-y-6 transition-colors duration-150 ${
         w ? "bg-gray-50 text-gray-800" : "bg-zinc-950 text-zinc-300"
       }`}>
-        {/* UrlBuilder section – already good, we just wrap it with a subtle card */}
+        {/* UrlBuilder section */}
         <div className={`rounded-xl ${cardBg} ${cardBorder} p-4 shadow-sm`}>
           <UrlBuilder
             protocol={protocol} setProtocol={setProtocol}
@@ -915,7 +925,7 @@ function MainContent() {
         </div>
       </div>
 
-      {/* Bottom AI section – improved layout and visual integration */}
+      {/* Bottom AI section */}
       <div className={`shrink-0 border-t z-20 flex flex-col relative ${
         w ? "border-gray-200 bg-white" : "border-zinc-800 bg-zinc-950"
       }`}>
