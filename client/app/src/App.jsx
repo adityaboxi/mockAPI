@@ -21,6 +21,7 @@ import ChangePassword from "./pages/ChangePassword";
 // ─── Components ────────────────────────────────────────────────────
 import TitleUpdater from './components/TitleUpdater';
 
+
 function App() {
   return (
     <>
