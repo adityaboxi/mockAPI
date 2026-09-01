@@ -15,7 +15,8 @@ const User = require('./models/User');
 
 console.log('[worker-logs] 🚀 Starting worker-logs (High-Concurrency Optimized)...');
 
-// --------- MongoDB Connection (Connection Pooled) ----------
+
+// -------- MongoDB Connection (Connection Pooled) ----------
 if (!process.env.MONGO_URI) {
   console.error('[worker-logs] ❌ MONGO_URI is not set');
   process.exit(1);
