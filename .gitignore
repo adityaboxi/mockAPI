@@ -27,3 +27,24 @@ Thumbs.db
 *.swo
 
 /test/
+
+# Xcode & iOS Build / Cache files
+DerivedData/
+*.xcuserstate
+project.xcworkspace/xcuserdata/
+*.xcuserdatad/
+*.xcscmblueprint
+*.moved-aside
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# iOS App temporary and archive builds
+ios_app/**/DerivedData/
+ios_app/**/*.xcuserstate
+ios_app/**/xcuserdata/
+ios_app/**/build/

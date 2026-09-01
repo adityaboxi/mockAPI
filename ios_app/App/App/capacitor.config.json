@@ -1,0 +1,22 @@
+{
+	"appId": "info.mockapi.app",
+	"appName": "MockAPI",
+	"webDir": "build",
+	"bundledWebRuntime": false,
+	"server": {
+		"url": null,
+		"cleartext": false,
+		"allowNavigation": [
+			"server.mockapi.info",
+			"client.mockapi.info"
+		]
+	},
+	"ios": {
+		"scheme": "MockAPI",
+		"contentInset": "automatic",
+		"preferredContentMode": "mobile",
+		"scrollEnabled": true,
+		"backgroundColor": "#1e1e24"
+	},
+	"packageClassList": []
+}

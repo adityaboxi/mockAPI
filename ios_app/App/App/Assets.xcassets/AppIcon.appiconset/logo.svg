@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- Rich Cyber Tech Gradients -->
+    <linearGradient id="cyber-primary" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a855f7" />
+      <stop offset="100%" stop-color="#ec4899" />
+    </linearGradient>
+    <linearGradient id="cyber-secondary" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#06b6d4" />
+    </linearGradient>
+    <filter id="glow-heavy" x="-15%" y="-15%" width="130%" height="130%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Deep space backdrop for high visible contrast -->
+  <rect width="512" height="512" rx="112" fill="#09090b" />
+
+  <!-- Grid mesh layout representing mock endpoints -->
+  <circle cx="256" cy="256" r="210" fill="none" stroke="#1f1f23" stroke-width="3" stroke-dasharray="16 12" />
+  <circle cx="256" cy="256" r="140" fill="none" stroke="#2a2a32" stroke-width="1.5" />
+
+  <!-- Connecting Node Lines representing APIs -->
+  <g stroke="#3f3f46" stroke-width="2.5" opacity="0.6">
+    <line x1="256" y1="46" x2="256" y2="466" />
+    <line x1="46" y1="256" x2="466" y2="256" />
+  </g>
+
+  <!-- Mock API Cyber Braces "{ }" with nested M shape -->
+  <g transform="translate(256, 256) scale(1.15)">
+    <!-- Left Coding Brace representing mocked payloads -->
+    <path d="M -60 -70 C -60 -70, -85 -70, -85 -40 L -85 -15 C -85 -5, -95 -5, -100 -5 C -95 -5, -85 -5, -85 5 L -85 30 C -85 60, -60 60, -60 60" 
+          fill="none" 
+          stroke="url(#cyber-primary)" 
+          stroke-width="16" 
+          stroke-linecap="round" 
+          stroke-linejoin="round"
+          filter="url(#glow-heavy)" />
+          
+    <!-- Right Coding Brace representing mocked payloads -->
+    <path d="M 60 -70 C 60 -70, 85 -70, 85 -40 L 85 -15 C 85 -5, 95 -5, 100 -5 C 95 -5, 85 -5, 85 5 L 85 30 C 85 60, 60 60, 60 60" 
+          fill="none" 
+          stroke="url(#cyber-primary)" 
+          stroke-width="16" 
+          stroke-linecap="round" 
+          stroke-linejoin="round"
+          filter="url(#glow-heavy)" />
+
+    <!-- Stylized Central M representing Mock Server Connectivity -->
+    <path d="M -32 25 L -16 -15 L 0 10 L 16 -15 L 32 25" 
+          fill="none" 
+          stroke="url(#cyber-secondary)" 
+          stroke-width="14" 
+          stroke-linecap="round" 
+          stroke-linejoin="round" />
+
+    <!-- Pulsing Core Glowing Endpoint Node -->
+    <circle cx="0" cy="10" r="10" fill="url(#cyber-secondary)" filter="url(#glow-heavy)" />
+    <circle cx="0" cy="10" r="4" fill="#ffffff" />
+  </g>
+</svg>

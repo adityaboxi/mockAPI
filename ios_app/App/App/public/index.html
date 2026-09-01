@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <!-- SVG favicon (modern browsers) -->
+  <link rel="icon" type="image/svg+xml" href="./logo-2.svg" sizes="any">
+  <!-- Safari pinned tab mask (uses the same SVG) -->
+  <link rel="mask-icon" href="./logo-2.svg" color="#a855f7">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>MockAPI</title>
+  <!-- 👇 Prevents white flash: force dark background immediately + safe area support -->
+  <style>
+    :root {
+      --sat: env(safe-area-inset-top, 0px);
+      --sab: env(safe-area-inset-bottom, 0px);
+      --sal: env(safe-area-inset-left, 0px);
+      --sar: env(safe-area-inset-right, 0px);
+    }
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      min-height: 100vh;
+      min-height: -webkit-fill-available;
+      background-color: #1e1e24;
+      overflow-x: hidden;
+      -webkit-text-size-adjust: 100%;
+      -webkit-touch-callout: none;
+      -webkit-tap-highlight-color: transparent;
+      overscroll-behavior-y: none;
+    }
+    #root {
+      width: 100%;
+      min-height: 100vh;
+      min-height: -webkit-fill-available;
+      display: flex;
+      flex-direction: column;
+    }
+    /* Prevent iOS auto-zoom on input focus */
+    input, select, textarea {
+      font-size: 16px !important;
+    }
+
+    /* ══════════════════════════════════════════════════════════════════
+       📱 APPLE HIG & GOLDEN RATIO (φ = 1.618) NATIVE IOS UI
+       ══════════════════════════════════════════════════════════════════ */
+    /* Root Viewport Fixes */
+    html, body, #root {
+      width: 100%;
+      height: 100%;
+      min-height: 100%;
+      overflow: hidden;
+      background-color: #09090b;
+      -webkit-font-smoothing: antialiased;
+      -webkit-touch-callout: none;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+
+    /* Input focus anti-zoom */
+    input, select, textarea {
+      font-size: 16px !important;
+      -webkit-user-select: auto !important;
+      user-select: auto !important;
+    }
+
+    /* iOS Glassmorphic Top Header */
+    header {
+      padding-top: max(8px, env(safe-area-inset-top)) !important;
+      padding-left: max(16px, env(safe-area-inset-left)) !important;
+      padding-right: max(16px, env(safe-area-inset-right)) !important;
+      background: rgba(12, 12, 14, 0.85) !important;
+      backdrop-filter: blur(24px) !important;
+      -webkit-backdrop-filter: blur(24px) !important;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+    }
+
+    /* Main Tab Panels Scroll Container */
+    main, div.custom-scrollbar {
+      padding-left: max(14px, env(safe-area-inset-left)) !important;
+      padding-right: max(14px, env(safe-area-inset-right)) !important;
+      padding-bottom: calc(85px + env(safe-area-inset-bottom)) !important;
+      overflow-y: auto !important;
+      -webkit-overflow-scrolling: touch !important;
+    }
+
+    /* Native Bottom Tab Bar */
+    nav {
+      background: rgba(12, 12, 14, 0.92) !important;
+      backdrop-filter: blur(28px) !important;
+      -webkit-backdrop-filter: blur(28px) !important;
+      border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
+      padding-bottom: max(12px, env(safe-area-inset-bottom)) !important;
+      box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.6) !important;
+    }
+
+    /* Tactile Golden-Ratio Touch Feedback */
+    button:active {
+      transform: scale(0.96);
+      transition: transform 0.1s ease;
+    }
+
+    /* Glassmorphic Cards & Inputs */
+    .border {
+      border-color: rgba(255, 255, 255, 0.08) !important;
+    }
+    .rounded-2xl {
+      border-radius: 1.25rem !important;
+    }
+    .rounded-xl {
+      border-radius: 0.95rem !important;
+    }
+
+    /* Custom Mobile Scrollbars */
+    ::-webkit-scrollbar {
+      width: 4px;
+      height: 4px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 10px;
+    }
+  </style>
+  <script type="module" crossorigin src="./assets/index-84A0evYC.js"></script>
+  <link rel="modulepreload" crossorigin href="./assets/rolldown-runtime-hePW80VL.js">
+  <link rel="modulepreload" crossorigin href="./assets/vendor-charts-C9qgelbo.js">
+  <link rel="modulepreload" crossorigin href="./assets/vendor-react-CIa2Ztvt.js">
+  <link rel="modulepreload" crossorigin href="./assets/apiClient-BWAB3yl2.js">
+  <link rel="modulepreload" crossorigin href="./assets/vendor-socket-r9e3RlwK.js">
+  <link rel="stylesheet" crossorigin href="./assets/index-DVrRj60Z.css">
+</head>
+
+<body>
+  <div id="root"></div>
+</body>
+
+</html>
