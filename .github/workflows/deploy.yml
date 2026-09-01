@@ -14,10 +14,16 @@ jobs:
 
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.0.0
+        env:
+          SERVER_ENV: ${{ secrets.SERVER_ENV }}
+          CLIENT_ENV: ${{ secrets.CLIENT_ENV }}
+          MOCK_SERVER_ENV: ${{ secrets.MOCK_SERVER_ENV }}
+          TELEMETRY_ENV: ${{ secrets.TELEMETRY_ENV }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          envs: SERVER_ENV,CLIENT_ENV,MOCK_SERVER_ENV,TELEMETRY_ENV
           script: |
             set -e
             set -o pipefail
@@ -41,37 +47,18 @@ jobs:
             # -----------------------------------------------------------
             # 2. WRITE .env FILES FROM SECRETS (RAW LITERAL WRITE)
             # -----------------------------------------------------------
-            cat << 'EOF' > server/.env
-${{ secrets.SERVER_ENV }}
-EOF
-
-            cat << 'EOF' > client/.env
-${{ secrets.CLIENT_ENV }}
-EOF
-
-            cat << 'EOF' > mock-server/.env
-${{ secrets.MOCK_SERVER_ENV }}
-EOF
+            printf '%s\n' "$SERVER_ENV" > server/.env
+            printf '%s\n' "$CLIENT_ENV" > client/.env
+            printf '%s\n' "$MOCK_SERVER_ENV" > mock-server/.env
 
             mkdir -p telemetry-server
-            if [ -n "${{ secrets.TELEMETRY_ENV }}" ]; then
-              cat << 'EOF' > telemetry-server/.env
-${{ secrets.TELEMETRY_ENV }}
-EOF
+            if [ -n "$TELEMETRY_ENV" ]; then
+              printf '%s\n' "$TELEMETRY_ENV" > telemetry-server/.env
             else
               # Production defaults for Telemetry
-              cat << 'EOF' > telemetry-server/.env
-PORT=3003
-SESSION_SECRET=your-strong-secret
-REDIS_URL=redis://redis:6378
-DASHBOARD_USER=admin
-DASHBOARD_PASS=password
-CLIENT_ORIGIN=https://opentelemetry.client.mockapi.info
-NODE_ENV=production
-VITE_API_BASE_URL=/api
-VITE_WS_URL=/api
-EOF
+              printf "PORT=3003\nSESSION_SECRET=your-strong-secret\nREDIS_URL=redis://redis:6378\nDASHBOARD_USER=admin\nDASHBOARD_PASS=password\nCLIENT_ORIGIN=https://opentelemetry.client.mockapi.info\nNODE_ENV=production\nVITE_API_BASE_URL=/api\nVITE_WS_URL=/api\n" > telemetry-server/.env
             fi
+
 
 
             # -----------------------------------------------------------
