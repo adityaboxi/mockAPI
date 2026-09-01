@@ -1,137 +1,98 @@
 -- log_buffer.lua
--- OpenTelemetry Telemetry Logger for OpenResty Nginx Gateway
--- Batches logs and flushes asynchronously via HTTP to telemetry-server
+-- This is the Lua version of your universal-logger.js
+-- It batches logs and sends them via HTTP to telemetry-server.
 
 local http = require("resty.http")
-local cjson = require("cjson.safe")
+local cjson = require("cjson")
 
 local _M = {}
+
 
 -- ---------- CONFIGURATION ----------
 local LOG_SERVER_URL = os.getenv("LOG_SERVER_URL") or "http://telemetry-server:3003/v1/logs"
 local CONTAINER_NAME = os.getenv("CONTAINER_NAME") or "nginx-gateway"
-local MAX_QUEUE_SIZE = 5000       -- Max logs in memory (~1 MB)
-local BATCH_INTERVAL = 3          -- Flush interval in seconds
-local HTTP_TIMEOUT   = 2000       -- 2 seconds HTTP timeout (non-blocking)
+local MAX_QUEUE_SIZE = 1000      -- Max logs in memory (~200 KB)
+local BATCH_INTERVAL = 3         -- Flush every 3 seconds
 
 -- Each worker process has its own independent buffer.
 local buffer = {}
 local flush_timer = nil
-local is_flushing = false
 
--- ---------- FLUSH IMPLEMENTATION ----------
-local function do_flush()
+-- ---------- FLUSH FUNCTION (Sends batch to server) ----------
+local function flush()
     if #buffer == 0 then
         return
     end
 
-    -- Atomic swap: copy current buffer and reset queue
+    -- Take a copy of the queue and clear it immediately
     local batch = buffer
     buffer = {}
 
-    -- Send batch to telemetry server via non-blocking cosocket
+    -- Send the batch in ONE HTTP request
     local httpc = http.new()
-    httpc:set_timeout(HTTP_TIMEOUT)
-
-    local json_body, json_err = cjson.encode(batch)
-    if not json_body then
-        ngx.log(ngx.WARN, "[log_buffer] Failed to encode logs to JSON: ", json_err)
-        return
-    end
+    httpc:set_timeout(2000)  -- 2 second timeout (non-blocking)
 
     local res, err = httpc:request_uri(LOG_SERVER_URL, {
         method = "POST",
-        body = json_body,
+        body = cjson.encode(batch),  -- Sends an ARRAY of logs
         headers = {
             ["Content-Type"] = "application/json",
-            ["User-Agent"] = "OpenResty-Nginx-Gateway/1.0",
-        },
+        }
     })
 
-    if not res or (res.status < 200 or res.status >= 300) then
-        -- Silently drop on failure to prevent memory leaks and blocking
-        -- ngx.log(ngx.WARN, "[log_buffer] Telemetry flush failed: ", err or res.status)
+    -- Silently drop logs if the server is down.
+    if not res or res.status ~= 200 then
+        -- Uncomment for debugging:
+        -- ngx.log(ngx.ERR, "Failed to send logs: ", err or res.status)
     end
 end
 
--- Timer callback wrapper
-local function flush_timer_handler(premature)
-    if premature then
-        -- Worker is exiting: attempt a fast final flush
-        do_flush()
-        return
-    end
-
-    if is_flushing then
-        return
-    end
-
-    is_flushing = true
-    pcall(do_flush)
-    is_flushing = false
-end
-
--- Async early flush trigger for high load
-local function trigger_early_flush()
-    if is_flushing then
-        return
-    end
-    -- Schedule immediate 0s async timer to avoid blocking log_by_lua phase
-    local ok, err = ngx.timer.at(0, flush_timer_handler)
-    if not ok and err ~= "process exiting" then
-        -- Timer pool exhausted under heavy load; drops silently
-    end
-end
-
--- ---------- ADD LOG ENTRY TO BUFFER ----------
+-- ---------- ADD LOG TO BUFFER ----------
 function _M.log(entry)
+    -- Build log entry with timestamp and container name
     local log_entry = {
-        time = ngx.now() * 1000,
+        time = ngx.now() * 1000,  -- milliseconds (matches JavaScript Date.now())
         container = CONTAINER_NAME,
         level = entry.level or "INFO",
         message = entry.message or "",
-        method = entry.method or "GET",
-        uri = entry.uri or "/",
-        status = entry.status or 200,
-        client_ip = entry.client_ip or "",
-        upstream_addr = entry.upstream_addr or "",
-        request_time = entry.request_time or 0,
+        method = entry.method,
+        uri = entry.uri,
+        status = entry.status,
+        client_ip = entry.client_ip,
+        upstream_addr = entry.upstream_addr,
+        request_time = entry.request_time,
     }
 
-    -- Bounded queue protection: drop oldest if buffer is completely saturated
+    -- ---------- BOUNDED QUEUE LOGIC (Memory Safety) ----------
     if #buffer >= MAX_QUEUE_SIZE then
-        table.remove(buffer, 1)
+        table.remove(buffer, 1)  -- Remove oldest
     end
 
     table.insert(buffer, log_entry)
 
-    -- Trigger early async flush if buffer reaches 50% capacity
-    if #buffer >= math.floor(MAX_QUEUE_SIZE / 2) then
-        trigger_early_flush()
+    -- Early flush if queue is half full
+    if #buffer >= MAX_QUEUE_SIZE / 2 then
+        flush()
     end
 end
 
--- ---------- INIT TIMER (called once per worker in init_worker_by_lua) ----------
+-- ---------- INIT TIMER (called once per worker) ----------
 function _M.init_timer()
     if flush_timer then
         return
     end
 
-    local ok, err = ngx.timer.every(BATCH_INTERVAL, flush_timer_handler)
-    if not ok then
-        ngx.log(ngx.ERR, "[log_buffer] Failed to create flush timer: ", err)
-    else
-        flush_timer = true
-    end
+    flush_timer = ngx.timer.every(BATCH_INTERVAL, function()
+        flush()
+        return true
+    end)
 end
 
 -- ---------- FLUSH ON WORKER EXIT ----------
 local old_exit = ngx.worker.exit
 ngx.worker.exit = function(code)
-    pcall(do_flush)
-    if old_exit then
-        old_exit(code)
-    end
+    flush()
+    old_exit(code)
 end
 
 return _M

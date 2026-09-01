@@ -1,4 +1,3 @@
-// src/components/ProjectList/ProjectItem.jsx
 import React, { useState, useCallback, useMemo, memo } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useProject } from "../../context/ProjectContext";
@@ -21,7 +20,7 @@ function ProjectItem({ project, isSelected, onClick, onStatusChange, onProjectUp
 
   // Stable event handlers
   const handleProjectClick = useCallback(async () => {
-    await selectProject(project.projectname, project.id, project.invitationCode);
+    await selectProject(project.projectname, project.id);
     if (onClick) onClick(project);
   }, [selectProject, project, onClick]);
 
@@ -36,92 +35,82 @@ function ProjectItem({ project, isSelected, onClick, onStatusChange, onProjectUp
 
   const handleStatusChange = useCallback(
     (stat) => {
-      onStatusChange?.(project.id, stat);
+      onStatusChange(project.id, stat);
     },
     [onStatusChange, project.id]
   );
 
   const handleInvitationUpdate = useCallback(
     (id, code) => {
-      onProjectUpdate?.(id, { invitationCode: code });
+      onProjectUpdate(id, { invitationCode: code });
     },
     [onProjectUpdate]
   );
 
-  const handleKeyDown = useCallback((e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      handleProjectClick();
-    }
-  }, [handleProjectClick]);
-
   // Memoize the status text and color class
-  const isActive = project.isActive !== false;
-  const statusText = isActive ? "Active" : "Inactive";
-  const statusDot = isActive ? "bg-emerald-400 shadow-xs shadow-emerald-400/50" : "bg-zinc-500";
-  const statusClass = isActive ? "text-emerald-400" : "text-zinc-500";
+  const statusText = project.isActive !== false ? "Active" : "Inactive";
+  const statusDot = project.isActive !== false ? "bg-emerald-400" : "bg-amber-500";
+  const statusClass = project.isActive !== false ? "text-emerald-400" : "text-amber-500";
 
-  // ─── Theme-aware design tokens ─────────────────────────────────
+  // ─── Theme-aware styles ─────────────────────────────────────────
   const baseClasses = `
-    group mx-1.5 my-1 px-3 py-2.5 rounded-xl cursor-pointer transition-all duration-200 select-none border outline-none
+    flex flex-col py-3 px-3.5 cursor-pointer border-b transition-all duration-200 select-none
+    ${isWhiteTheme ? "border-gray-100" : "border-zinc-800/60"}
   `;
 
   const selectedClasses = isSelected
     ? isWhiteTheme
-      ? "bg-blue-50/80 border-blue-200 text-slate-900 shadow-xs"
-      : "bg-blue-600/10 border-blue-500/30 text-white shadow-xs shadow-blue-500/10"
+      ? "bg-blue-50 border-l-2 border-l-blue-500 text-gray-800"
+      : "bg-blue-950/30 border-l-2 border-l-blue-500 text-zinc-200"
     : isWhiteTheme
-      ? "bg-transparent border-transparent hover:bg-slate-100/80 text-slate-700 hover:border-slate-200/60"
-      : "bg-transparent border-transparent hover:bg-zinc-900/60 text-zinc-400 hover:text-zinc-200 hover:border-zinc-800/60";
+      ? "hover:bg-gray-50 text-gray-700"
+      : "hover:bg-zinc-900/60 text-zinc-400";
+
+  const containerClasses = `${baseClasses} ${selectedClasses}`;
 
   return (
     <>
-      <div
-        role="button"
-        tabIndex={0}
-        aria-pressed={isSelected}
-        onClick={handleProjectClick}
-        onKeyDown={handleKeyDown}
-        className={`${baseClasses} ${selectedClasses}`}
-      >
-        <div className="flex items-center justify-between gap-1.5">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-xs opacity-75 shrink-0" aria-hidden="true">📁</span>
-            <span className="font-semibold text-xs truncate tracking-wide">
-              {project.projectname}
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1 shrink-0">
-            {isCreator && (
-              <button
-                type="button"
-                onClick={handleSettingsClick}
-                className={`
-                  p-1 rounded-md transition-all
-                  ${isWhiteTheme
-                    ? "text-slate-400 hover:text-slate-700 hover:bg-slate-200/80"
-                    : "text-zinc-500 hover:text-zinc-200 hover:bg-zinc-800"
-                  }
-                  focus:outline-none focus:ring-1 focus:ring-blue-500
-                `}
-                aria-label="Workspace options"
-                title="Workspace settings & telemetry"
-              >
-                <span className="text-xs font-bold leading-none">⋯</span>
-              </button>
-            )}
-          </div>
+      <div onClick={handleProjectClick} className={containerClasses}>
+        <div className="flex items-center justify-between">
+          <span className="font-semibold text-sm truncate max-w-[75%] tracking-wide">
+            {project.projectname}
+          </span>
+          {isCreator && (
+            <button
+              onClick={handleSettingsClick}
+              className={`
+                flex items-center justify-center w-6 h-6 rounded
+                transition-all duration-200
+                ${isWhiteTheme
+                  ? "bg-gray-100 hover:bg-gray-200 text-gray-500 hover:text-gray-700"
+                  : "bg-zinc-800 hover:bg-zinc-700 text-zinc-500 hover:text-zinc-300"
+                }
+                hover:scale-105 active:scale-95
+                focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1
+                ${isWhiteTheme ? "focus:ring-offset-white" : "focus:ring-offset-zinc-900"}
+              `}
+              aria-label="Project settings"
+            >
+              <span className="text-xs font-bold leading-none">⋯</span>
+            </button>
+          )}
         </div>
 
-        <div className="flex items-center gap-2 mt-1.5 pl-5">
-          <span className={`w-1.5 h-1.5 rounded-full ${statusDot} shrink-0`} />
-          <span className={`text-[10px] font-mono font-medium uppercase tracking-wider ${statusClass}`}>
+        <div className="flex items-center gap-2 mt-1">
+          <span className={`w-1.5 h-1.5 rounded-full ${statusDot} flex-shrink-0`} />
+          <span className={`text-[10px] font-mono uppercase tracking-wider ${statusClass}`}>
             {statusText}
           </span>
-          <span className="ml-auto text-[9px] font-mono px-1.5 py-0.2 rounded border border-transparent group-hover:border-zinc-700/40 opacity-70">
-            {isCreator ? "OWNER" : "MEMBER"}
-          </span>
+          {!isCreator && (
+            <span className="text-[9px] font-mono text-zinc-500 ml-auto">
+              member
+            </span>
+          )}
+          {isCreator && (
+            <span className="text-[9px] font-mono text-blue-400 ml-auto">
+              owner
+            </span>
+          )}
         </div>
       </div>
 

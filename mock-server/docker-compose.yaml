@@ -45,7 +45,7 @@ services:
       - CONTAINER_NAME=worker-server
       - NODE_ENV=production
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/status', (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1))"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -69,7 +69,7 @@ services:
       - CONTAINER_NAME=worker-server-2
       - NODE_ENV=production
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/status', (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1))"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -95,7 +95,7 @@ services:
       - CONTAINER_NAME=worker-health
       - NODE_ENV=production
     healthcheck:
-      test: ["CMD", "node", "-e", "process.exit(0)"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -121,7 +121,7 @@ services:
       - redis-internal
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:80/"]
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -144,7 +144,7 @@ services:
       - CONTAINER_NAME=worker-logs
       - NODE_ENV=production
     healthcheck:
-      test: ["CMD", "node", "-e", "process.exit(0)"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/health', (r) => r.statusCode === 200 ? process.exit(0) : process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3

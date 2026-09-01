@@ -2,107 +2,94 @@ require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 
 const mongoose = require('mongoose');
 
-const apiCallLogSchema = new mongoose.Schema(
-  {
-    project_id: { 
-      type: String, 
-      required: true, 
-      trim: true,
-      index: true,
-    },
-    username: { 
-      type: String, 
-      trim: true,
-      index: true,
-    }, // Extracted owner username (e.g. "aditya" from "aditya_proj1")
-
-    path: { 
-      type: String, 
-      default: '',
-      trim: true,
-    },
-    method: { 
-      type: String, 
-      default: 'GET',
-      uppercase: true,
-      trim: true,
-    },
-
-    timestamp: { 
-      type: Date, 
-      default: Date.now,
-    },
-
-    // Request metadata
-    ip: { 
-      type: String, 
-      default: '',
-      trim: true,
-    },
-    status: { 
-      type: Number, 
-      default: 200,
-    },
-    latency_ms: { 
-      type: Number, 
-      default: 0,
-    },
-
-    // Latency metrics breakdown
-    team_latency: { 
-      type: Number, 
-      default: 0,
-    },
-    user_latency: { 
-      type: Number, 
-      default: 0,
-    },
-    total_latency: { 
-      type: Number, 
-      default: 0,
-    },
-
-    // Routing & cache flags
-    private: { 
-      type: Boolean, 
-      default: false,
-    },
-    cache: { 
-      type: String, 
-      default: 'MISS',
-      uppercase: true,
-    },
-    ttl: { 
-      type: Number, 
-      default: 0,
-    },
+const apiCallLogSchema = new mongoose.Schema({
+  project_id: { 
+    type: String, 
+    required: true, 
+    index: true 
   },
-  { 
-    timestamps: false,     // Explicit timestamp field used
-    versionKey: false,     // Disable __v to save BSON size at 10k scale
-  }
-);
+  username: { 
+    type: String, 
+    index: true 
+  }, // extracted from project_id (e.g., "aditya" from "aditya_abc123")
 
-// ==================== HIGH-PERFORMANCE INDEXES ====================
+  path: { 
+    type: String, 
+    default: '' 
+  },
+  method: { 
+    type: String, 
+    default: 'GET',
+    uppercase: true 
+  },
 
-// 1. Primary dashboard timeline index (recent logs per project)
-apiCallLogSchema.index({ project_id: 1, timestamp: -1 });
+  timestamp: { 
+    type: Date, 
+    default: Date.now, 
+    index: true 
+  },
 
-// 2. Endpoint-specific metric filtering & aggregation
-apiCallLogSchema.index({ project_id: 1, method: 1, path: 1, timestamp: -1 });
+  // Request details
+  ip: { 
+    type: String, 
+    default: '' 
+  },
+  status: { 
+    type: Number, 
+    default: 0 
+  },
+  latency_ms: { 
+    type: Number, 
+    default: 0 
+  },
 
-// 3. User analytics timeline
-apiCallLogSchema.index({ username: 1, timestamp: -1 });
+  // Latency breakdown (from Redis)
+  team_latency: { 
+    type: Number, 
+    default: 0 
+  },
+  user_latency: { 
+    type: Number, 
+    default: 0 
+  },
+  total_latency: { 
+    type: Number, 
+    default: 0 
+  },
 
-// 4. Covered Index for latency stats aggregation (serviced entirely in RAM)
-apiCallLogSchema.index({ project_id: 1, timestamp: -1, total_latency: 1, status: 1 });
+  // Other flags
+  private: { 
+    type: Boolean, 
+    default: false 
+  },
+  cache: { 
+    type: String, 
+    default: 'MISS' 
+  },
+  ttl: { 
+    type: Number, 
+    default: 0 
+  },
 
-// 5. Security & DoS query index
-apiCallLogSchema.index({ project_id: 1, private: 1, ip: 1, timestamp: -1 });
-
-// 6. TTL: Auto-delete log records older than 30 days
-apiCallLogSchema.index({ timestamp: 1 }, { 
-  expireAfterSeconds: 30 * 24 * 3600,
+}, { 
+  timestamps: false   // We already have explicit timestamp
 });
 
-module.exports = mongoose.models.ApiCallLog || mongoose.model('ApiCallLog', apiCallLogSchema);
+// ==================== INDEXES ====================
+
+// Fast dashboard queries
+apiCallLogSchema.index({ project_id: 1, timestamp: -1 });
+apiCallLogSchema.index({ project_id: 1, path: 1, method: 1, timestamp: -1 });
+
+// Username-based queries
+apiCallLogSchema.index({ username: 1, timestamp: -1 });
+
+// TTL: Auto-delete logs older than 30 days
+apiCallLogSchema.index({ timestamp: 1 }, { 
+  expireAfterSeconds: 30 * 24 * 3600 
+});
+
+// Compound index for latency analytics
+apiCallLogSchema.index({ project_id: 1, private: 1, timestamp: -1 });
+
+module.exports = mongoose.model('ApiCallLog', apiCallLogSchema);

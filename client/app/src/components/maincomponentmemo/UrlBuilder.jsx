@@ -1,4 +1,3 @@
-// src/components/maincomponentmemo/UrlBuilder.jsx
 import React from "react";
 import ProtocolSelect from "./ProtocolSelect";
 import MethodSelect from "./MethodSelect";
@@ -12,22 +11,17 @@ const UrlBuilder = ({
   setMethod,
   urlPath,
   setUrlPath,
-  finalUrl,
   actualFullUrl,
   copied,
   copyToClipboard,
-  onOpenCodeExport,
   mutedTxt,
   inp,
   miniBtn,
   w
 }) => {
-  const displayUrl =
-    actualFullUrl && actualFullUrl.trim() !== ""
-      ? actualFullUrl
-      : finalUrl && finalUrl.trim() !== ""
-      ? finalUrl
-      : "— No endpoint compiled —";
+  const displayUrl = actualFullUrl && actualFullUrl.trim() !== "" 
+    ? actualFullUrl 
+    : "— No API selected —";
 
   // Theme-aware styles
   const borderColor = w ? "border-gray-200" : "border-zinc-800";
@@ -36,27 +30,26 @@ const UrlBuilder = ({
   return (
     <div className={`px-4 py-3 ${borderColor} ${bg} border-b`}>
       <div className="flex flex-wrap items-center gap-2">
-        {/* Protocol & Method */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        {/* Protocol & Method - compact */}
+        <div className="flex items-center gap-1.5">
           <ProtocolSelect protocol={protocol} setProtocol={setProtocol} w={w} />
           <MethodSelect method={method} setMethod={setMethod} w={w} />
         </div>
 
         {/* Separator */}
-        <span className={`text-sm font-mono select-none ${mutedTxt}`}>/</span>
+        <span className={`text-sm font-mono ${mutedTxt}`}>/</span>
 
-        {/* URL Path Input */}
+        {/* URL Path Input - flexible */}
         <div className="flex-1 min-w-[140px]">
           <UrlPathInput urlPath={urlPath} onUrlPathChange={setUrlPath} inp={inp} />
         </div>
 
-        {/* Final URL Display & Action Bar */}
+        {/* Final URL Display */}
         <FinalUrlDisplay
           finalUrl={displayUrl}
           protocol={protocol}
           copied={copied}
           copyToClipboard={copyToClipboard}
-          onOpenCodeExport={onOpenCodeExport}
           miniBtn={miniBtn}
           w={w}
         />
@@ -65,4 +58,4 @@ const UrlBuilder = ({
   );
 };
 
-export default React.memo(UrlBuilder);
+export default UrlBuilder;

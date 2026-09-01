@@ -1,11 +1,10 @@
 require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
-
 const Project = require('../models/Project');
 const ProjectApiHistory = require('../models/ProjectApiHistory');
-const { connectRedis } = require('../config/redis');
+const { redisClient } = require('../config/redis');
 
-// Default TTL to 7 days if env var is missing
-const INVITATION_REDIS_TTL = parseInt(process.env.INVITATION_REDIS_TTL, 10) || 604800;
+// Read TTL from environment (no fallback)
+const INVITATION_REDIS_TTL = parseInt(process.env.INVITATION_REDIS_TTL, 10);
 
 async function verify_invitationcode_otp(req, res) {
   const username = req.user?.username;
@@ -27,15 +26,14 @@ async function verify_invitationcode_otp(req, res) {
       return res.status(403).json({ error: 'Only the project creator can reset the invitation code' });
     }
 
-    const client = await connectRedis();
     const otpKey = `reset_invite:${project_id}:${username}`;
-    const storedOtp = await client.get(otpKey);
+    const storedOtp = await redisClient.get(otpKey);
     if (!storedOtp || storedOtp !== otp) {
       return res.status(400).json({ error: 'Invalid or expired OTP' });
     }
 
     const pendingCodeKey = `pending_invite:${project_id}:${username}`;
-    const newInvitationCode = await client.get(pendingCodeKey);
+    const newInvitationCode = await redisClient.get(pendingCodeKey);
     if (!newInvitationCode) {
       return res.status(400).json({ error: 'Pending invitation code not found' });
     }
@@ -45,38 +43,104 @@ async function verify_invitationcode_otp(req, res) {
     await project.save();
 
     // Update ProjectApiHistory
-    await ProjectApiHistory.updateMany(
-      { $or: [{ projectID: project.id }, { projectCode: oldCode }] },
-      { $set: { projectCode: newInvitationCode } }
-    );
+    const projectHistory = await ProjectApiHistory.findOne({ projectCode: oldCode });
+    if (projectHistory) {
+      projectHistory.projectCode = newInvitationCode;
+      await projectHistory.save();
+    }
 
-    // Update Redis invitation key
-    await client.setEx(`invitation:${newInvitationCode}`, INVITATION_REDIS_TTL, project.id);
-    await client.del(`invitation:${oldCode}`);
-    await client.del(otpKey);
-    await client.del(pendingCodeKey);
-    await client.del(`user:projects:${username}`);
+    // Update Redis invitation key with configurable TTL
+    await redisClient.setEx(`invitation:${newInvitationCode}`, INVITATION_REDIS_TTL, project._id.toString());
+    await redisClient.del(otpKey);
+    await redisClient.del(pendingCodeKey);
 
-    if (req.io) {
-      req.io.to(project.id).emit('invitation_code_updated', {
-        projectId: project.id,
-        invitationCode: newInvitationCode,
-      });
-      req.io.to(`user_${username}`).emit('invitation_code_updated', {
-        projectId: project.id,
-        invitationCode: newInvitationCode,
-      });
+    res.status(200).json({
+      success: true,
+      message: 'Invitation code reset successfully',
+      newInvitationCode
+    });
+  } catch (error) {
+    console.error('Verify invitation code OTP error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+module.exports = verify_invitationcode_otp;
+
+
+/*
+const Project = require('../models/Project');
+const ProjectApiHistory = require('../models/ProjectApiHistory');
+const { internalRedis } = require('../config/redis');
+
+// Default TTL to 7 days if env var is missing
+const INVITATION_REDIS_TTL = parseInt(process.env.INVITATION_REDIS_TTL, 10) || 604800;
+
+async function verify_invitationcode_otp(req, res) {
+  const { username } = req.user; // guaranteed by auth middleware
+  const { project_id, otp } = req.body;
+
+  if (!project_id || !otp) {
+    return res.status(400).json({ error: 'Project ID and OTP are required' });
+  }
+
+  try {
+    const project = await Project.findOne({ id: project_id });
+    if (!project) {
+      return res.status(404).json({ error: 'Project not found' });
+    }
+    if (project.username !== username) {
+      return res.status(403).json({ error: 'Only the project creator can reset the invitation code' });
+    }
+
+    const otpKey = `reset_invite:${project_id}:${username}`;
+    const storedOtp = await internalRedis.get(otpKey);
+    if (!storedOtp || storedOtp !== otp) {
+      return res.status(400).json({ error: 'Invalid or expired OTP' });
+    }
+
+    const pendingCodeKey = `pending_invite:${project_id}:${username}`;
+    const newInvitationCode = await internalRedis.get(pendingCodeKey);
+    if (!newInvitationCode) {
+      return res.status(400).json({ error: 'Pending invitation code not found' });
+    }
+
+    const oldCode = project.invitationCode;
+    project.invitationCode = newInvitationCode;
+    await project.save();
+
+    // Update ProjectApiHistory
+    const projectHistory = await ProjectApiHistory.findOne({ projectCode: oldCode });
+    if (projectHistory) {
+      projectHistory.projectCode = newInvitationCode;
+      await projectHistory.save();
+    }
+
+    // Update Redis invitation key with configurable TTL
+    await internalRedis.setEx(`invitation:${newInvitationCode}`, INVITATION_REDIS_TTL, project._id.toString());
+    await internalRedis.del(otpKey);
+    await internalRedis.del(pendingCodeKey);
+
+    // ---- Invalidate user cache ----
+    const cachePattern = `cache:${username}:*`;
+    try {
+      const keys = await internalRedis.keys(cachePattern);
+      if (keys.length) {
+        await internalRedis.del(keys);
+      }
+    } catch (err) {
+      // Redis error – ignore
     }
 
     return res.status(200).json({
       success: true,
       message: 'Invitation code reset successfully',
-      newInvitationCode,
+      newInvitationCode
     });
   } catch (error) {
-    console.error('Verify invitation code OTP error:', error.message);
+    console.error('[verify-invitation-otp] Error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
 
-module.exports = verify_invitationcode_otp;
+module.exports = verify_invitationcode_otp;*/

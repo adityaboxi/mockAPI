@@ -1,4 +1,3 @@
-// src/components/CreateJoinSection.jsx
 import React from "react";
 import ProjectCreateInput from "./ProjectList/ProjectCreateInput";
 import ProjectJoinInput from "./ProjectList/ProjectJoinInput";
@@ -15,9 +14,9 @@ const CreateJoinSection = React.memo(({ user, onProjectCreated, onProjectJoined,
   return (
     <div className={`rounded-xl ${bg} ${border} ${shadow} p-5 space-y-5 border`}>
       {/* Create section */}
-      <section className="space-y-1.5" aria-label="Create new workspace">
+      <div className="space-y-1.5">
         <div className="flex items-center gap-2">
-          <span className={`text-xs font-semibold tracking-wider uppercase select-none ${
+          <span className={`text-xs font-semibold tracking-wider uppercase ${
             isWhiteTheme ? "text-gray-500" : "text-zinc-400"
           }`}>
             Create Project
@@ -27,18 +26,18 @@ const CreateJoinSection = React.memo(({ user, onProjectCreated, onProjectJoined,
         <ProjectCreateInput
           user={user}
           onProjectCreated={onProjectCreated}
-          refreshProjects={onProjectCreated}
+          refreshProjects={() => {}}
           isWhiteTheme={isWhiteTheme}
         />
-      </section>
+      </div>
 
       {/* Divider line between sections */}
       <div className={`border-t ${divider}`} />
 
       {/* Join section */}
-      <section className="space-y-1.5" aria-label="Join existing workspace">
+      <div className="space-y-1.5">
         <div className="flex items-center gap-2">
-          <span className={`text-xs font-semibold tracking-wider uppercase select-none ${
+          <span className={`text-xs font-semibold tracking-wider uppercase ${
             isWhiteTheme ? "text-gray-500" : "text-zinc-400"
           }`}>
             Join Project
@@ -48,14 +47,12 @@ const CreateJoinSection = React.memo(({ user, onProjectCreated, onProjectJoined,
         <ProjectJoinInput
           user={user}
           onProjectJoined={onProjectJoined}
-          refreshProjects={onProjectJoined}
+          refreshProjects={() => {}}
           isWhiteTheme={isWhiteTheme}
         />
-      </section>
+      </div>
     </div>
   );
 });
-
-CreateJoinSection.displayName = "CreateJoinSection";
 
 export default CreateJoinSection;

@@ -1,11 +1,9 @@
-# Environment files (secrets never committed to Git)
+# Environment files
 .env
 .env.local
-.env.development
 .env.production
-!.env.example
 
-# Node.js dependencies
+# Node.js
 node_modules/
 npm-debug.log*
 yarn-debug.log*
@@ -20,10 +18,13 @@ build/
 .DS_Store
 Thumbs.db
 
-# IDE files
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
+
+**/.github
+**/.gitignore
 
 /test/

@@ -1,4 +1,3 @@
-// src/components/ProjectList/CreateJoinSection.jsx
 import React from "react";
 import ProjectCreateInput from "./ProjectCreateInput";
 import ProjectJoinInput from "./ProjectJoinInput";
@@ -6,52 +5,51 @@ import ProjectJoinInput from "./ProjectJoinInput";
 const CreateJoinSection = React.memo(({ user, onProjectCreated, onProjectJoined, theme }) => {
   const isWhiteTheme = theme === "white";
 
-  // Theme-aware styles
-  const cardBg = isWhiteTheme ? "bg-slate-50/70" : "bg-zinc-900/60";
-  const borderColor = isWhiteTheme ? "border-slate-200/80" : "border-zinc-800/80";
-  const divider = isWhiteTheme ? "border-slate-200/60" : "border-zinc-800/60";
-  const labelText = isWhiteTheme ? "text-slate-500" : "text-zinc-400";
+  // Themee-aware styles
+  const cardBg = isWhiteTheme ? "bg-white" : "bg-zinc-900";
+  const borderColor = isWhiteTheme ? "border-gray-200" : "border-zinc-800";
+  const shadow = isWhiteTheme ? "shadow-sm" : "shadow-none";
+  const divider = isWhiteTheme ? "border-gray-100" : "border-zinc-800/60";
+  const labelText = isWhiteTheme ? "text-gray-500" : "text-zinc-400";
 
   return (
-    <div className={`rounded-xl ${cardBg} ${borderColor} p-3 mx-2 my-1.5 space-y-3.5 border shadow-2xs`}>
+    <div className={`rounded-xl ${cardBg} ${borderColor} ${shadow} p-5 space-y-5 border`}>
       {/* Create Project Section */}
-      <section className="space-y-1" aria-label="Create Workspace">
+      <div className="space-y-1.5">
         <div className="flex items-center gap-2">
-          <span className={`text-[10px] font-bold tracking-wider uppercase select-none ${labelText}`}>
-            Create Workspace
+          <span className={`text-xs font-semibold tracking-wider uppercase ${labelText}`}>
+            Create Project
           </span>
           <div className={`flex-1 h-px ${divider}`} />
         </div>
         <ProjectCreateInput
           user={user}
           onProjectCreated={onProjectCreated}
-          refreshProjects={onProjectCreated}
+          refreshProjects={() => {}}
           isWhiteTheme={isWhiteTheme}
         />
-      </section>
+      </div>
 
       {/* Divider line */}
       <div className={`border-t ${divider}`} />
 
       {/* Join Project Section */}
-      <section className="space-y-1" aria-label="Join Workspace">
+      <div className="space-y-1.5">
         <div className="flex items-center gap-2">
-          <span className={`text-[10px] font-bold tracking-wider uppercase select-none ${labelText}`}>
-            Join Workspace
+          <span className={`text-xs font-semibold tracking-wider uppercase ${labelText}`}>
+            Join Project
           </span>
           <div className={`flex-1 h-px ${divider}`} />
         </div>
         <ProjectJoinInput
           user={user}
           onProjectJoined={onProjectJoined}
-          refreshProjects={onProjectJoined}
+          refreshProjects={() => {}}
           isWhiteTheme={isWhiteTheme}
         />
-      </section>
+      </div>
     </div>
   );
 });
-
-CreateJoinSection.displayName = "CreateJoinSection";
 
 export default CreateJoinSection;

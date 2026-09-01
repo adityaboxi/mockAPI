@@ -1,26 +1,21 @@
-require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 require('dotenv').config();
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 
 const { Worker, Queue } = require('bullmq');
 const { v4: uuidv4 } = require('uuid');
-const IORedis = require('ioredis');
-
 const Project = require('../models/Project');
 const ProjectApiHistory = require('../models/ProjectApiHistory');
-const SystemEventLog = require('../models/SystemEventLog');
 
-// ---------- Redis Connection ----------
+// ---------- Redis Connection (shared with the main server) ----------
 const REDIS_URL = process.env.REDIS_URL || 'redis://redis-external:6379';
 const queueConnection = {
   connection: {
     url: REDIS_URL,
-    maxRetriesPerRequest: null,
-    enableReadyCheck: false,
-  },
+    // Allow retries for resilience
+    maxRetriesPerRequest: 5,
+    enableReadyCheck: true,
+  }
 };
-
-const externalRedis = new IORedis(REDIS_URL);
-externalRedis.on('error', (err) => console.error('[importWorker] Redis error:', err.message));
 
 // Queues used to trigger container spin‑up and API sync
 const projectQueue = new Queue('projectQueue', queueConnection);
@@ -30,61 +25,45 @@ const mockSyncQueue = new Queue('mockSyncQueue', queueConnection);
 const importWorker = new Worker(
   'importQueue',
   async (job) => {
-    const { projectName, spec, username, projectId: existingProjectId } = job.data;
-    console.log(`[importWorker] 🚀 Starting job ${job.id} for user ${username}, project "${projectName}"`);
+    const { projectName, spec, username } = job.data;
+    console.log(`[importWorker] Starting job ${job.id} for user ${username}, project "${projectName}"`);
 
+    // 1. Update progress: starting
     await job.updateProgress(10);
 
     // Validate input
-    if ((!projectName && !existingProjectId) || !spec || !username) {
+    if (!projectName || !spec || !username) {
       throw new Error('Missing required job data: projectName, spec, or username');
     }
     if (!spec.paths || typeof spec.paths !== 'object') {
       throw new Error('Invalid OpenAPI spec: missing "paths" object');
     }
 
-    // Parse all endpoints
-    const protocol = process.env.PROTOCOL || 'http';
-    const host = process.env.HOST || 'localhost:8080';
+    // 2. Parse all endpoints from the OpenAPI spec
     const basePath = spec.basePath || '';
     const endpointsMap = {};
 
-    let finalProjectId = existingProjectId;
-    if (!finalProjectId && projectName) {
-      const sanitized = projectName.replace(/[^a-zA-Z0-9]/g, '_');
-      finalProjectId = `${username}_${sanitized}`;
-    }
-
-    Object.keys(spec.paths).forEach((rawPath) => {
+    Object.keys(spec.paths).forEach(rawPath => {
       const fullPath = basePath + rawPath;
       const pathObj = spec.paths[rawPath];
 
-      Object.keys(pathObj || {}).forEach((method) => {
+      Object.keys(pathObj).forEach(method => {
         const methodLower = method.toLowerCase();
-        if (!['get', 'post', 'put', 'delete', 'patch', 'options', 'head'].includes(methodLower)) return;
+        if (!['get', 'post', 'put', 'delete', 'patch', 'options'].includes(methodLower)) return;
 
         const operation = pathObj[method];
-        const version = 'v1';
-        const versionedPath = `/${version}${fullPath}`;
-        const cleanPath = versionedPath.startsWith('/') ? versionedPath.slice(1) : versionedPath;
-        const actualFullUrl = `${protocol}://${host}/p/${finalProjectId}/${cleanPath}`;
-
         if (!endpointsMap[fullPath]) {
           endpointsMap[fullPath] = { baseUrlPath: fullPath, versions: [] };
         }
 
         endpointsMap[fullPath].versions.push({
           method: method.toUpperCase(),
-          urlPath: versionedPath,
-          version,
-          protocol,
+          urlPath: fullPath,
+          version: 'v1', // Default version – can be made configurable later
+          protocol: 'https',
           statusCode: 200,
-          requestBody: operation?.requestBody?.content?.['application/json']?.schema?.example || null,
-          responseBody: operation?.responses?.['200']?.content?.['application/json']?.schema?.example || null,
-          summary: operation?.summary || '',
-          description: operation?.description || '',
-          operationId: operation?.operationId || `${method}_${rawPath.replace(/\//g, '_')}`,
-          actualFullUrl,
+          requestBody: operation.requestBody?.content?.['application/json']?.schema?.example || null,
+          responseBody: operation.responses?.['200']?.content?.['application/json']?.schema?.example || null,
         });
       });
     });
@@ -94,118 +73,91 @@ const importWorker = new Worker(
       throw new Error('No valid HTTP methods found in the OpenAPI spec');
     }
 
-    console.log(`[importWorker] 📊 Parsed ${endpointsArray.length} endpoints from spec`);
-    await job.updateProgress(35);
+    console.log(`[importWorker] Parsed ${endpointsArray.length} endpoints from spec`);
+    await job.updateProgress(40); // Parsing complete
 
-    // Create or Fetch Project in MongoDB
-    let project = await Project.findOne({ id: finalProjectId });
+    // 3. Create project in MongoDB
+    const projectId = uuidv4();
     const invitationCode = Math.random().toString(36).substring(2, 8).toUpperCase();
 
-    if (!project) {
-      project = new Project({
-        id: finalProjectId,
-        projectname: projectName || finalProjectId,
-        username,
-        invitationCode,
-        members: [username],
-        isActive: true,
-      });
-      await project.save();
-    }
+    const newProject = new Project({
+      id: projectId,
+      projectname: projectName,
+      username: username,
+      invitationCode,
+      members: [username],
+      isActive: true,
+      createdAt: new Date().toISOString()
+    });
+    await newProject.save();
+    console.log(`[importWorker] Project ${projectId} created`);
 
-    await job.updateProgress(55);
+    await job.updateProgress(60); // Project created
 
-    // Store Endpoint History
-    let projectHistory = await ProjectApiHistory.findOne({ projectID: finalProjectId });
-    if (projectHistory) {
-      projectHistory.endpoints = endpointsArray;
-      projectHistory.updatedAt = new Date();
-      await projectHistory.save();
-    } else {
-      projectHistory = new ProjectApiHistory({
-        projectID: finalProjectId,
-        projectCode: finalProjectId,
-        accessByUsernames: [username],
-        endpoints: endpointsArray,
-      });
-      await projectHistory.save();
-    }
+    // 4. Store endpoint history
+    const projectApiHistory = new ProjectApiHistory({
+      projectID: projectId,
+      projectCode: projectId,
+      accessByUsernames: [username],
+      endpoints: endpointsArray,
+    });
+    await projectApiHistory.save();
+    console.log(`[importWorker] Endpoint history saved for project ${projectId}`);
 
-    await job.updateProgress(70);
+    await job.updateProgress(80); // Endpoints saved
 
-    // Create Micro-batched System Event Audit Logs
-    const systemLogs = [];
-    for (const endpoint of endpointsArray) {
-      for (const ver of endpoint.versions) {
-        systemLogs.push({
-          projectId: finalProjectId,
-          username,
-          action: 'imported',
-          method: ver.method,
-          url: ver.urlPath,
-          version: ver.version,
-          accessByUsername: [username],
-          statusCode: 201,
-          createdAt: new Date(),
-        });
-      }
-    }
-    if (systemLogs.length > 0) {
-      await SystemEventLog.insertMany(systemLogs, { ordered: false }).catch(() => {});
-    }
-
-    // Broadcast Real-Time Update
-    await externalRedis.publish('api_history_update', JSON.stringify({ projectId: finalProjectId })).catch(() => {});
-
-    await job.updateProgress(80);
-
-    // Trigger container provisioning
+    // 5. Trigger container provisioning (create or update)
     await projectQueue.add('create-project', {
       action: 'create',
-      projectId: finalProjectId,
+      projectId,
     });
+    console.log(`[importWorker] Enqueued project creation for ${projectId}`);
 
-    // Enqueue Mock API Sync Jobs
+    // 6. Sync each endpoint to the mock‑server via OpenResty (with delay for container startup)
+    const syncDelay = 5000; // 5 seconds to allow container to start
     for (const endpoint of endpointsArray) {
       for (const ver of endpoint.versions) {
-        await mockSyncQueue.add('sync-api', {
-          action: 'set',
-          projectId: finalProjectId,
-          versionData: {
-            version: ver.version,
-            method: ver.method,
-            urlPath: ver.urlPath,
-            protocol: ver.protocol || protocol,
-            requestBody: ver.requestBody,
-            responseBody: ver.responseBody,
-            statusCode: ver.statusCode || 200,
-            summary: ver.summary || '',
-            description: ver.description || '',
-            actualFullUrl: ver.actualFullUrl,
+        await mockSyncQueue.add(
+          'sync-api',
+          {
+            action: 'set',
+            projectId,
+            versionData: {
+              version: ver.version,
+              method: ver.method,
+              urlPath: ver.urlPath,
+              protocol: ver.protocol,
+              requestBody: ver.requestBody,
+              responseBody: ver.responseBody,
+              statusCode: ver.statusCode,
+            }
           },
-        });
+          { delay: syncDelay }
+        );
       }
     }
+    console.log(`[importWorker] Enqueued ${endpointsArray.length} API sync jobs for ${projectId}`);
 
-    await job.updateProgress(100);
+    await job.updateProgress(100); // Fully complete
 
+    // Return value for the `/api/import-status` endpoint
     return {
       name: projectName,
       endpoints: endpointsArray.length,
-      projectId: finalProjectId,
-      status: 'completed',
+      projectId,
     };
   },
   {
-    ...queueConnection,
-    concurrency: 5,
-    attempts: 3,
+    // Worker options
+    ...queueConnection, // same connection for BullMQ
+    concurrency: 1,     // process one import at a time (to avoid DB contention)
+    attempts: 3,        // retry up to 3 times on failure
     backoff: {
       type: 'exponential',
-      delay: 5000,
+      delay: 5000,      // wait 5s, then 10s, then 20s
     },
-    removeOnComplete: { age: 3600 },
-    removeOnFail: { age: 86400 },
+    removeOnComplete: { age: 3600 },  // keep completed jobs for 1 hour
+    removeOnFail: { age: 86400 },     // keep failed jobs for 24 hours
   }
 );
 
@@ -219,14 +171,14 @@ importWorker.on('failed', (job, err) => {
 });
 
 // ---------- Graceful Shutdown ----------
-async function shutdown() {
-  await importWorker.close().catch(() => {});
-  await projectQueue.close().catch(() => {});
-  await mockSyncQueue.close().catch(() => {});
-  await externalRedis.quit().catch(() => {});
-}
+process.on('SIGTERM', async () => {
+  console.log('[importWorker] Received SIGTERM, closing worker...');
+  await importWorker.close();
+});
 
-process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);
+process.on('SIGINT', async () => {
+  console.log('[importWorker] Received SIGINT, closing worker...');
+  await importWorker.close();
+});
 
 module.exports = importWorker;

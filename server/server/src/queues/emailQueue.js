@@ -1,28 +1,24 @@
+const { Queue, Worker } = require('bullmq');
+
 require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 
-const { Queue, Worker } = require('bullmq');
 const { sendOTPEmail } = require('../services/emailService');
-
-const connectionOpts = {
-  url: process.env.REDIS_URL || 'redis://redis-external:6379',
-  maxRetriesPerRequest: null,
-  enableReadyCheck: false,
-};
+const { redisClient } = require('../config/redis');
 
 // Queue for sending emails
 const emailQueue = new Queue('emailQueue', {
-  connection: connectionOpts,
+  connection: { url: process.env.REDIS_URL },
   defaultJobOptions: {
     attempts: 3,
     backoff: { type: 'exponential', delay: 5000 },
-    removeOnComplete: { age: 3600 },
-    removeOnFail: { age: 86400 },
+    removeOnComplete: { age: 3600 }, // keep for 1 hour
+    removeOnFail: { age: 86400 },    // keep for 24 hours
   },
 });
 
 // Worker to process email jobs
 const emailWorker = new Worker(
-  'emailQueue',
+  'emailQueue', // must match the queue name
   async (job) => {
     const { email, otp, username } = job.data;
     console.log(`[emailWorker] 📨 Processing job for ${email}`);
@@ -34,9 +30,9 @@ const emailWorker = new Worker(
     return result;
   },
   {
-    connection: connectionOpts,
+    connection: { url: process.env.REDIS_URL },
     concurrency: 5,
-    lockDuration: 60000,
+    lockDuration: 60000, // 1 minute
   }
 );
 
@@ -49,7 +45,7 @@ emailWorker.on('failed', (job, err) => {
 });
 
 emailWorker.on('error', (err) => {
-  console.error('[emailWorker] ❌ Worker error:', err.message);
+  console.error('[emailWorker] ❌ Worker error:', err);
 });
 
 console.log('[emailQueue] 🚀 Email worker started');

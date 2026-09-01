@@ -1,17 +1,15 @@
-// src/pages/Login.jsx
-import React, { useState, useCallback } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { authenticateUser } from "../auth/authenticateUser";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
-import { useToast } from "../context/ToastContext";
-import { apiClient } from "../services/apiClient";
+
+
 
 function Login() {
   const navigate = useNavigate();
   const { login } = useAuth();
   const { theme } = useTheme();
-  const { showSuccess, showError, showWarning } = useToast();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -20,49 +18,26 @@ function Login() {
 
   const handleSignup = () => navigate("/signup");
 
-  const handleLogin = useCallback(async (e) => {
-    if (e) e.preventDefault();
-    const cleanUsername = username.trim();
-    const cleanPassword = password.trim();
-
-    if (!cleanUsername || !cleanPassword) {
-      showWarning("Please enter both username and password");
+  const handleLogin = async () => {
+    if (!username.trim() || !password.trim()) {
+      alert("Please enter both username and password");
       return;
     }
     setIsLoading(true);
     try {
-      const result = await authenticateUser(cleanUsername, cleanPassword);
-      if (result.success && result.data) {
-        if (result.data.token) {
-          localStorage.setItem('auth_token', result.data.token);
-        }
-        await login(result.data.user || { username: cleanUsername }, result.data.token);
-        showSuccess(`Welcome back, @${cleanUsername}!`);
+      const isAuthenticated = await authenticateUser(username, password);
+      if (isAuthenticated) {
+        await login({ username });
         navigate("/");
       } else {
-        showError(result.error || "Invalid username or password");
+        alert("Invalid credentials");
       }
     } catch (error) {
-      showError(error.message || "Login failed. Please try again.");
+      // silent
     } finally {
       setIsLoading(false);
     }
-  }, [username, password, login, navigate, showError, showSuccess, showWarning]);
-
-  const handleGuestLogin = useCallback(async () => {
-    if (isLoading) return;
-    setIsLoading(true);
-    try {
-      await apiClient.post('/api/guest-session');
-      await login({ username: "Guest", role: "guest", subscribe: false });
-      showSuccess("Signed in as Guest");
-      navigate("/");
-    } catch (err) {
-      showError(err.message || "Failed to create guest session");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [isLoading, login, navigate, showError, showSuccess]);
+  };
 
   // ─── Theme-aware styles ──────────────────────────────────────────
   const pageBg = isWhiteTheme ? "bg-gray-50" : "bg-zinc-950";
@@ -88,89 +63,80 @@ function Login() {
         className={`p-8 rounded-2xl border w-full max-w-sm transition-colors duration-200 ${cardBg} ${borderColor} ${shadow}`}
       >
         {/* Logo / Branding */}
-        <div className="text-center mb-6">
-          <img src="/logo-2.svg" alt="MockAPI Logo" width="32" height="32" className="block mx-auto w-8 h-8 mb-1 select-none" />
-          <h1 className={`text-lg font-semibold ${isWhiteTheme ? "text-gray-800" : "text-white"}`}>
-            MockAPI
-          </h1>
-          <p className={`text-xs ${labelText}`}>Sign in to your account</p>
+      <div className="text-center mb-6">
+  <img src="/logo-2.svg" alt="Logo" className="block mx-auto w-8 h-8 mb-1" />
+  <h1 className={`text-lg font-semibold ${isWhiteTheme ? "text-gray-800" : "text-white"}`}>
+    MockAPI
+  </h1>
+  <p className={`text-xs ${labelText}`}>Sign in to your account</p>
+</div>
+
+
+        {/* Username */}
+        <div className="mb-4">
+          <label className={`block text-xs font-medium mb-1.5 ${labelText}`}>
+            Username
+          </label>
+          <input
+            onChange={(e) => setUsername(e.target.value)}
+            value={username}
+            disabled={isLoading}
+            placeholder="Enter your username"
+            className={inputBase}
+          />
         </div>
 
-        <form onSubmit={handleLogin}>
-          {/* Username */}
-          <div className="mb-4">
-            <label className={`block text-xs font-medium mb-1.5 ${labelText}`}>
-              Username
-            </label>
-            <input
-              type="text"
-              autoFocus
-              onChange={(e) => setUsername(e.target.value)}
-              value={username}
-              disabled={isLoading}
-              placeholder="Enter your username"
-              className={inputBase}
-              autoComplete="username"
-            />
-          </div>
-
-          {/* Password */}
-          <div className="mb-4">
-            <label className={`block text-xs font-medium mb-1.5 ${labelText}`}>
-              Password
-            </label>
-            <input
-              type="password"
-              onChange={(e) => setPassword(e.target.value)}
-              value={password}
-              disabled={isLoading}
-              placeholder="Enter your password"
-              className={inputBase}
-              autoComplete="current-password"
-            />
-          </div>
-
-          {/* Forgot password & Sign up */}
-          <div className="flex items-center justify-between mb-6">
-            <button
-              type="button"
-              onClick={handleSignup}
-              disabled={isLoading}
-              className={`text-xs ${linkText}`}
-            >
-              Create account →
-            </button>
-            <button
-              type="button"
-              onClick={() => navigate("/forgot-password")}
-              disabled={isLoading}
-              className={`text-xs ${linkText}`}
-            >
-              Forgot password?
-            </button>
-          </div>
-
-          {/* Login button */}
-          <button
-            type="submit"
+        {/* Password */}
+        <div className="mb-4">
+          <label className={`block text-xs font-medium mb-1.5 ${labelText}`}>
+            Password
+          </label>
+          <input
+            type="password"
+            onChange={(e) => setPassword(e.target.value)}
+            value={password}
             disabled={isLoading}
-            className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${buttonPrimary} disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-              isWhiteTheme ? "focus:ring-offset-white" : "focus:ring-offset-zinc-900"
-            }`}
+            placeholder="Enter your password"
+            className={inputBase}
+          />
+        </div>
+
+        {/* Forgot password & Sign up */}
+        <div className="flex items-center justify-between mb-6">
+          <button
+            onClick={handleSignup}
+            disabled={isLoading}
+            className={`text-xs ${linkText}`}
           >
-            {isLoading ? (
-              <span className="flex items-center justify-center gap-2">
-                <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                Logging in...
-              </span>
-            ) : (
-              "Sign In"
-            )}
+            Create account →
           </button>
-        </form>
+          <button
+            onClick={() => navigate("/forgot-password")}
+            disabled={isLoading}
+            className={`text-xs ${linkText}`}
+          >
+            Forgot password?
+          </button>
+        </div>
+
+        {/* Login button */}
+        <button
+          onClick={handleLogin}
+          disabled={isLoading}
+          className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${buttonPrimary} disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${isWhiteTheme ? "focus:ring-offset-white" : "focus:ring-offset-zinc-900"}`}
+        >
+          {isLoading ? (
+            <span className="flex items-center justify-center gap-2">
+              <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Logging in...
+            </span>
+          ) : (
+            "Sign In"
+          )}
+        </button>
 
         {/* Divider */}
         <div className="relative my-6">
@@ -184,20 +150,25 @@ function Login() {
 
         {/* Guest login */}
         <button
-          type="button"
-          onClick={handleGuestLogin}
+          onClick={async () => {
+            try {
+              const isAuthenticated = await authenticateUser("guest", "guest");
+              if (isAuthenticated) {
+                await login({ username: "Guest", role: "guest" });
+                navigate("/");
+              }
+            } catch {
+              // silent
+            }
+          }}
           disabled={isLoading}
-          className={`w-full py-2.5 rounded-lg text-sm font-medium transition-all duration-200 border ${
-            isWhiteTheme ? "border-gray-300 hover:bg-gray-50 text-gray-600" : "border-zinc-700 hover:bg-zinc-800 text-zinc-400"
-          } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-            isWhiteTheme ? "focus:ring-offset-white" : "focus:ring-offset-zinc-900"
-          } disabled:opacity-50 disabled:cursor-not-allowed`}
+          className={`w-full py-2.5 rounded-lg text-sm font-medium transition-all duration-200 border ${isWhiteTheme ? "border-gray-300 hover:bg-gray-50 text-gray-600" : "border-zinc-700 hover:bg-zinc-800 text-zinc-400"} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${isWhiteTheme ? "focus:ring-offset-white" : "focus:ring-offset-zinc-900"} disabled:opacity-50`}
         >
           Continue as Guest
         </button>
 
         {/* Footer */}
-        <div className={`mt-6 text-center text-[10px] ${labelText} select-none`}>
+        <div className={`mt-6 text-center text-[10px] ${labelText}`}>
           <span>MockAPI v1.0</span>
           <span className="mx-2">•</span>
           <span>Secure • Encrypted</span>
@@ -207,4 +178,4 @@ function Login() {
   );
 }
 
-export default React.memo(Login);
+export default Login;

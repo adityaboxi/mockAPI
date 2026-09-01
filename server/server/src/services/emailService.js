@@ -1,24 +1,21 @@
 
-require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
-require('dotenv').config();
-
 const nodemailer = require('nodemailer');
+require('dotenv').config();
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 
 // Read environment variables
 const SMTP_HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
 const SMTP_PORT = parseInt(process.env.SMTP_PORT, 10) || 587;
 const SMTP_USER = process.env.SMTP_USER || process.env.FROM_EMAIL;
-const SMTP_PASS = process.env.GOOGLE_SMTP;
-const FROM_EMAIL = process.env.FROM_EMAIL;
+const SMTP_PASS = process.env.GOOGLE_SMTP; // your app password (ozqc)
+const FROM_EMAIL = process.env.FROM_EMAIL; // krishnaboxi1983@gmail.com
 
-// Create transporter with connection pooling for high-throughput concurrency
+// Create transporter
 const transporter = nodemailer.createTransport({
-  pool: true,
-  maxConnections: 5,
-  maxMessages: 100,
   host: SMTP_HOST,
   port: SMTP_PORT,
-  secure: SMTP_PORT === 465,
+  secure: SMTP_PORT === 465, // true for 465, false for 587 (TLS)
   auth: {
     user: SMTP_USER,
     pass: SMTP_PASS,
@@ -26,7 +23,7 @@ const transporter = nodemailer.createTransport({
 });
 
 async function sendOTPEmail(email, otp, username) {
-  const expirationTime = process.env.OTP_VALIDATION_TIME || '300';
+  const expirationTime = process.env.OTP_VALIDATION_TIME;
 
   const htmlContent = `
     <!DOCTYPE html>

@@ -1,98 +1,129 @@
 require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 
 const User = require('../models/User');
-const { connectRedis } = require('../config/redis');
+const { redisClient } = require('../config/redis');
+const jwt = require('jsonwebtoken');
+async function otp_verify(req, res) {
+const { email, username, otp, password, name } = req.body;
+if (!email || !username || !otp || !password || !name) {
+return res.status(400).json({ message: 'All fields are required' });
+  }
+const key = `${username}_${email}`;
+try {
+const storedOTP = await redisClient.get(key);
+if (!storedOTP || otp !== storedOTP) {
+return res.status(400).json({ message: 'Invalid OTP. Please try again.' });
+    }
+const existingUser = await User.findOne({ $or: [{ username }, { email }] });
+if (existingUser) {
+return res.status(400).json({ message: 'User already exists' });
+    }
+
+    
+const newUser = await User.create({
+      username,
+      email,
+      password,
+      name,
+      role: 'user'
+    });
+const token = jwt.sign(
+      { username, email, name, id: newUser._id, role: 'user' },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRY }
+    );
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: true,
+      sameSite: process.env.COOKIE_SAMESITE,
+      maxAge: parseInt(process.env.COOKIE_MAX_AGE, 10)
+    });
+await redisClient.del(key);
+    res.clearCookie('guest_token', { 
+      path: '/', 
+      httpOnly: true, 
+      secure: true,
+      sameSite: process.env.COOKIE_SAMESITE 
+    });
+    res.json({
+      success: true,
+      message: 'OTP verified successfully',
+      user: { username, email, name, role: 'user' }
+    });
+  } catch (error) {
+    console.error('❌ OTP verification error:', error);
+    res.status(500).json({ message: 'Server error', error: error.message });
+  }
+}
+module.exports = otp_verify;
+
+
+/*
+const User = require('../models/User');
+const { redisClient } = require('../config/redis');
 const jwt = require('jsonwebtoken');
 
 async function otp_verify(req, res) {
   const { email, username, otp, password, name } = req.body;
 
   if (!email || !username || !otp || !password || !name) {
-    return res.status(400).json({ message: 'All fields are required' });
+    return res.status(400).json({ error: 'All fields are required' });
   }
 
-  const normalizedUsername = username.trim().toLowerCase();
-  const normalizedEmail = email.trim().toLowerCase();
-  const key = `${normalizedUsername}_${normalizedEmail}`;
+  const key = `${username}_${email}`;
 
   try {
-    const client = await connectRedis();
-    const storedOTP = await client.get(key);
+    const storedOTP = await redisClient.get(key);
     if (!storedOTP || otp !== storedOTP) {
-      return res.status(400).json({ message: 'Invalid OTP. Please try again.' });
+      return res.status(400).json({ error: 'Invalid OTP. Please try again.' });
     }
-    await client.del(key);
 
-    const existingUser = await User.findOne({
-      $or: [{ username: normalizedUsername }, { email: normalizedEmail }],
-    }).lean();
-
+    const existingUser = await User.findOne({ $or: [{ username }, { email }] });
     if (existingUser) {
-      return res.status(400).json({ message: 'User already exists' });
+      return res.status(400).json({ error: 'User already exists' });
     }
 
     const newUser = await User.create({
-      username: normalizedUsername,
-      email: normalizedEmail,
+      username,
+      email,
       password,
-      name: name.trim(),
-      role: 'user',
+      name,
+      role: 'user'
     });
 
-    const jwtSecret = process.env.JWT_SECRET || 'jwt_default_secret_key';
-    const jwtExpiry = process.env.JWT_EXPIRY || '7d';
-    const cookieMaxAge = parseInt(process.env.COOKIE_MAX_AGE, 10) || 7 * 24 * 60 * 60 * 1000;
-    const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https' || process.env.COOKIE_SECURE === 'true';
-    const sameSite = process.env.COOKIE_SAMESITE || (isHttps ? 'none' : 'lax');
-    const isSecure = isHttps;
-
     const token = jwt.sign(
-      {
-        username: newUser.username,
-        email: newUser.email,
-        name: newUser.name,
-        id: newUser._id,
-        userId: newUser._id,
-        role: 'user',
-      },
-      jwtSecret,
-      { expiresIn: jwtExpiry }
+      { username, email, name, id: newUser._id, role: 'user' },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRY }
     );
 
     res.cookie('token', token, {
       httpOnly: true,
-      secure: isSecure,
-      sameSite,
-      maxAge: cookieMaxAge,
-      path: '/',
+      secure: true, // Set to `process.env.NODE_ENV === 'production'` if you need flexibility
+      sameSite: process.env.COOKIE_SAMESITE,
+      maxAge: parseInt(process.env.COOKIE_MAX_AGE, 10)
     });
 
-    await client.del(key);
-    await client.del(`user_exists:${normalizedUsername}`);
-    await client.del(`email_exists:${normalizedEmail}`);
-
+    // Clear guest session cookie
     res.clearCookie('guest_token', {
       path: '/',
       httpOnly: true,
-      secure: isSecure,
-      sameSite,
+      secure: true,
+      sameSite: process.env.COOKIE_SAMESITE
     });
+
+    // Delete OTP from Redis
+    await redisClient.del(key);
 
     return res.json({
       success: true,
-      token,
       message: 'OTP verified successfully',
-      user: {
-        username: newUser.username,
-        email: newUser.email,
-        name: newUser.name,
-        role: 'user',
-      },
+      user: { username, email, name, role: 'user' }
     });
   } catch (error) {
-    console.error('OTP verification error:', error.message);
-    return res.status(500).json({ message: 'Server error', error: error.message });
+    console.error('[otp-verify] Error:', error);
+    return res.status(500).json({ error: 'Failed to verify OTP' });
   }
 }
 
-module.exports = otp_verify;
+module.exports = otp_verify;*/

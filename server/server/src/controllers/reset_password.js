@@ -1,5 +1,3 @@
-require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
-
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 
@@ -15,10 +13,9 @@ module.exports = async (req, res) => {
       return res.status(400).json({ error: 'Password must be at least 6 characters.' });
     }
 
-    const jwtSecret = process.env.JWT_SECRET || 'jwt_default_secret_key';
     let decoded;
     try {
-      decoded = jwt.verify(resetToken, jwtSecret);
+      decoded = jwt.verify(resetToken, process.env.JWT_SECRET);
     } catch (err) {
       return res.status(401).json({ error: 'Invalid or expired reset token. Please request a new OTP.' });
     }
@@ -28,12 +25,15 @@ module.exports = async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
+    // ✅ Assign plain text – the pre‑save hook will hash it
     user.password = newPassword;
     await user.save();
 
-    return res.status(200).json({ message: 'Password has been reset successfully. You can now log in.' });
+    console.log(`[Reset Password] Password reset for ${user.username}`);
+    res.status(200).json({ message: 'Password has been reset successfully. You can now log in.' });
+
   } catch (error) {
-    console.error('[Reset Password] Error:', error.message);
-    return res.status(500).json({ error: 'Failed to reset password. Please try again.' });
+    console.error('[Reset Password] Error:', error);
+    res.status(500).json({ error: 'Failed to reset password. Please try again.' });
   }
 };

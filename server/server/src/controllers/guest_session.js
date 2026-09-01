@@ -1,56 +1,87 @@
 
 require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
-
 const jwt = require('jsonwebtoken');
 
 async function guestSession(req, res) {
   try {
-    const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https' || process.env.COOKIE_SECURE === 'true';
-    const sameSite = process.env.COOKIE_SAMESITE || (isHttps ? 'none' : 'lax');
-    const isSecure = isHttps;
-    const jwtSecret = process.env.JWT_SECRET || 'jwt_default_secret_key';
-    const jwtExpiry = process.env.JWT_EXPIRY || '7d';
-    const cookieMaxAge = parseInt(process.env.COOKIE_MAX_AGE, 10) || 7 * 24 * 60 * 60 * 1000;
+    res.clearCookie('token', {
+      httpOnly: true,
+      sameSite: process.env.COOKIE_SAMESITE,
+      path: '/'
+    });
 
-    // Only clear token if explicit guest request
-    if (!req.cookies?.token) {
-      res.clearCookie('token', {
-        httpOnly: true,
-        secure: isSecure,
-        sameSite,
-        path: '/',
-      });
-    }
+    const guestToken = jwt.sign(
+      { 
+        role: 'guest', 
+        timestamp: Date.now(), 
+        sessionId: Math.random().toString(36).substring(7) 
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRY }
+    );
+
+    res.cookie('guest_token', guestToken, {
+      httpOnly: true,
+      sameSite: process.env.COOKIE_SAMESITE,
+      maxAge: parseInt(process.env.COOKIE_MAX_AGE, 10),
+      path: '/'
+    });
+
+    res.json({ 
+      success: true, 
+      role: 'guest', 
+      subscribe: false,
+      message: 'Guest session created' 
+    });
+  } catch (error) {
+    console.error('Guest session error:', error);
+    res.status(500).json({ error: 'Failed to create guest session' });
+  }
+}
+
+module.exports = guestSession;
+
+
+
+/*
+const jwt = require('jsonwebtoken');
+
+function guestSession(req, res) {
+  try {
+    // Clear any existing token cookie
+    res.clearCookie('token', {
+      httpOnly: true,
+      sameSite: process.env.COOKIE_SAMESITE,
+      path: '/'
+    });
 
     const guestToken = jwt.sign(
       {
         role: 'guest',
         timestamp: Date.now(),
-        sessionId: Math.random().toString(36).substring(2, 10),
+        sessionId: Math.random().toString(36).substring(7)
       },
-      jwtSecret,
-      { expiresIn: jwtExpiry }
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRY }
     );
 
     res.cookie('guest_token', guestToken, {
       httpOnly: true,
-      secure: isSecure,
-      sameSite,
-      maxAge: cookieMaxAge,
-      path: '/',
+      sameSite: process.env.COOKIE_SAMESITE,
+      maxAge: parseInt(process.env.COOKIE_MAX_AGE, 10),
+      path: '/'
     });
 
-    return res.json({
+    res.json({
       success: true,
-      token: guestToken,
       role: 'guest',
       subscribe: false,
-      message: 'Guest session created',
+      message: 'Guest session created'
     });
   } catch (error) {
-    console.error('Guest session error:', error.message);
-    return res.status(500).json({ error: 'Failed to create guest session' });
+    console.error('[guest-session] Error:', error);
+    res.status(500).json({ error: 'Failed to create guest session' });
   }
 }
 
-module.exports = guestSession;
+module.exports = guestSession;*/

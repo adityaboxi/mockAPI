@@ -1,20 +1,18 @@
-// src/components/ApiHistory.jsx
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useProject } from "../context/ProjectContext";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
 import { useApiVersion } from "../context/ApiVersionContext";
 import { useSocket } from "../context/SocketContext";
-import { apiClient } from "../services/apiClient";
 
-const INITIAL_SHOW = 3;
+const INITIAL_SHOW = 2;
 
 function ApiHistory({ isApiHistoryOpen, projectId: propProjectId }) {
   const { theme } = useTheme();
   const isWhiteTheme = theme === "white";
   const { currentProject } = useProject();
   const { user } = useAuth();
-  const { currentVersionData, loadVersion } = useApiVersion();
+  const { loadVersion } = useApiVersion();
   const socket = useSocket();
 
   const [historyData, setHistoryData] = useState([]);
@@ -22,7 +20,6 @@ function ApiHistory({ isApiHistoryOpen, projectId: propProjectId }) {
   const [error, setError] = useState(null);
   const [expanded, setExpanded] = useState({});
   const abortControllerRef = useRef(null);
-  const debounceTimerRef = useRef(null);
 
   const historyDataRef = useRef(historyData);
   useEffect(() => {
@@ -31,51 +28,41 @@ function ApiHistory({ isApiHistoryOpen, projectId: propProjectId }) {
 
   const projectId = propProjectId || currentProject?.id;
 
-  const fetchHistory = useCallback(async (silent = false) => {
+  const fetchHistory = useCallback(async () => {
     const username = user?.username;
-    if (!projectId) {
-      setHistoryData([]);
-      return;
-    }
+    if (!projectId) return;
     if (!username || username === "Guest") {
       setError("Please log in to see API history.");
       return;
     }
-
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-    }
+    abortControllerRef.current?.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
-
-    if (!silent && historyDataRef.current.length === 0) {
-      setLoading(true);
-    }
+    setLoading(true);
     setError(null);
-
     try {
-      const baseUrl = import.meta.env.VITE_API_URL_API_HISTORY || '/api/api-history';
-      const url = `${baseUrl}?projectId=${encodeURIComponent(projectId)}`;
-      let data = await apiClient.get(url, { signal: controller.signal, skipCache: true });
-
-      if (Array.isArray(data) && data.length && !data[0].versions && data[0].actualFullUrls) {
-        data = data.map((ep) => ({
+      const url = `${import.meta.env.VITE_API_URL_API_HISTORY}?projectId=${encodeURIComponent(projectId)}`;
+      const res = await fetch(url, { signal: controller.signal, credentials: "include" });
+      if (!res.ok) throw new Error(await res.text());
+      let data = await res.json();
+      if (data.length && !data[0].versions && data[0].actualFullUrls) {
+        data = data.map(ep => ({
           baseUrlPath: ep.baseUrlPath,
-          versions: ep.actualFullUrls.map((u, idx) => ({
+          versions: ep.actualFullUrls.map((url, idx) => ({
             version: `v${idx + 1}`,
-            fullUrl: u,
-            method: "GET",
-          })),
+            fullUrl: url
+          }))
         }));
       }
 
-      if (!controller.signal.aborted) {
-        setHistoryData(Array.isArray(data) ? data : []);
+      const currentData = historyDataRef.current;
+      if (JSON.stringify(data) === JSON.stringify(currentData)) {
+        if (!controller.signal.aborted) setLoading(false);
+        return;
       }
+      if (!controller.signal.aborted) setHistoryData(data);
     } catch (err) {
-      if (err.name !== "AbortError") {
-        setError(err.message || "Failed to load version history");
-      }
+      if (err.name !== "AbortError") setError(err.message);
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
@@ -83,60 +70,25 @@ function ApiHistory({ isApiHistoryOpen, projectId: propProjectId }) {
 
   useEffect(() => {
     fetchHistory();
-    return () => {
-      if (abortControllerRef.current) abortControllerRef.current.abort();
-    };
+    return () => abortControllerRef.current?.abort();
   }, [fetchHistory]);
 
-  // Local synchronous event listener for instant UI history refresh
   useEffect(() => {
-    const onLocalHistoryUpdate = () => {
-      fetchHistory(true);
-    };
-    window.addEventListener('mockapi:history_updated', onLocalHistoryUpdate);
-    return () => window.removeEventListener('mockapi:history_updated', onLocalHistoryUpdate);
-  }, [fetchHistory]);
+    if (!currentProject?.id) return;
 
-  // Socket listener for real-time collaborator version creation
-  useEffect(() => {
-    if (!projectId || !socket) return;
-
-    const handleUpdate = (data) => {
-      if (data && (data.action === 'call' || data.type === 'call' || data.latency_ms !== undefined || data.statusCode !== undefined)) {
-        return;
-      }
-      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = setTimeout(() => {
-        fetchHistory(true);
-      }, 150);
-    };
-
-    const events = [
-      "api_history_update",
-      "api_created",
-      "api_updated",
-      "api_deleted",
-      "version_created",
-      "version_updated",
-      "version_deleted",
-      "project_status_changed",
-    ];
-
-    events.forEach((evt) => socket.on(evt, handleUpdate));
-    socket.emit("join_project", projectId);
+    const handleNewLog = () => fetchHistory();
+    socket.on("new_api_log", handleNewLog);
+    socket.emit("join_project", currentProject.id);
 
     return () => {
-      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-      if (socket) {
-        events.forEach((evt) => socket.off(evt, handleUpdate));
-        socket.emit("leave_project", projectId);
-      }
+      socket.emit("leave_project", currentProject.id);
+      socket.off("new_api_log", handleNewLog);
     };
-  }, [projectId, fetchHistory, socket]);
+  }, [currentProject?.id, fetchHistory, socket]);
 
-  const toggleExpand = (key) => setExpanded((prev) => ({ ...prev, [key]: !prev[key] }));
+  const toggleExpand = (idx) => setExpanded(prev => ({ ...prev, [idx]: !prev[idx] }));
 
-  const handleVersionClick = async (endpoint, version) => {
+  const handleVersionClick = async (endpoint, version, fullUrl) => {
     const username = user?.username;
     if (!username) return;
     const baseurlpath = endpoint.baseUrlPath;
@@ -147,39 +99,36 @@ function ApiHistory({ isApiHistoryOpen, projectId: propProjectId }) {
   };
 
   // ─── THEME‑AWARE STYLES ─────────────────────────────────────────
-  const sidebarBg = isWhiteTheme ? "bg-slate-50/50" : "bg-[#0c0c0e]/50";
-  const borderColor = isWhiteTheme ? "border-slate-200/80" : "border-zinc-800/60";
-  const headerBg = isWhiteTheme ? "bg-white/60" : "bg-zinc-900/40";
-  const headerText = isWhiteTheme ? "text-slate-700" : "text-zinc-300";
+  const sidebarBg = isWhiteTheme ? "bg-white" : "bg-zinc-900";
+  const borderColor = isWhiteTheme ? "border-gray-200" : "border-zinc-800";
+  const headerBg = isWhiteTheme ? "bg-white/80" : "bg-zinc-900/80";
+  const headerText = isWhiteTheme ? "text-gray-700" : "text-zinc-300";
   const cardBg = isWhiteTheme
-    ? "bg-white border-slate-200/80 hover:border-slate-300"
-    : "bg-zinc-900/70 border-zinc-800/80 hover:border-zinc-700/80";
-  const textMuted = isWhiteTheme ? "text-slate-400" : "text-zinc-500";
+    ? "bg-gray-50 border-gray-200 hover:bg-gray-100"
+    : "bg-zinc-950/60 border-zinc-800 hover:bg-zinc-800/40";
+  const textMuted = isWhiteTheme ? "text-gray-400" : "text-zinc-500";
   const pathText = isWhiteTheme ? "text-blue-600" : "text-blue-400";
   const versionBtnBase = isWhiteTheme
-    ? "text-slate-600 hover:bg-blue-50 hover:text-blue-600"
+    ? "text-gray-500 hover:bg-gray-200 hover:text-gray-800"
     : "text-zinc-400 hover:bg-blue-600/10 hover:text-blue-400";
-  const versionBtnActive = isWhiteTheme
-    ? "bg-blue-100/70 text-blue-700 font-bold border-l-2 border-blue-500"
-    : "bg-blue-500/20 text-blue-300 font-bold border-l-2 border-blue-400";
 
   return (
     <aside className={`flex shrink-0 overflow-hidden z-10 ${sidebarBg} border-l ${borderColor}`}>
       <div
         className={`
           flex flex-col overflow-hidden transition-all duration-300 ease-in-out
-          ${isApiHistoryOpen ? "w-64" : "w-0"}
+          ${isApiHistoryOpen ? "w-56 border-r" : "w-0 border-r-0"}
           ${borderColor}
         `}
       >
         {/* Header */}
-        <div className={`flex items-center justify-between px-3.5 py-2.5 border-b shrink-0 select-none ${headerBg} ${borderColor} ${headerText}`}>
-          <span className="text-[11px] font-bold tracking-wider uppercase flex items-center gap-1.5">
-            <span aria-hidden="true">📜</span> History
+        <div className={`flex items-center gap-2 px-4 py-2.5 border-b shrink-0 ${headerBg} ${borderColor} ${headerText}`}>
+          <span className="text-xs font-semibold tracking-wider uppercase flex items-center gap-2">
+            <span>📜</span> History
           </span>
           {historyData.length > 0 && !loading && (
-            <span className={`text-[10px] font-mono rounded-full px-2 py-0.2 font-semibold ${
-              isWhiteTheme ? "bg-slate-200 text-slate-700" : "bg-zinc-800 text-zinc-300"
+            <span className={`text-[10px] rounded-full px-2 py-0.5 font-medium ${
+              isWhiteTheme ? "bg-gray-200 text-gray-700" : "bg-zinc-700 text-zinc-300"
             }`}>
               {historyData.reduce((acc, ep) => acc + (ep.versions?.length || 0), 0)}
             </span>
@@ -187,29 +136,40 @@ function ApiHistory({ isApiHistoryOpen, projectId: propProjectId }) {
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-2 min-h-0 custom-scrollbar">
-          {loading && historyData.length === 0 && (
+        <div
+          className={`
+            flex-1 overflow-y-auto p-3 space-y-2 min-h-0
+            [&::-webkit-scrollbar]:w-1.5
+            [&::-webkit-scrollbar-track]:bg-transparent
+            [&::-webkit-scrollbar-thumb]:rounded-full
+            ${isWhiteTheme
+              ? "[&::-webkit-scrollbar-thumb]:bg-gray-300 hover:[&::-webkit-scrollbar-thumb]:bg-gray-400"
+              : "[&::-webkit-scrollbar-thumb]:bg-zinc-700 hover:[&::-webkit-scrollbar-thumb]:bg-zinc-600"
+            }
+          `}
+        >
+          {loading && (
             <div className="flex justify-center py-6">
               <div className={`w-5 h-5 border-2 rounded-full animate-spin ${isWhiteTheme ? "border-gray-300 border-t-gray-600" : "border-zinc-700 border-t-blue-400"}`} />
             </div>
           )}
-          {error && <div className="text-center text-rose-400 text-xs py-4">{error}</div>}
+          {error && <div className="text-center text-red-400 text-xs py-4">{error}</div>}
           {!loading && !error && historyData.length === 0 && (
             <div className={`text-center ${textMuted} italic text-xs py-4`}>
-              No API history found for this workspace.
+              No API history found.
             </div>
           )}
-          {historyData.map((endpoint, idx) => {
+          {!loading && !error && historyData.map((endpoint, idx) => {
             const versions = endpoint.versions || [];
-            const isExpanded = expanded[endpoint.baseUrlPath || idx];
+            const isExpanded = expanded[idx];
             const visibleVersions = isExpanded ? versions : versions.slice(0, INITIAL_SHOW);
             const totalVersions = versions.length;
             const remaining = totalVersions - INITIAL_SHOW;
 
             return (
               <div
-                key={endpoint.baseUrlPath || idx}
-                className={`rounded-lg border p-3 transition-all duration-200 shadow-xs ${cardBg} ${borderColor}`}
+                key={idx}
+                className={`rounded-lg border p-3 transition-all duration-200 ${cardBg} ${borderColor}`}
               >
                 {/* Endpoint path */}
                 <p className={`text-xs font-mono font-semibold break-all ${pathText}`}>
@@ -218,44 +178,34 @@ function ApiHistory({ isApiHistoryOpen, projectId: propProjectId }) {
 
                 {/* Version list */}
                 <div className="mt-1.5 space-y-0.5">
-                  {visibleVersions.map((v, vIdx) => {
-                    const isCurrentActive =
-                      currentVersionData?.version === v.version &&
-                      (currentVersionData?.urlPath === endpoint.baseUrlPath ||
-                        currentVersionData?.urlPath === `/${endpoint.baseUrlPath}`);
-
-                    return (
-                      <button
-                        key={v.version || vIdx}
-                        type="button"
-                        onClick={() => handleVersionClick(endpoint, v.version)}
-                        className={`
-                          block w-full text-left px-2 py-1 rounded text-xs font-mono
-                          transition-all duration-150
-                          ${isCurrentActive ? versionBtnActive : versionBtnBase}
-                        `}
-                      >
-                        <span className="opacity-50 mr-1">↳</span> {v.version}
-                      </button>
-                    );
-                  })}
+                  {visibleVersions.map((v, vIdx) => (
+                    <button
+                      key={vIdx}
+                      onClick={() => handleVersionClick(endpoint, v.version, v.fullUrl)}
+                      className={`
+                        block w-full text-left px-2 py-0.5 rounded text-xs font-mono
+                        transition-all duration-150
+                        ${versionBtnBase}
+                      `}
+                    >
+                      <span className="opacity-50 mr-1">↳</span> {v.version}
+                    </button>
+                  ))}
                 </div>
 
                 {/* Expand/Collapse controls */}
                 {!isExpanded && remaining > 0 && (
                   <button
-                    type="button"
-                    onClick={() => toggleExpand(endpoint.baseUrlPath || idx)}
-                    className="mt-1.5 text-[11px] font-medium text-blue-400 hover:text-blue-300 hover:underline transition-all flex items-center gap-1 focus:outline-none"
+                    onClick={() => toggleExpand(idx)}
+                    className="mt-1.5 text-[11px] font-medium text-blue-400 hover:text-blue-300 hover:underline transition-all flex items-center gap-1"
                   >
                     + {remaining} more version{remaining > 1 ? 's' : ''}
                   </button>
                 )}
                 {isExpanded && totalVersions > INITIAL_SHOW && (
                   <button
-                    type="button"
-                    onClick={() => toggleExpand(endpoint.baseUrlPath || idx)}
-                    className="mt-1.5 text-[11px] font-medium text-zinc-500 hover:text-zinc-300 hover:underline transition-all flex items-center gap-1 focus:outline-none"
+                    onClick={() => toggleExpand(idx)}
+                    className="mt-1.5 text-[11px] font-medium text-zinc-500 hover:text-zinc-300 hover:underline transition-all flex items-center gap-1"
                   >
                     − show less
                   </button>

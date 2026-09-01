@@ -1,7 +1,6 @@
 // src/pages/NetworkTest.jsx
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTheme } from '../context/ThemeContext';
-import { apiClient } from '../services/apiClient';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
@@ -38,9 +37,9 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
     };
   }, []);
 
-  // ---- Core test logic ----
+  // ---- Core test logic (unchanged) ----
   const runTest = useCallback(async (force = false) => {
-    if (!force && cacheRef.current && Date.now() - cacheRef.current.timestamp < CACHE_TTL_MS) {
+    if (!force && cacheRef.current && (Date.now() - cacheRef.current.timestamp < CACHE_TTL_MS)) {
       if (mountedRef.current) {
         const cached = cacheRef.current;
         setAverage(cached.result);
@@ -71,6 +70,7 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
     const { signal } = controller;
 
     const results = [];
+    let successCount = 0;
 
     for (let i = 0; i < sampleCount; i++) {
       if (signal.aborted || !mountedRef.current) break;
@@ -79,21 +79,22 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
         const response = await fetch(`${API_BASE}/api/latency-test`, {
           credentials: 'include',
           signal,
-          cache: 'no-store',
         });
         if (!response.ok) throw new Error(`Server responded with ${response.status}`);
-        await response.json().catch(() => ({}));
+        await response.json();
         const elapsed = performance.now() - start;
         results.push(elapsed);
+        successCount++;
       } catch (err) {
         if (err.name === 'AbortError' || !mountedRef.current) break;
+        // continue
       }
       if (mountedRef.current) {
         const progressVal = ((i + 1) / sampleCount) * 100;
         setProgress(progressVal);
       }
       if (i < sampleCount - 1 && !signal.aborted && mountedRef.current) {
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        await new Promise(resolve => setTimeout(resolve, delayMs));
       }
     }
 
@@ -106,7 +107,7 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
     }
     if (results.length === 0) {
       setStatus('error');
-      setError('All attempts failed. Please check your network connection and try again.');
+      setError('All attempts failed. Please check your network or try again.');
       setProgress(100);
       return;
     }
@@ -117,37 +118,37 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
     const avgRounded = Math.round(avg);
 
     setAverage(avgRounded);
-    setStats({ min: Number.isFinite(min) ? min : 0, max: Number.isFinite(max) ? max : 0, samples: results.length });
+    setStats({ min, max, samples: results.length });
     setIndividualResults(results);
     setStatus('done');
     setProgress(100);
 
     cacheRef.current = {
       result: avgRounded,
-      stats: { min: Number.isFinite(min) ? min : 0, max: Number.isFinite(max) ? max : 0, samples: results.length },
+      stats: { min, max, samples: results.length },
       individual: results,
       timestamp: Date.now(),
     };
 
     if (projectId) {
       try {
-        await apiClient.post('/api/latency-report', {
-          project_id: projectId,
-          rtts: avgRounded,
+        const response = await fetch(`${API_BASE}/api/latency-report`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ project_id: projectId, rtts: avgRounded }),
         });
-        if (mountedRef.current) setSaved(true);
-      } catch (_) {
-        // Non-blocking telemetry warning
+        if (response.ok) {
+          if (mountedRef.current) setSaved(true);
+        }
+      } catch (e) {
+        // silent
       }
     }
   }, [projectId, sampleCount, delayMs]);
 
   // ---- Clear cache ----
   const clearCache = useCallback(() => {
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
-      abortControllerRef.current = null;
-    }
     cacheRef.current = null;
     if (mountedRef.current) {
       setStatus('idle');
@@ -166,6 +167,7 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
   const textMini = isWhiteTheme ? 'text-gray-400' : 'text-zinc-500';
   const borderColor = isWhiteTheme ? 'border-gray-200' : 'border-zinc-800';
   const cardBg = isWhiteTheme ? 'bg-white' : 'bg-zinc-900';
+  const resultBg = isWhiteTheme ? 'bg-gray-50' : 'bg-zinc-900';
   const progressBg = isWhiteTheme ? 'bg-gray-200' : 'bg-zinc-800';
   const errorBg = isWhiteTheme
     ? 'bg-red-50 border-red-200 text-red-700'
@@ -178,13 +180,7 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
     ? 'bg-gray-100 border-gray-300 text-gray-700'
     : 'bg-zinc-900 border-zinc-700 text-zinc-400';
 
-  const getLatencyColor = (ms) => {
-    if (ms < 60) return isWhiteTheme ? 'text-emerald-600' : 'text-emerald-400';
-    if (ms < 150) return isWhiteTheme ? 'text-blue-600' : 'text-blue-400';
-    if (ms < 300) return isWhiteTheme ? 'text-amber-600' : 'text-amber-400';
-    return isWhiteTheme ? 'text-rose-600' : 'text-rose-400';
-  };
-
+  // ─── Render helpers ─────────────────────────────────────────────
   const renderStatusMessage = () => {
     if (status === 'idle') return 'Press "Run Test" to measure your network latency.';
     if (status === 'running') return `Measuring... (${Math.round(progress)}%)`;
@@ -197,14 +193,14 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
     if (individualResults.length === 0) return null;
     return (
       <div className="mt-4">
-        <p className={`text-xs ${textMuted} mb-1.5`}>Individual ping times (ms):</p>
-        <div className="flex flex-wrap justify-center gap-1.5 max-h-24 overflow-y-auto custom-scrollbar">
+        <p className={`text-xs ${textMuted} mb-1`}>Individual ping times (ms):</p>
+        <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
           {individualResults.map((time, idx) => (
             <span
               key={idx}
-              className={`px-2 py-0.5 border rounded text-xs font-mono ${individualPing}`}
+              className={`px-2 py-0.5 border rounded text-xs ${individualPing}`}
             >
-              {Math.round(time)} ms
+              {Math.round(time)}
             </span>
           ))}
         </div>
@@ -212,8 +208,9 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
     );
   };
 
+  // ─── Render ──────────────────────────────────────────────────────
   return (
-    <main className={`p-6 max-w-3xl mx-auto transition-colors duration-200 ${isWhiteTheme ? 'bg-gray-50' : 'bg-zinc-950'} min-h-full`}>
+    <div className={`p-6 max-w-3xl mx-auto transition-colors duration-200 ${isWhiteTheme ? 'bg-gray-50' : 'bg-zinc-950'} min-h-full`}>
       <h1 className={`text-2xl font-semibold ${textPrimary} mb-2`}>🌐 Network Latency</h1>
       <p className={`text-sm ${textMuted} mb-6`}>
         Measures your round‑trip time to the server via {sampleCount} ping‑pong requests.
@@ -222,23 +219,17 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
 
       <div className="flex gap-3 flex-wrap">
         <button
-          type="button"
           onClick={() => runTest(false)}
           disabled={status === 'running'}
-          className={`flex-1 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${buttonPrimary} disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-            isWhiteTheme ? 'focus:ring-offset-white' : 'focus:ring-offset-zinc-950'
-          }`}
+          className={`flex-1 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${buttonPrimary} disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${isWhiteTheme ? 'focus:ring-offset-white' : 'focus:ring-offset-zinc-950'}`}
           aria-label="Run network latency test"
         >
           {status === 'running' ? '⏳ Measuring...' : '▶ Run Test'}
         </button>
         {cacheRef.current && (
           <button
-            type="button"
             onClick={clearCache}
-            className={`px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${buttonSecondary} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-              isWhiteTheme ? 'focus:ring-offset-white' : 'focus:ring-offset-zinc-950'
-            }`}
+            className={`px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${buttonSecondary} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${isWhiteTheme ? 'focus:ring-offset-white' : 'focus:ring-offset-zinc-950'}`}
             aria-label="Clear cached test results"
           >
             🗑️ Clear Cache
@@ -262,7 +253,7 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
       {/* Results */}
       {status === 'done' && average !== null && (
         <div className={`mt-4 border rounded-xl p-6 text-center ${cardBg} ${borderColor} shadow-sm`}>
-          <div className={`text-5xl font-bold font-mono ${getLatencyColor(average)}`}>
+          <div className={`text-5xl font-bold ${isWhiteTheme ? 'text-emerald-600' : 'text-emerald-400'}`}>
             {average} ms
           </div>
           <div className={`text-sm ${textMuted} mt-1`}>average round‑trip</div>
@@ -279,8 +270,8 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
             </div>
           )}
           {saved && (
-            <div className="mt-3 text-xs text-emerald-500 font-medium">
-              ✅ Result saved to project telemetry
+            <div className="mt-3 text-xs text-emerald-500">
+              ✅ Result saved to project latency
             </div>
           )}
           {renderIndividualResults()}
@@ -292,7 +283,6 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
         <div className={`mt-4 border rounded-xl p-4 text-sm ${errorBg}`}>
           {error}
           <button
-            type="button"
             onClick={() => runTest(true)}
             className="block mt-2 text-blue-400 hover:text-blue-300 underline focus:outline-none focus:ring-2 focus:ring-blue-500 rounded"
           >
@@ -300,8 +290,8 @@ function NetworkTest({ projectId, sampleCount = DEFAULT_SAMPLE_COUNT, delayMs = 
           </button>
         </div>
       )}
-    </main>
+    </div>
   );
 }
 
-export default React.memo(NetworkTest);
+export default NetworkTest;

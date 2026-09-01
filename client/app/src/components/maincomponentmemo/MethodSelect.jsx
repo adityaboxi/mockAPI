@@ -1,28 +1,25 @@
-// src/components/maincomponentmemo/MethodSelect.jsx
 import React from "react";
 
 const MethodSelect = React.memo(({ method, setMethod, w }) => {
   const isWhiteTheme = w;
 
-  // Method-specific text colors
+  // Method-specific text colors (for the selected value)
   const methodColorMap = {
-    GET: "text-emerald-500",
+    GET: "text-green-500",
     POST: "text-blue-500",
-    PUT: "text-amber-500",
+    PUT: "text-yellow-500",
     PATCH: "text-orange-500",
-    DELETE: "text-rose-500",
-    OPTIONS: "text-purple-400",
+    DELETE: "text-red-500",
   };
-  const selectedColor = methodColorMap[method] || "text-zinc-400";
+  const selectedColor = methodColorMap[method] || "text-gray-400";
 
   return (
     <select
-      value={method || "GET"}
-      onChange={(e) => setMethod?.(e.target.value)}
-      aria-label="HTTP Method Selector"
+      value={method}
+      onChange={(e) => setMethod(e.target.value)}
       className={`
         rounded-lg px-3 py-1.5 text-xs font-semibold tracking-wide outline-none cursor-pointer
-        transition-all duration-200 uppercase font-mono
+        transition-all duration-200
         ${isWhiteTheme
           ? "bg-white border border-gray-300 hover:border-blue-400"
           : "bg-zinc-800 border border-zinc-700 hover:border-blue-500/50"
@@ -35,19 +32,13 @@ const MethodSelect = React.memo(({ method, setMethod, w }) => {
         bg-[length:12px_12px] bg-[right_10px_center] bg-no-repeat
       `}
     >
-      {['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].map((m) => (
-        <option
-          key={m}
-          value={m}
-          className={isWhiteTheme ? "bg-white text-gray-800" : "bg-zinc-900 text-zinc-100"}
-        >
+      {['GET', 'POST', 'PUT', 'PATCH', 'DELETE'].map((m) => (
+        <option key={m} value={m}>
           {m}
         </option>
       ))}
     </select>
   );
 });
-
-MethodSelect.displayName = "MethodSelect";
 
 export default MethodSelect;

@@ -1,49 +1,86 @@
 require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
-
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
-const { connectRedis } = require('../config/redis');
-
-const CACHE_TTL = 60; // 1 minute
 
 async function sync_auth(req, res) {
-  let token = req.cookies?.token;
-  if (!token && req.headers?.authorization?.startsWith('Bearer ')) {
-    token = req.headers.authorization.split(' ')[1];
+  const token = req.cookies.token;
+  
+  if (!token) {
+    return res.status(401).json({ user: null });
   }
-  if (!token && req.headers?.['x-auth-token']) {
-    token = req.headers['x-auth-token'];
+  
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id || decoded.userId).select('-password');
+    
+    if (!user) {
+      return res.status(401).json({ user: null });
+    }
+    
+    res.json({
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        name: user.name,
+        role: user.role || 'user',
+        subscribe: user.subscribe === true
+      }
+    });
+  } catch (error) {
+    console.error('Sync auth error:', error);
+    res.status(401).json({ user: null });
   }
+}
+
+module.exports = sync_auth;
+
+
+
+
+/*
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+const { internalRedis } = require('../config/redis');
+
+const CACHE_TTL = 60; // seconds
+
+async function sync_auth(req, res) {
+  const token = req.cookies.token;
 
   if (!token) {
     return res.status(401).json({ user: null });
   }
 
+  let decoded;
   try {
-    const jwtSecret = process.env.JWT_SECRET || 'jwt_default_secret_key';
-    const decoded = jwt.verify(token, jwtSecret);
-    const userId = decoded.id || decoded.userId || decoded._id;
-    const username = decoded.username;
+    decoded = jwt.verify(token, process.env.JWT_SECRET);
+  } catch (err) {
+    return res.status(401).json({ user: null });
+  }
 
-    if (!userId && !username) {
-      return res.status(401).json({ user: null });
+  const userId = decoded.id || decoded.userId;
+  if (!userId) {
+    return res.status(401).json({ user: null });
+  }
+
+  // Build cache key using username (from decoded token)
+  const username = decoded.username;
+  const cacheKey = `cache:${username}:sync_auth`;
+
+  try {
+    // 1. Try to serve from Redis cache
+    const cached = await internalRedis.get(cacheKey);
+    if (cached) {
+      const userData = JSON.parse(cached);
+      return res.json({ user: userData });
     }
+  } catch (err) {
+    // Redis error – fall through to database
+  }
 
-    const cacheKey = `user_profile:${userId || username}`;
-    try {
-      const client = await connectRedis();
-      const cached = await client.get(cacheKey);
-      if (cached) {
-        return res.json({ user: JSON.parse(cached) });
-      }
-    } catch (_) {}
-
-    const query = userId ? { _id: userId } : { username: username.toLowerCase().trim() };
-    let user = await User.findOne(query).select('-password').lean();
-    if (!user && username) {
-      user = await User.findOne({ username: username.toLowerCase().trim() }).select('-password').lean();
-    }
-
+  try {
+    const user = await User.findById(userId).select('-password');
     if (!user) {
       return res.status(401).json({ user: null });
     }
@@ -53,20 +90,22 @@ async function sync_auth(req, res) {
       username: user.username,
       email: user.email,
       name: user.name,
-      role: user.role || 'user',
-      subscribe: Boolean(user.subscribe),
-      noofProjects: user.noofProjects || 0,
+      role: user.role, // no fallback – role is set in DB
+      subscribe: user.subscribe === true
     };
 
+    // 2. Store in Redis cache
     try {
-      const client = await connectRedis();
-      await client.setEx(cacheKey, CACHE_TTL, JSON.stringify(userData));
-    } catch (_) {}
+      await internalRedis.setex(cacheKey, CACHE_TTL, JSON.stringify(userData));
+    } catch (err) {
+      // Cache set failed – no problem
+    }
 
     return res.json({ user: userData });
   } catch (error) {
-    return res.status(401).json({ user: null });
+    console.error('[sync-auth] Error:', error);
+    return res.status(500).json({ user: null });
   }
 }
 
-module.exports = sync_auth;
+module.exports = sync_auth;*/

@@ -5,33 +5,24 @@ require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 const jwt = require('jsonwebtoken');
 
 const authenticateToken = (req, res, next) => {
-  const secret = process.env.JWT_SECRET || 'jwt_default_secret_key';
-
-  // 1. Extract token from cookies or Authorization Bearer header
-  let token = req.cookies?.token;
-  if (!token && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
-    token = req.headers.authorization.substring(7);
-  }
-
+  // Check for  regular (aauthenticated) token
+  const token = req.cookies.token;
   if (token) {
     try {
-      const decoded = jwt.verify(token, secret);
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
       req.user = { ...decoded, isGuest: false };
       return next();
     } catch {
+      // Invalid token – reject immediately (do not fall back to guest)
       return res.status(403).json({ error: 'Invalid token' });
     }
   }
 
-  // 2. Extract guest token
-  let guestToken = req.cookies?.guest_token;
-  if (!guestToken && req.headers['x-guest-token']) {
-    guestToken = req.headers['x-guest-token'];
-  }
-
+  // No regular token – try guest token
+  const guestToken = req.cookies.guest_token;
   if (guestToken) {
     try {
-      const decoded = jwt.verify(guestToken, secret);
+      const decoded = jwt.verify(guestToken, process.env.JWT_SECRET);
       req.user = { ...decoded, isGuest: true };
       return next();
     } catch {
@@ -39,7 +30,7 @@ const authenticateToken = (req, res, next) => {
     }
   }
 
-  // 3. Unauthenticated
+  // No token at all
   return res.status(401).json({ error: 'Authentication required' });
 };
 

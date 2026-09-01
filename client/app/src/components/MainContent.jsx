@@ -4,42 +4,35 @@ import { useTheme } from "../context/ThemeContext";
 import { useProject } from "../context/ProjectContext";
 import { useApiVersion } from "../context/ApiVersionContext";
 import { useAuth } from "../context/AuthContext";
-import { useToast } from "../context/ToastContext";
 import UrlBuilder from "./maincomponentmemo/UrlBuilder";
 import PathParamsSection from "./maincomponentmemo/PathParamsSection";
 import QueryParamsSection from "./maincomponentmemo/QueryParamsSection";
 import RequestResponsePanels from "./maincomponentmemo/RequestResponsePanels";
 import Authtokenetc from "./maincomponentmemo/Authtokenetc";
-import CodeExportModal from "./CodeExportModal";
-import MockTesterModal from "./MockTesterModal";
 import { socket } from "../socket";
-import { apiClient } from "../services/apiClient";
 
-const UPDATE_API_URL = import.meta.env.VITE_API_URL_UPDATE_API || '/api/update-api';
-const ADD_API_URL = import.meta.env.VITE_API_URL_ADD_API || '/api/add-api';
-const ASK_AI_URL = import.meta.env.VITE_API_URL_ASK_AI || '/api/ask-ai';
-const REVERSE_AI_URL = import.meta.env.VITE_API_URL_REVERSE_AI || '/api/reverse-ai';
-const OTP_TIMER = parseInt(import.meta.env.VITE_OTP_TIMER) || 120;
-const MOCK_API_BASE_URL = import.meta.env.VITE_MOCK_API_BASE_URL || 'http://localhost:8081';
+const UPDATE_API_URL = import.meta.env.VITE_API_URL_UPDATE_API;
+const ADD_API_URL = import.meta.env.VITE_API_URL_ADD_API;
+const ASK_AI_URL = import.meta.env.VITE_API_URL_ASK_AI;
+const REVERSE_AI_URL = import.meta.env.VITE_API_URL_REVERSE_AI;
+const DOMAIN = import.meta.env.VITE_DOMAIN;
+const OTP_TIMER = import.meta.env.VITE_OTP_TIMER;
+const MOCK_API_URL = import.meta.env.VITE_MOCK_API_URL;
+const MOCK_API_BASE_URL = import.meta.env.VITE_MOCK_API_BASE_URL;
 
 function MainContent() {
   const { theme } = useTheme();
   const { currentProject } = useProject();
   const { currentVersionData, loadVersion } = useApiVersion();
   const { user } = useAuth();
-  const { showSuccess, showError, showWarning, showInfo } = useToast();
   const [reverseTimer, setReverseTimer] = useState(0);
   const timerRef = useRef(null);
 
   const isWhiteTheme = theme === 'white';
   const w = isWhiteTheme;
 
-  // Modals state
-  const [isCodeExportOpen, setIsCodeExportOpen] = useState(false);
-  const [isTesterOpen, setIsTesterOpen] = useState(false);
-
-  // Core Endpoint state
-  const [protocol, setProtocol] = useState('http');
+  // All state
+  const [protocol, setProtocol] = useState('http'); // ✅ Changed default to 'http'
   const [method, setMethod] = useState('GET');
   const [urlPath, setUrlPath] = useState('');
   const [pathParams, setPathParams] = useState([]);
@@ -71,9 +64,10 @@ function MainContent() {
   const [expectedApiKey, setExpectedApiKey] = useState('');
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [currentJobId, setCurrentJobId] = useState(null);
+  const [streamingText, setStreamingText] = useState('');
   const [copiedCurl, setCopiedCurl] = useState(false);
 
-  // Refs for timers & cleanup
+  // Refs
   const timeoutsRef = useRef([]);
   const copyTimeoutRef = useRef(null);
   const pollFallbackTimerRef = useRef(null);
@@ -81,7 +75,7 @@ function MainContent() {
   const safeTimeout = (callback, delay) => {
     const id = setTimeout(() => {
       callback();
-      timeoutsRef.current = timeoutsRef.current.filter((t) => t !== id);
+      timeoutsRef.current = timeoutsRef.current.filter(t => t !== id);
     }, delay);
     timeoutsRef.current.push(id);
     return id;
@@ -103,7 +97,7 @@ function MainContent() {
     const onReconnect = () => socket.emit('join_room', roomName);
     socket.on('connect', onReconnect);
     return () => socket.off('connect', onReconnect);
-  }, [user]);
+  }, [socket, user]);
 
   const safeParseJSON = (str) => {
     if (!str || !str.trim()) return null;
@@ -124,12 +118,12 @@ function MainContent() {
 
   useEffect(() => {
     if (!currentVersionData) return;
+    // ✅ Use the protocol from currentVersionData or default to 'http'
     setProtocol(currentVersionData.protocol || 'http');
     setMethod(currentVersionData.method || 'GET');
     setUrlPath(currentVersionData.urlPath || '');
     setIncludeAIResponse(currentVersionData.airesponse === true || currentVersionData.includeAiresponse === true);
     setStatusCode(currentVersionData.statusCode || 200);
-
     if (currentVersionData.pathParams && Array.isArray(currentVersionData.pathParams)) {
       setPathParams(currentVersionData.pathParams);
     } else if (currentVersionData.pathParameters) {
@@ -137,7 +131,6 @@ function MainContent() {
     } else {
       setPathParams([]);
     }
-
     if (currentVersionData.queryParams && Array.isArray(currentVersionData.queryParams)) {
       setQueryParams(currentVersionData.queryParams);
     } else if (currentVersionData.queryParameters) {
@@ -145,9 +138,9 @@ function MainContent() {
     } else {
       setQueryParams([]);
     }
-
     setRequestBody(currentVersionData.requestBody ? JSON.stringify(currentVersionData.requestBody, null, 2) : '');
     setResponseBody(currentVersionData.responseBody ? JSON.stringify(currentVersionData.responseBody, null, 2) : '');
+    setServerUrl(currentVersionData.actualFullUrl || '');
     setIsAuthEnabled(currentVersionData.isAuthEnabled === true);
     setAuthScheme(currentVersionData.authScheme || 'BearerAuth');
     setLatency(currentVersionData.latency || 0);
@@ -162,8 +155,8 @@ function MainContent() {
   const extractPathParams = useCallback((path) => {
     const regex = /:([a-zA-Z_][a-zA-Z0-9_]*)/g;
     const matches = [...path.matchAll(regex)];
-    const keys = matches.map((m) => m[1]);
-    setPathParams((prev) => keys.map((key) => prev.find((p) => p.key === key) || { key, value: '' }));
+    const keys = matches.map(m => m[1]);
+    setPathParams(prev => keys.map(key => prev.find(p => p.key === key) || { key, value: '' }));
   }, []);
 
   const handleUrlPathChange = (e) => {
@@ -173,17 +166,17 @@ function MainContent() {
   };
 
   const updatePathParam = (key, value) => {
-    setPathParams((prev) => prev.map((p) => (p.key === key ? { ...p, value } : p)));
+    setPathParams(prev => prev.map(p => p.key === key ? { ...p, value } : p));
   };
 
   const addPathParam = useCallback(() => {
     const trimmedKey = newPathKey.trim();
     if (!trimmedKey) {
-      showWarning('Please enter a path parameter key.');
+      alert('Please enter a path parameter key.');
       return false;
     }
     if (isKeyDuplicate(pathParams, trimmedKey)) {
-      showWarning(`Path parameter "${trimmedKey}" already exists.`);
+      alert(`Path parameter "${trimmedKey}" already exists. Duplicate keys are not allowed.`);
       return false;
     }
     let newPath = urlPath;
@@ -192,18 +185,18 @@ function MainContent() {
       newPath = newPath + (newPath.endsWith('/') ? '' : '/') + `:${trimmedKey}`;
       setUrlPath(newPath);
     }
-    setPathParams((prev) => {
+    setPathParams(prev => {
       const regex = /:([a-zA-Z_][a-zA-Z0-9_]*)/g;
       const matches = [...newPath.matchAll(regex)];
-      const keys = matches.map((m) => m[1]);
-      const newParams = keys.map((key) => prev.find((p) => p.key === key) || { key, value: trimmedValue });
-      return newParams.map((p) => (p.key === trimmedKey ? { ...p, value: trimmedValue } : p));
+      const keys = matches.map(m => m[1]);
+      const newParams = keys.map(key => prev.find(p => p.key === key) || { key, value: trimmedValue });
+      return newParams.map(p => p.key === trimmedKey ? { ...p, value: trimmedValue } : p);
     });
     setNewPathKey('');
     setNewPathValue('');
     setShowPathParamInput(false);
     return true;
-  }, [newPathKey, newPathValue, urlPath, pathParams, showWarning]);
+  }, [newPathKey, newPathValue, urlPath, pathParams]);
 
   const removePathParam = (key) => {
     const newUrlPath = urlPath.replace(new RegExp(`\/?:${key}(?=\/|$)`), '').replace(/\/+/g, '/');
@@ -212,78 +205,83 @@ function MainContent() {
   };
 
   const updateQueryParam = useCallback((key, value) => {
-    setQueryParams((prev) => {
-      const existing = prev.find((q) => q.key === key);
-      if (existing) return prev.map((q) => (q.key === key ? { ...q, value } : q));
+    setQueryParams(prev => {
+      const existing = prev.find(q => q.key === key);
+      if (existing) return prev.map(q => q.key === key ? { ...q, value } : q);
       return [...prev, { key, value }];
     });
   }, []);
 
   const removeQueryParam = useCallback((key) => {
-    setQueryParams((prev) => prev.filter((q) => q.key !== key));
+    setQueryParams(prev => prev.filter(q => q.key !== key));
   }, []);
 
   const addQueryParam = useCallback(() => {
     const trimmedKey = newQueryKey.trim();
     const trimmedValue = newQueryValue.trim();
     if (!trimmedKey || !trimmedValue) {
-      showWarning('Please enter both a key and a value for the query parameter.');
+      alert('Please enter both a key and a value for the query parameter.');
       return false;
     }
     if (isKeyDuplicate(queryParams, trimmedKey)) {
-      showWarning(`Query parameter "${trimmedKey}" already exists.`);
+      alert(`Query parameter "${trimmedKey}" already exists. Duplicate keys are not allowed.`);
       return false;
     }
-    setQueryParams((prev) => [...prev, { key: trimmedKey, value: trimmedValue }]);
+    setQueryParams(prev => [...prev, { key: trimmedKey, value: trimmedValue }]);
     setNewQueryKey('');
     setNewQueryValue('');
     setShowQueryParamInput(false);
     return true;
-  }, [newQueryKey, newQueryValue, queryParams, showWarning]);
+  }, [newQueryKey, newQueryValue, queryParams]);
 
-  const handleAddRow = (setter) => setter((prev) => [...prev, { key: "", value: "" }]);
-  const handleRemoveRow = (setter, idx) => setter((prev) => prev.filter((_, i) => i !== idx));
+  const handleAddRow = (setter) => setter(prev => [...prev, { key: "", value: "" }]);
+  const handleRemoveRow = (setter, idx) => setter(prev => prev.filter((_, i) => i !== idx));
   const handleUpdateRow = (setter, idx, field, val) =>
-    setter((prev) => prev.map((item, i) => (i === idx ? { ...item, [field]: val } : item)));
+    setter(prev => prev.map((item, i) => (i === idx ? { ...item, [field]: val } : item)));
 
   const handleAddCookie = () => {
-    setCookies((prev) => [
+    setCookies(prev => [
       ...prev,
       {
         key: "",
         value: "",
-        options: { httpOnly: false, secure: false, sameSite: "Lax", maxAge: "", domain: "", path: "/" },
-      },
+        options: { httpOnly: false, secure: false, sameSite: "Lax", maxAge: "", domain: "", path: "/" }
+      }
     ]);
   };
 
   const handleUpdateCookieOption = (idx, option, val) => {
-    setCookies((prev) =>
+    setCookies(prev =>
       prev.map((item, i) =>
         i === idx ? { ...item, options: { ...item.options, [option]: val } } : item
       )
     );
   };
 
+  // ✅ FIXED: buildFinalUrl uses the selected protocol
   const buildFinalUrl = () => {
+    let finalUrl = MOCK_API_BASE_URL;
+    
+    // Replace protocol in base URL with selected protocol
+    // If MOCK_API_BASE_URL is "https://api.mockapi.info", change to "http://api.mockapi.info" if protocol is http
     const baseUrlWithoutProtocol = MOCK_API_BASE_URL.replace(/^https?:\/\//, '');
-    let finalUrl = `${protocol}://${baseUrlWithoutProtocol}`;
-
+    finalUrl = `${protocol}://${baseUrlWithoutProtocol}`;
+    
     let path = urlPath || '';
     path = path.replace(/[^a-zA-Z0-9/:_-]/g, '').replace(/\/+/g, '/');
     if (path.startsWith('/')) path = path.substring(1);
     if (path.endsWith('/')) path = path.slice(0, -1);
-
-    pathParams.forEach((param) => {
+    
+    pathParams.forEach(param => {
       const placeholder = `:${param.key}`;
       let value = param.value || `{${param.key}}`;
       value = value.replace(/[^a-zA-Z0-9_-]/g, '');
       path = path.replace(new RegExp(placeholder, 'g'), value);
     });
-
+    
     if (path) finalUrl += '/' + path;
-
-    const activeParams = queryParams.filter((q) => q.key && q.value);
+    
+    const activeParams = queryParams.filter(q => q.key && q.value);
     if (activeParams.length > 0) {
       const queryStrings = [];
       for (const q of activeParams) {
@@ -316,18 +314,15 @@ function MainContent() {
     const urlpath = urlPath;
     if (!project_id || !urlpath) {
       setUpdateStatus("error");
-      showWarning('Please select a workspace and enter a URL path.');
       safeTimeout(() => resetStatus(setUpdateStatus), 2000);
       return;
     }
-    let parsedRequestBody = null;
-    let parsedResponseBody = null;
+    let parsedRequestBody = null, parsedResponseBody = null;
     try {
       if (requestBody.trim()) parsedRequestBody = JSON.parse(requestBody);
       if (responseBody.trim()) parsedResponseBody = JSON.parse(responseBody);
     } catch {
       setUpdateStatus("error");
-      showError('Invalid JSON in Request or Response Body.');
       safeTimeout(() => resetStatus(setUpdateStatus), 2000);
       return;
     }
@@ -335,26 +330,29 @@ function MainContent() {
       protocol, method, pathParams, queryParams, headers, responseHeaders, cookies,
       isAuthEnabled, authScheme, latency, rateLimit, statusCode,
       requestBody: parsedRequestBody, responseBody: parsedResponseBody,
-      expectedToken, expectedApiKey,
+      expectedToken, expectedApiKey
     };
     try {
-      const data = await apiClient.post(UPDATE_API_URL, {
-        project_id,
-        urlpath,
-        apihistorydata,
-        airesponse: includeAIResponse,
+      const response = await fetch(UPDATE_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ project_id, urlpath, apihistorydata, airesponse: includeAIResponse })
       });
-
-      if (data.version && user?.username) {
-        await loadVersion(project_id, user.username, urlpath, data.version);
+      const data = await response.json();
+      if (response.ok) {
+        setServerUrl(data.actualFullUrl);
+        if (data.version && user?.username) {
+          await loadVersion(project_id, user.username, urlpath, data.version);
+        }
+        setUpdateStatus("success");
+        safeTimeout(() => resetStatus(setUpdateStatus), 2000);
+      } else {
+        setUpdateStatus("error");
+        safeTimeout(() => resetStatus(setUpdateStatus), 2000);
       }
-      setUpdateStatus("success");
-      showSuccess(`Endpoint '${urlpath}' updated to ${data.version || 'new version'}!`);
-      window.dispatchEvent(new CustomEvent('mockapi:history_updated', { detail: { projectId: project_id, urlpath } }));
-      safeTimeout(() => resetStatus(setUpdateStatus), 2000);
-    } catch (err) {
+    } catch {
       setUpdateStatus("error");
-      showError(err.message || 'Failed to update API endpoint');
       safeTimeout(() => resetStatus(setUpdateStatus), 2000);
     }
   };
@@ -366,18 +364,15 @@ function MainContent() {
     const urlpath = urlPath;
     if (!project_id || !urlpath) {
       setNewApiStatus("error");
-      showWarning('Please select a workspace and enter a URL path.');
       safeTimeout(() => resetStatus(setNewApiStatus), 2000);
       return;
     }
-    let parsedRequestBody = null;
-    let parsedResponseBody = null;
+    let parsedRequestBody = null, parsedResponseBody = null;
     try {
       if (requestBody.trim()) parsedRequestBody = JSON.parse(requestBody);
       if (responseBody.trim()) parsedResponseBody = JSON.parse(responseBody);
     } catch {
       setNewApiStatus("error");
-      showError('Invalid JSON in Request or Response body.');
       safeTimeout(() => resetStatus(setNewApiStatus), 2000);
       return;
     }
@@ -385,31 +380,33 @@ function MainContent() {
       protocol, method, pathParams, queryParams, headers, responseHeaders, cookies,
       isAuthEnabled, authScheme, latency, rateLimit, statusCode,
       requestBody: parsedRequestBody, responseBody: parsedResponseBody,
-      expectedToken, expectedApiKey,
+      expectedToken, expectedApiKey
     };
     try {
-      const data = await apiClient.post(ADD_API_URL, {
-        project_id,
-        urlpath,
-        apihistorydata,
-        airesponse: includeAIResponse,
+      const response = await fetch(ADD_API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ project_id, urlpath, apihistorydata, airesponse: includeAIResponse })
       });
-
-      if (user?.username) {
-        await loadVersion(project_id, user.username, urlpath, 'v1');
-      }
-      setNewApiStatus("success");
-      showSuccess(`API endpoint '${urlpath}' created successfully!`);
-      window.dispatchEvent(new CustomEvent('mockapi:history_updated', { detail: { projectId: project_id, urlpath } }));
-      safeTimeout(() => resetStatus(setNewApiStatus), 2000);
-    } catch (err) {
-      if (err.status === 409 || (err.message && err.message.toLowerCase().includes("already"))) {
-        setNewApiStatus("exists");
-        showWarning('URL path already exists. Click Update to create a new version.');
+      const data = await response.json();
+      if (response.ok) {
+        setServerUrl(data.actualFullUrl);
+        if (user?.username) {
+          await loadVersion(project_id, user.username, urlpath, 'v1');
+        }
+        setNewApiStatus("success");
+        safeTimeout(() => resetStatus(setNewApiStatus), 2000);
       } else {
-        setNewApiStatus("error");
-        showError(err.message || 'Failed to create API endpoint');
+        if (response.status === 409 || (data.error && data.error.toLowerCase().includes("already"))) {
+          setNewApiStatus("exists");
+        } else {
+          setNewApiStatus("error");
+        }
+        safeTimeout(() => resetStatus(setNewApiStatus), 2000);
       }
+    } catch {
+      setNewApiStatus("error");
       safeTimeout(() => resetStatus(setNewApiStatus), 2000);
     }
   };
@@ -448,12 +445,15 @@ function MainContent() {
 
   const pollForResult = useCallback(async (jobId) => {
     try {
-      const data = await apiClient.get(`/api/ai-result/${jobId}`);
+      const res = await fetch(`/api/ai-result/${jobId}`, { credentials: 'include' });
+      if (!res.ok) throw new Error('Polling failed');
+      const data = await res.json();
       if (data.status === 'completed') {
         applyAiResult(data.result);
         setIsAiLoading(false);
         localStorage.removeItem('pending_ai_job');
         setCurrentJobId(null);
+        setStreamingText('');
       } else if (data.status === 'pending') {
         setTimeout(() => pollForResult(jobId), 2000);
       } else if (data.status === 'failed') {
@@ -461,7 +461,7 @@ function MainContent() {
         localStorage.removeItem('pending_ai_job');
         setCurrentJobId(null);
       }
-    } catch {
+    } catch (error) {
       setTimeout(() => pollForResult(jobId), 5000);
     }
   }, [applyAiResult]);
@@ -481,22 +481,29 @@ function MainContent() {
         setIsAiLoading(false);
         localStorage.removeItem('pending_ai_job');
         setCurrentJobId(null);
+        setStreamingText('');
       }
+    };
+    const onChunk = (data) => {
+      if (data.jobId === currentJobId) setStreamingText(prev => prev + data.chunk);
     };
     const onError = (data) => {
       if (data.jobId === currentJobId) {
         setIsAiLoading(false);
         localStorage.removeItem('pending_ai_job');
         setCurrentJobId(null);
+        setStreamingText('');
       }
     };
     socket.on('ai:response', onResponse);
+    socket.on('ai:chunk', onChunk);
     socket.on('ai:error', onError);
     return () => {
       socket.off('ai:response', onResponse);
+      socket.off('ai:chunk', onChunk);
       socket.off('ai:error', onError);
     };
-  }, [currentJobId, applyAiResult]);
+  }, [socket, currentJobId, applyAiResult]);
 
   useEffect(() => {
     const pending = localStorage.getItem('pending_ai_job');
@@ -506,7 +513,7 @@ function MainContent() {
         setIsAiLoading(true);
         setCurrentJobId(jobId);
         pollForResult(jobId);
-      } catch {
+      } catch (e) {
         localStorage.removeItem('pending_ai_job');
       }
     }
@@ -519,19 +526,27 @@ function MainContent() {
       protocol, method, urlPath, pathParams, queryParams,
       requestBody: parsedRequestBody, responseBody: parsedResponseBody,
       isAuthEnabled, authScheme, latency, rateLimit, headers, responseHeaders, cookies,
-      includeAIResponse, statusCode, geminiInput,
+      includeAIResponse, statusCode, geminiInput
     };
     setGeminiInput('');
     setOriginalPayload(payload);
     setIsAiLoading(true);
+    setStreamingText('');
     try {
-      const data = await apiClient.post(ASK_AI_URL, payload);
-      if (data.protocol) {
+      const response = await fetch(ASK_AI_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) throw new Error('AI request failed');
+      const data = await response.json();
+      if (response.status === 200 && data.protocol) {
         applyAiResult(data);
         setIsAiLoading(false);
         return;
       }
-      if (data.jobId) {
+      if (response.status === 202 && data.jobId) {
         const jobId = data.jobId;
         setCurrentJobId(jobId);
         localStorage.setItem('pending_ai_job', JSON.stringify({ jobId, timestamp: Date.now() }));
@@ -542,7 +557,6 @@ function MainContent() {
     } catch (error) {
       console.error('AI request failed:', error);
       setIsAiLoading(false);
-      showError(error.message || 'AI request failed');
     }
   };
 
@@ -550,12 +564,18 @@ function MainContent() {
     if (timerRef.current) clearInterval(timerRef.current);
     setReverseTimer(0);
     if (!originalPayload) {
-      showWarning('No previous AI suggestion to revert');
+      alert('No previous AI suggestion to revert');
       return;
     }
     setIsReversing(true);
     try {
-      const result = await apiClient.post(REVERSE_AI_URL, originalPayload);
+      const response = await fetch(REVERSE_AI_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify(originalPayload)
+      });
+      const result = await response.json();
       if (result.previousData) {
         const prev = result.previousData;
         setProtocol(prev.protocol || 'http');
@@ -574,13 +594,12 @@ function MainContent() {
         setCookies(prev.cookies || []);
         setIncludeAIResponse(prev.includeAIResponse || false);
         setOriginalPayload(null);
-        showInfo('Reverted AI suggestion to previous blueprint');
       } else {
-        showWarning('Could not retrieve previous data (maybe expired)');
+        alert('Could not retrieve previous data (maybe expired)');
       }
     } catch (error) {
       console.error('Reverse AI error:', error);
-      showError('Failed to revert AI suggestion');
+      alert('Failed to revert AI suggestion');
     } finally {
       setIsReversing(false);
     }
@@ -613,13 +632,13 @@ function MainContent() {
       }
     }
     if (requestBody && requestBody.trim()) {
-      const hasContentType = allHeaders.some((h) => h.key.toLowerCase() === 'content-type');
+      const hasContentType = allHeaders.some(h => h.key.toLowerCase() === 'content-type');
       if (!hasContentType) allHeaders.push({ key: 'Content-Type', value: 'application/json' });
     }
     allHeaders.forEach(({ key, value }) => {
       if (key && value) curl += ` -H "${key}: ${value.replace(/"/g, '\\"')}"`;
     });
-    const cookiePairs = cookies.filter((c) => c.key && c.value).map((c) => `${c.key}=${c.value}`);
+    const cookiePairs = cookies.filter(c => c.key && c.value).map(c => `${c.key}=${c.value}`);
     if (cookiePairs.length > 0) curl += ` -H "Cookie: ${cookiePairs.join('; ')}"`;
     if (requestBody && requestBody.trim()) {
       const escapedBody = requestBody.replace(/'/g, "'\\''");
@@ -638,7 +657,7 @@ function MainContent() {
       textarea.style.opacity = '0';
       document.body.appendChild(textarea);
       textarea.select();
-      try { document.execCommand('copy'); setCopiedCurl(true); } catch { alert('Failed to copy cURL command.'); }
+      try { document.execCommand('copy'); setCopiedCurl(true); } catch (err) { alert('Failed to copy cURL command.'); }
       document.body.removeChild(textarea);
       if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
       copyTimeoutRef.current = setTimeout(() => setCopiedCurl(false), 2000);
@@ -654,6 +673,8 @@ function MainContent() {
     }
   }, [generateCurlCommand]);
 
+  const [serverUrl, setServerUrl] = useState('');
+
   // ─── THEME‑AWARE STYLES ─────────────────────────────────────
   const cardBg = w ? "bg-white" : "bg-zinc-900";
   const borderColor = w ? "border-gray-200" : "border-zinc-800";
@@ -664,6 +685,9 @@ function MainContent() {
     ? "bg-white border border-gray-300 text-gray-800 placeholder-gray-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all"
     : "bg-zinc-900 border border-zinc-700 text-zinc-300 placeholder-zinc-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all";
   const btnPrimary = "bg-blue-600 hover:bg-blue-500 text-white px-3 py-1 rounded text-xs font-medium transition-colors disabled:opacity-60 disabled:cursor-not-allowed";
+  const btnSecondary = w
+    ? "bg-gray-100 hover:bg-gray-200 text-gray-600 border border-gray-200 px-3 py-1 rounded text-xs font-medium transition-colors"
+    : "bg-zinc-800 hover:bg-zinc-700 text-zinc-300 border border-zinc-700 px-3 py-1 rounded text-xs font-medium transition-colors";
   const miniBtn = w
     ? "bg-gray-100 hover:bg-gray-200 text-gray-500 border border-gray-200 px-2 py-0.5 rounded text-xs font-medium transition-colors"
     : "bg-zinc-800 hover:bg-zinc-700 text-zinc-400 border border-zinc-700 px-2 py-0.5 rounded text-xs font-medium transition-colors";
@@ -695,12 +719,12 @@ function MainContent() {
           <span className="text-blue-500">⚡</span> API Builder
         </span>
         <span className={`ml-auto text-xs ${mutedText}`}>
-          {currentProject?.name || "No workspace selected"}
+          {currentProject?.name || "No project selected"}
         </span>
       </div>
 
       {/* Scrollable content */}
-      <div className={`flex-1 h-full overflow-y-auto px-6 py-6 space-y-6 custom-scrollbar transition-colors duration-150 ${
+      <div className={`flex-1 h-full overflow-y-auto px-6 py-6 space-y-6 transition-colors duration-150 ${
         w ? "bg-gray-50 text-gray-800" : "bg-zinc-950 text-zinc-300"
       }`}>
         {/* UrlBuilder section */}
@@ -711,7 +735,6 @@ function MainContent() {
             urlPath={urlPath} setUrlPath={handleUrlPathChange}
             finalUrl={finalUrl} actualFullUrl={currentVersionData?.actualFullUrl || ''}
             copied={copied} copyToClipboard={copyToClipboard}
-            onOpenCodeExport={() => setIsCodeExportOpen(true)}
             mutedTxt={mutedText} inp={inputClass} miniBtn={miniBtn} w={w}
           />
         </div>
@@ -781,16 +804,16 @@ function MainContent() {
             <div className="p-4">
               <div className="flex items-center justify-between mb-3">
                 <span className={`text-xs ${sectionLabel}`}>Request Headers ({headers.length})</span>
-                <button type="button" onClick={() => handleAddRow(setHeaders)} className={btnPrimary}>+ Add</button>
+                <button onClick={() => handleAddRow(setHeaders)} className={btnPrimary}>+ Add</button>
               </div>
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                 {headers.map((item, idx) => (
                   <div key={idx} className="flex items-center gap-2">
                     <input type="text" value={item.key} placeholder="X-Request-Id"
                       onChange={(e) => {
                         const newKey = e.target.value;
                         if (isKeyDuplicate(headers, newKey, idx)) {
-                          showWarning(`Request header "${newKey}" already exists.`); return;
+                          alert(`Request header "${newKey}" already exists.`); return;
                         }
                         handleUpdateRow(setHeaders, idx, "key", newKey);
                       }}
@@ -798,7 +821,7 @@ function MainContent() {
                     <input type="text" value={item.value} placeholder="Value"
                       onChange={(e) => handleUpdateRow(setHeaders, idx, "value", e.target.value)}
                       className={`flex-1 px-2 py-1 text-xs rounded font-mono outline-none ${inputClass}`} />
-                    <button type="button" onClick={() => handleRemoveRow(setHeaders, idx)} className="text-zinc-500 hover:text-rose-400 text-xs px-1">✕</button>
+                    <button onClick={() => handleRemoveRow(setHeaders, idx)} className="text-zinc-500 hover:text-rose-400 text-xs px-1">✕</button>
                   </div>
                 ))}
                 {headers.length === 0 && <span className={`text-xs italic ${mutedText} block pt-1`}>No request headers compiled.</span>}
@@ -807,16 +830,16 @@ function MainContent() {
             <div className="p-4">
               <div className="flex items-center justify-between mb-3">
                 <span className={`text-xs ${sectionLabel}`}>Response Headers ({responseHeaders.length})</span>
-                <button type="button" onClick={() => handleAddRow(setResponseHeaders)} className={btnPrimary}>+ Add</button>
+                <button onClick={() => handleAddRow(setResponseHeaders)} className={btnPrimary}>+ Add</button>
               </div>
-              <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
+              <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                 {responseHeaders.map((item, idx) => (
                   <div key={idx} className="flex items-center gap-2">
                     <input type="text" value={item.key} placeholder="Access-Control-Allow-Origin"
                       onChange={(e) => {
                         const newKey = e.target.value;
                         if (isKeyDuplicate(responseHeaders, newKey, idx)) {
-                          showWarning(`Response header "${newKey}" already exists.`); return;
+                          alert(`Response header "${newKey}" already exists.`); return;
                         }
                         handleUpdateRow(setResponseHeaders, idx, "key", newKey);
                       }}
@@ -824,7 +847,7 @@ function MainContent() {
                     <input type="text" value={item.value} placeholder="value or *"
                       onChange={(e) => handleUpdateRow(setResponseHeaders, idx, "value", e.target.value)}
                       className={`flex-1 px-2 py-1 text-xs rounded font-mono outline-none ${inputClass}`} />
-                    <button type="button" onClick={() => handleRemoveRow(setResponseHeaders, idx)} className="text-zinc-500 hover:text-rose-400 text-xs px-1">✕</button>
+                    <button onClick={() => handleRemoveRow(setResponseHeaders, idx)} className="text-zinc-500 hover:text-rose-400 text-xs px-1">✕</button>
                   </div>
                 ))}
                 {responseHeaders.length === 0 && <span className={`text-xs italic ${mutedText} block pt-1`}>No custom response headers attached.</span>}
@@ -839,9 +862,9 @@ function MainContent() {
             <div className="p-4">
               <div className="flex items-center justify-between mb-3">
                 <span className={`text-xs ${sectionLabel}`}>Stateful Cookies ({cookies.length})</span>
-                <button type="button" onClick={handleAddCookie} className={btnPrimary}>+ Add</button>
+                <button onClick={handleAddCookie} className={btnPrimary}>+ Add</button>
               </div>
-              <div className="space-y-3 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
+              <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
                 {cookies.map((cookie, idx) => (
                   <div key={idx} className={`flex flex-col gap-1 p-2 rounded border ${w ? "border-gray-200 bg-gray-50" : "border-zinc-700 bg-zinc-900/30"}`}>
                     <div className="flex items-center gap-2">
@@ -849,7 +872,7 @@ function MainContent() {
                         onChange={(e) => {
                           const newKey = e.target.value;
                           if (isKeyDuplicate(cookies, newKey, idx)) {
-                            showWarning(`Cookie "${newKey}" already exists.`); return;
+                            alert(`Cookie "${newKey}" already exists.`); return;
                           }
                           handleUpdateRow(setCookies, idx, "key", newKey);
                         }}
@@ -857,7 +880,7 @@ function MainContent() {
                       <input type="text" value={cookie.value} placeholder="Value"
                         onChange={(e) => handleUpdateRow(setCookies, idx, "value", e.target.value)}
                         className={`flex-1 px-2 py-1 text-xs rounded font-mono outline-none ${inputClass}`} />
-                      <button type="button" onClick={() => handleRemoveRow(setCookies, idx)} className="text-zinc-500 hover:text-rose-400 text-xs px-1">✕</button>
+                      <button onClick={() => handleRemoveRow(setCookies, idx)} className="text-zinc-500 hover:text-rose-400 text-xs px-1">✕</button>
                     </div>
                     <div className="flex flex-wrap gap-2 items-center text-[10px]">
                       <label className="flex items-center gap-1"><input type="checkbox" checked={cookie.options?.httpOnly || false} onChange={(e) => handleUpdateCookieOption(idx, 'httpOnly', e.target.checked)} /> HttpOnly</label>
@@ -877,12 +900,12 @@ function MainContent() {
             <div className="p-4 flex flex-col">
               <div className="flex items-center justify-between mb-3">
                 <span className={`text-xs ${sectionLabel}`}>🧪 cURL Command</span>
-                <button type="button" onClick={handleCopyCurl} disabled={!finalUrl && !currentVersionData?.actualFullUrl}
+                <button onClick={handleCopyCurl} disabled={!finalUrl && !currentVersionData?.actualFullUrl}
                   className={btnPrimary}>
                   {copiedCurl ? (<span className="text-green-400 flex items-center gap-1">✓ Copied</span>) : 'Copy'}
                 </button>
               </div>
-              <pre className={`text-xs font-mono p-3 rounded flex-1 overflow-x-auto whitespace-pre-wrap break-all custom-scrollbar ${
+              <pre className={`text-xs font-mono p-3 rounded flex-1 overflow-x-auto whitespace-pre-wrap break-all ${
                 w ? "bg-gray-50 border border-gray-200 text-gray-800" : "bg-zinc-900/60 border border-zinc-800 text-zinc-400"
               }`}>
                 {finalUrl || currentVersionData?.actualFullUrl
@@ -954,37 +977,14 @@ function MainContent() {
               </div>
             </label>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setIsTesterOpen(true)}
-                className={`px-3 py-1.5 rounded text-xs font-medium transition-all flex items-center gap-1.5 shadow-sm active:scale-95 ${
-                  w
-                    ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300"
-                    : "bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30"
-                }`}
-                title="Send live test request to this mock endpoint"
-              >
-                <span>🧪</span>
-                <span>Test Mock</span>
-              </button>
-              <button
-                type="button"
-                onClick={updateAPI}
-                disabled={updateStatus === "loading"}
-                className={`px-4 py-1.5 rounded text-xs font-medium transition-colors flex items-center justify-center min-w-[80px] ${
-                  w ? "bg-white border border-gray-300 text-gray-600 hover:bg-gray-100" : "bg-blue-600 hover:bg-blue-500 text-white"
-                }`}
-              >
+              <button onClick={updateAPI} disabled={updateStatus === "loading"} className={`px-4 py-1.5 rounded text-xs font-medium transition-colors flex items-center justify-center min-w-[80px] ${
+                w ? "bg-white border border-gray-300 text-gray-600 hover:bg-gray-100" : "bg-blue-600 hover:bg-blue-500 text-white"
+              }`}>
                 {renderButtonContent(updateStatus, "Update")}
               </button>
-              <button
-                type="button"
-                onClick={handleNewAPI}
-                disabled={newApiStatus === "loading"}
-                className={`px-4 py-1.5 rounded text-xs font-medium transition-colors flex items-center justify-center min-w-[80px] ${
-                  w ? "bg-white border border-gray-300 text-gray-600 hover:bg-gray-100" : "bg-blue-600 hover:bg-blue-500 text-white"
-                }`}
-              >
+              <button onClick={handleNewAPI} disabled={newApiStatus === "loading"} className={`px-4 py-1.5 rounded text-xs font-medium transition-colors flex items-center justify-center min-w-[80px] ${
+                w ? "bg-white border border-gray-300 text-gray-600 hover:bg-gray-100" : "bg-blue-600 hover:bg-blue-500 text-white"
+              }`}>
                 {renderButtonContent(newApiStatus, "New API")}
               </button>
             </div>
@@ -1020,41 +1020,8 @@ function MainContent() {
           </button>
         </div>
       </div>
-
-      {/* ─── Modals ─── */}
-      <CodeExportModal
-        isOpen={isCodeExportOpen}
-        onClose={() => setIsCodeExportOpen(false)}
-        endpointData={{
-          url: currentVersionData?.actualFullUrl || finalUrl,
-          method,
-          headers,
-          queryParams,
-          requestBody,
-          expectedToken,
-          expectedApiKey,
-          authScheme,
-          isAuthEnabled,
-        }}
-      />
-
-      <MockTesterModal
-        isOpen={isTesterOpen}
-        onClose={() => setIsTesterOpen(false)}
-        endpointData={{
-          url: currentVersionData?.actualFullUrl || finalUrl,
-          method,
-          headers,
-          queryParams,
-          requestBody,
-          expectedToken,
-          expectedApiKey,
-          authScheme,
-          isAuthEnabled,
-        }}
-      />
     </main>
   );
 }
 
-export default React.memo(MainContent);
+export default MainContent;

@@ -1,9 +1,9 @@
 // src/pages/ApiToolsPage.jsx
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
-import NetworkTest from './NetworkTest';
+import NetworkTest from './NetworkTest'; // ✅ Correct path - same directory
 import OpenApi from './OpenApi';
 
 // ---------- Helper functions (persist width) ----------
@@ -32,22 +32,17 @@ function ApiToolsPage() {
   const isWhiteTheme = theme === 'white';
 
   // ---- Project ID state ----
-  const [selectedProjectId, setSelectedProjectId] = useState(() => {
-    try {
-      return localStorage.getItem('apiToolsProjectId') || null;
-    } catch {
-      return null;
-    }
-  });
+  const [selectedProjectId, setSelectedProjectId] = useState(null);
   const [refreshKey, setRefreshKey] = useState(0);
 
   // ---- Split pane state ----
   const containerRef = useRef(null);
   const [leftWidth, setLeftWidth] = useState(() => {
-    return getStoredWidth('apiToolsLeftWidth', 50);
+    const width = getStoredWidth('apiToolsLeftWidth', 50);
+    return width;
   });
   const [isDragging, setIsDragging] = useState(false);
-  const [isMobile, setIsMobile] = useState(() => (typeof window !== 'undefined' ? window.innerWidth < 768 : false));
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
   // ---- Refs for drag (throttling) ----
   const rafIdRef = useRef(null);
@@ -64,7 +59,7 @@ function ApiToolsPage() {
   }, []);
 
   const handleProjectRefresh = useCallback(() => {
-    setRefreshKey((prev) => prev + 1);
+    setRefreshKey(prev => prev + 1);
   }, []);
 
   // ---- Responsive handler ----
@@ -79,7 +74,7 @@ function ApiToolsPage() {
     }
   }, []);
 
-  // ---- Register resize listener ----
+  // ---- Register resize listener (and call once on mount) ----
   useEffect(() => {
     handleResize();
     window.addEventListener('resize', handleResize);
@@ -157,33 +152,12 @@ function ApiToolsPage() {
     };
   }, [isDragging, handleDragMove, handleDragEnd]);
 
-  // ---- Double-click & Keyboard to reset or adjust ----
+  // ---- Double-click to reset to 50/50 ----
   const handleDividerDoubleClick = useCallback(() => {
     const newWidth = 50;
     setLeftWidth(newWidth);
     setStoredWidth('apiToolsLeftWidth', newWidth);
   }, []);
-
-  const handleDividerKeyDown = useCallback((e) => {
-    if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      setLeftWidth((prev) => {
-        const next = Math.max(20, prev - 5);
-        setStoredWidth('apiToolsLeftWidth', next);
-        return next;
-      });
-    } else if (e.key === 'ArrowRight') {
-      e.preventDefault();
-      setLeftWidth((prev) => {
-        const next = Math.min(80, prev + 5);
-        setStoredWidth('apiToolsLeftWidth', next);
-        return next;
-      });
-    } else if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      handleDividerDoubleClick();
-    }
-  }, [handleDividerDoubleClick]);
 
   // ---- Theme-aware styles ----
   const bg = isWhiteTheme ? 'bg-gray-50' : 'bg-zinc-950';
@@ -196,37 +170,32 @@ function ApiToolsPage() {
   const dividerActiveBg = 'bg-blue-500';
   const dotBg = isWhiteTheme ? 'bg-gray-300/60' : 'bg-zinc-600/40';
 
+  // ---- Render ----
   return (
     <div className={`h-screen flex flex-col overflow-hidden ${bg} transition-colors duration-200`}>
       {/* ========== TOP HEADER ========== */}
-      <header className={`h-[52px] shrink-0 flex items-center px-5 border-b ${headerBg} ${borderColor}`}>
-        <div className="flex items-center gap-3">
+      <header className={`h-12 shrink-0 flex items-center px-5 border-b ${headerBg} ${borderColor}`}>
+        <div className="flex items-center gap-5">
           <button
-            type="button"
-            onClick={() => navigate('/home')}
-            className={`flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1.5 rounded-lg transition-all ${
-              isWhiteTheme ? 'bg-slate-100 hover:bg-slate-200 text-slate-700' : 'bg-zinc-800 hover:bg-zinc-700 text-zinc-300'
-            }`}
-            aria-label="Back to Studio Home"
-          >
-            ← Studio
-          </button>
-
-          <button
-            type="button"
             onClick={() => navigate('/dashboard')}
-            className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1.5 rounded-lg transition-all ${
-              isWhiteTheme ? 'hover:bg-slate-100 text-slate-600' : 'hover:bg-zinc-800 text-zinc-400'
-            }`}
+            className={`
+              flex items-center gap-2 text-sm font-medium transition-all duration-200
+              ${isWhiteTheme ? 'text-gray-500 hover:text-gray-800' : 'text-zinc-400 hover:text-white'}
+              focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded
+              ${isWhiteTheme ? 'focus:ring-offset-white' : 'focus:ring-offset-zinc-900'}
+            `}
             aria-label="Go to Dashboard"
           >
-            <span>📊 Dashboard</span>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            <span>Dashboard</span>
           </button>
 
-          <div className={`w-px h-4 ${isWhiteTheme ? 'bg-slate-200' : 'bg-zinc-800'}`} />
+          <div className={`w-px h-5 ${isWhiteTheme ? 'bg-gray-200' : 'bg-zinc-700'}`} />
 
-          <span className={`text-xs font-bold tracking-wider uppercase ${headerText}`}>
-            API Engineering Tools
+          <span className={`text-sm font-semibold tracking-wide ${headerText}`}>
+            API Tools
           </span>
         </div>
 
@@ -238,19 +207,18 @@ function ApiToolsPage() {
       </header>
 
       {/* ========== SPLIT PANES ========== */}
-      <main
+      <div
         ref={containerRef}
         className="flex-1 flex min-h-0"
         style={{ flexDirection: isMobile ? 'column' : 'row' }}
       >
         {/* Left Panel – OpenApi with Project Selector */}
-        <section
-          className="overflow-auto custom-scrollbar"
+        <div
+          className="overflow-auto"
           style={{
             width: isMobile ? '100%' : `${leftWidth}%`,
             height: isMobile ? '50%' : '100%',
           }}
-          aria-label="OpenAPI Specification Importer"
         >
           <OpenApi
             key={refreshKey}
@@ -258,20 +226,22 @@ function ApiToolsPage() {
             onProjectSelect={handleProjectSelect}
             onProjectRefresh={handleProjectRefresh}
           />
-        </section>
+        </div>
 
         {/* Divider – visible only on desktop */}
         {!isMobile && (
           <div
-            className={`relative w-1.5 group cursor-col-resize transition-all duration-150 ${
-              isDragging ? dividerActiveBg : dividerBg
-            } ${!isDragging && dividerHoverBg} shrink-0`}
+            className={`
+              relative w-1.5 group cursor-col-resize transition-all duration-150
+              ${isDragging ? dividerActiveBg : dividerBg}
+              ${!isDragging && dividerHoverBg}
+              flex-shrink-0
+            `}
             onMouseDown={handleDragStart}
             onTouchStart={handleDragStart}
             onDoubleClick={handleDividerDoubleClick}
-            onKeyDown={handleDividerKeyDown}
             role="separator"
-            aria-valuenow={Math.round(leftWidth)}
+            aria-valuenow={leftWidth}
             aria-valuemin={20}
             aria-valuemax={80}
             aria-label="Resize panels – double‑click to reset to 50/50"
@@ -286,31 +256,28 @@ function ApiToolsPage() {
             </div>
 
             {/* Hover/active glow effect */}
-            <div
-              className={`absolute inset-0 pointer-events-none transition-opacity duration-200 ${
-                isDragging ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-              }`}
-            >
+            <div className={`
+              absolute inset-0 pointer-events-none transition-opacity duration-200
+              ${isDragging ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}
+            `}>
               <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-1 bg-blue-500/20 blur-sm" />
             </div>
           </div>
         )}
 
         {/* Right Panel – NetworkTest */}
-        <section
-          className="overflow-auto custom-scrollbar"
+        <div
+          className="overflow-auto"
           style={{
             width: isMobile ? '100%' : `${100 - leftWidth}%`,
             height: isMobile ? '50%' : '100%',
           }}
-          aria-label="Network Latency Diagnostic"
         >
           <NetworkTest projectId={selectedProjectId} />
-        </section>
-      </main>
+        </div>
+      </div>
     </div>
   );
 }
 
-
-export default React.memo(ApiToolsPage);
+export default ApiToolsPage;

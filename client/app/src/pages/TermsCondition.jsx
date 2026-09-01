@@ -1,28 +1,27 @@
 // src/pages/TermsCondition.jsx
-import React, { useEffect } from "react";
 import { useTheme } from "../context/ThemeContext";
 import { useNavigate } from "react-router-dom";
 
 const badgeMapLight = {
-  blue: "bg-blue-500/10 text-blue-600 border-blue-500/20",
-  amber: "bg-amber-500/10 text-amber-600 border-amber-500/20",
-  red: "bg-red-500/10 text-red-600 border-red-500/20",
-  zinc: "bg-zinc-500/10 text-zinc-600 border-zinc-500/20",
-  purple: "bg-purple-500/10 text-purple-600 border-purple-500/20",
-  orange: "bg-orange-500/10 text-orange-600 border-orange-500/20",
-  teal: "bg-teal-500/10 text-teal-600 border-teal-500/20",
-  indigo: "bg-indigo-500/10 text-indigo-600 border-indigo-500/20",
+  blue: "bg-blue-500/10 text-blue-600",
+  amber: "bg-amber-500/10 text-amber-600",
+  red: "bg-red-500/10 text-red-600",
+  zinc: "bg-zinc-500/10 text-zinc-600",
+  purple: "bg-purple-500/10 text-purple-600",
+  orange: "bg-orange-500/10 text-orange-600",
+  teal: "bg-teal-500/10 text-teal-600",
+  indigo: "bg-indigo-500/10 text-indigo-600",
 };
 
 const badgeMapDark = {
-  blue: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-  amber: "bg-amber-500/10 text-amber-400 border-amber-500/20",
-  red: "bg-red-500/10 text-red-400 border-red-500/20",
-  zinc: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
-  purple: "bg-purple-500/10 text-purple-400 border-purple-500/20",
-  orange: "bg-orange-500/10 text-orange-400 border-orange-500/20",
-  teal: "bg-teal-500/10 text-teal-400 border-teal-500/20",
-  indigo: "bg-indigo-500/10 text-indigo-400 border-indigo-500/20",
+  blue: "bg-blue-500/10 text-blue-400 border border-blue-500/20",
+  amber: "bg-amber-500/10 text-amber-400 border border-amber-500/20",
+  red: "bg-red-500/10 text-red-400 border border-red-500/20",
+  zinc: "bg-zinc-500/10 text-zinc-400 border border-zinc-500/20",
+  purple: "bg-purple-500/10 text-purple-400 border border-purple-500/20",
+  orange: "bg-orange-500/10 text-orange-400 border border-orange-500/20",
+  teal: "bg-teal-500/10 text-teal-400 border border-teal-500/20",
+  indigo: "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20",
 };
 
 const TermsCondition = () => {
@@ -30,22 +29,17 @@ const TermsCondition = () => {
   const navigate = useNavigate();
   const isWhiteTheme = theme === "white";
 
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, []);
-
   const badgeMap = isWhiteTheme ? badgeMapLight : badgeMapDark;
 
-  const Badge = ({ color = "blue", children }) => {
-    const badgeStyle = badgeMap[color] || badgeMap.blue;
-    return (
-      <span
-        className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full uppercase tracking-wider whitespace-nowrap border ${badgeStyle}`}
-      >
-        {children}
-      </span>
-    );
-  };
+  const Badge = ({ color, children }) => (
+    <span
+      className={`text-[10px] font-semibold px-2.5 py-0.5 rounded-full uppercase tracking-wider whitespace-nowrap border ${
+        badgeMap[color]
+      }`}
+    >
+      {children}
+    </span>
+  );
 
   // ─── Theme‑aware styles ──────────────────────────────────────────
   const pageBg = isWhiteTheme ? "bg-gray-50" : "bg-zinc-950";
@@ -55,6 +49,7 @@ const TermsCondition = () => {
   const mutedText = isWhiteTheme ? "text-gray-400" : "text-zinc-500";
   const textSecondary = isWhiteTheme ? "text-gray-700" : "text-zinc-400";
   const textMuted = isWhiteTheme ? "text-gray-500" : "text-zinc-500";
+  const cardBg = isWhiteTheme ? "bg-white" : "bg-zinc-900";
   const dividerLine = isWhiteTheme ? "border-gray-100" : "border-zinc-800";
   const headingText = isWhiteTheme ? "text-gray-900" : "text-white";
 
@@ -88,7 +83,7 @@ const TermsCondition = () => {
       </header>
 
       {/* ─── SCROLLABLE CONTENT ─── */}
-      <main className="flex-1 overflow-y-auto px-6 py-12 md:py-16 custom-scrollbar">
+      <div className="flex-1 overflow-y-auto px-6 py-12 md:py-16">
         <div className="max-w-3xl mx-auto space-y-10">
           {/* Title Section */}
           <div>
@@ -570,9 +565,9 @@ const TermsCondition = () => {
             these Terms of Service.
           </p>
         </div>
-      </main>
+      </div>
     </div>
   );
 };
 
-export default React.memo(TermsCondition);
+export default TermsCondition;

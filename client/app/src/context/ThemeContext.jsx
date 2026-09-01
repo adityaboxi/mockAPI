@@ -1,30 +1,33 @@
-// src/context/ThemeContext.jsx
 import React, { createContext, useState, useContext, useEffect, useCallback, useMemo } from 'react';
 
-const ThemeContext = createContext(null);
-
-const getInitialTheme = () => {
-  try {
-    const saved = localStorage.getItem('theme');
-    if (saved === 'dark' || saved === 'white') {
-      return saved;
-    }
-    if (typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      return 'dark';
-    }
-    return 'dark';
-  } catch (error) {
-    console.warn('Theme initialisation error:', error);
-    return 'dark';
-  }
-};
+const ThemeContext = createContext();
 
 export const ThemeProvider = ({ children }) => {
+  // ─── Initialise theme ──────────────────────────────────────────────────────
+  const getInitialTheme = useCallback(() => {
+    try {
+      // Check localStorage first
+      const saved = localStorage.getItem('theme');
+      if (saved === 'dark' || saved === 'white') {
+        return saved;
+      }
+
+      // Fallback to system preference if available
+      if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        return 'dark';
+      }
+      return 'dark'; // Default to dark if nothing else
+    } catch (error) {
+      console.warn('Theme initialisation error:', error);
+      return 'dark';
+    }
+  }, []);
+
   const [theme, setThemeState] = useState(getInitialTheme);
 
   // ─── Toggle between light and dark ────────────────────────────────────────
   const toggleTheme = useCallback(() => {
-    setThemeState((prev) => (prev === 'white' ? 'dark' : 'white'));
+    setThemeState(prev => (prev === 'white' ? 'dark' : 'white'));
   }, []);
 
   // ─── Programmatic theme setter ─────────────────────────────────────────────
@@ -36,74 +39,34 @@ export const ThemeProvider = ({ children }) => {
     }
   }, []);
 
-  // ─── Persist theme to localStorage & synchronize DOM ──────────────────────
+  // ─── Persist theme to localStorage ────────────────────────────────────────
   useEffect(() => {
     try {
       localStorage.setItem('theme', theme);
     } catch (error) {
       console.warn('Failed to save theme to localStorage:', error);
     }
-
-    if (typeof document !== 'undefined') {
-      const root = document.documentElement;
-      if (theme === 'dark') {
-        root.classList.add('dark');
-        root.classList.remove('light');
-        root.style.colorScheme = 'dark';
-      } else {
-        root.classList.remove('dark');
-        root.classList.add('light');
-        root.style.colorScheme = 'light';
-      }
-
-      // Update mobile viewport meta theme-color
-      let meta = document.querySelector("meta[name='theme-color']");
-      if (!meta) {
-        meta = document.createElement('meta');
-        meta.setAttribute('name', 'theme-color');
-        document.head.appendChild(meta);
-      }
-      meta.setAttribute('content', theme === 'white' ? '#f8fafc' : '#09090b');
-    }
   }, [theme]);
 
-  // ─── Cross-Tab Sync & System Preference Listener ──────────────────────────
+  // ─── Listen for system theme changes (optional) ──────────────────────────
   useEffect(() => {
-    const handleStorageChange = (e) => {
-      if (e.key === 'theme' && (e.newValue === 'dark' || e.newValue === 'white')) {
-        setThemeState(e.newValue);
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-
-    let mediaQuery;
-    let handleMediaChange;
-    if (typeof window !== 'undefined' && window.matchMedia) {
-      mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-      handleMediaChange = (e) => {
-        if (!localStorage.getItem('theme')) {
-          setThemeState(e.matches ? 'dark' : 'white');
-        }
-      };
-      if (mediaQuery.addEventListener) {
-        mediaQuery.addEventListener('change', handleMediaChange);
-      }
+    if (localStorage.getItem('theme')) {
+      // If user has manually set a theme, don't override it
+      return;
     }
 
-    return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      if (mediaQuery && mediaQuery.removeEventListener && handleMediaChange) {
-        mediaQuery.removeEventListener('change', handleMediaChange);
-      }
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    const handleChange = (e) => {
+      setThemeState(e.matches ? 'dark' : 'white');
     };
+
+    mediaQuery.addEventListener('change', handleChange);
+    return () => mediaQuery.removeEventListener('change', handleChange);
   }, []);
 
   // ─── Memoize context value ────────────────────────────────────────────────
   const value = useMemo(() => ({
     theme,
-    isWhiteTheme: theme === 'white',
-    isDarkTheme: theme === 'dark',
     toggleTheme,
     setTheme,
   }), [theme, toggleTheme, setTheme]);

@@ -1,15 +1,9 @@
-// src/components/ProjectList/ProjectJoinInput.jsx
-import React, { useState, useEffect, useRef, useCallback } from "react";
-import { useToast } from "../../context/ToastContext";
-import { useAuth } from "../../context/AuthContext";
-import { apiClient } from "../../services/apiClient";
+import React, { useState, useEffect, useRef } from "react";
 
 const ProjectJoinInput = React.memo(({ user, onProjectJoined, refreshProjects, isWhiteTheme }) => {
   const [joinCodeInput, setJoinCodeInput] = useState("");
   const [isJoining, setIsJoining] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
-  const { showSuccess, showError, showWarning } = useToast();
-  const { user: authUser } = useAuth();
   
   const timeoutRef = useRef(null);
 
@@ -19,24 +13,23 @@ const ProjectJoinInput = React.memo(({ user, onProjectJoined, refreshProjects, i
     };
   }, []);
 
-  const handleJoinProject = useCallback(async () => {
-    const currentUser = user || authUser;
-    if (!currentUser || currentUser.role === "guest") {
-      showWarning("Please sign in to an account to join workspaces.");
-      return;
-    }
+  const handleJoinProject = async () => {
+    if (!user || user.role === "guest") return;
     const joinCode = joinCodeInput.trim();
-    if (!joinCode) {
-      showWarning("Please paste a valid join code.");
-      return;
-    }
+    if (!joinCode) return;
     setIsJoining(true);
     try {
-      const url = import.meta.env.VITE_API_URL_JOINPROJECT || '/api/join-project';
-      const joinedProject = await apiClient.post(url, { joinCode });
+      const url = `${import.meta.env.VITE_API_URL_JOINPROJECT}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ joinCode }),
+      });
+      if (!res.ok) throw new Error(await res.json());
+      const joinedProject = await res.json();
       
       setJoinCodeInput("");
-      showSuccess("Join request sent to project manager!");
       setSuccessMessage("Join request sent to manager!");
 
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -47,11 +40,11 @@ const ProjectJoinInput = React.memo(({ user, onProjectJoined, refreshProjects, i
       if (refreshProjects) await refreshProjects();
       if (onProjectJoined) onProjectJoined(joinedProject);
     } catch (error) {
-      showError(error.message || "Failed to join project with this code");
+      // silent
     } finally {
       setIsJoining(false);
     }
-  }, [user, authUser, joinCodeInput, refreshProjects, onProjectJoined, showSuccess, showError, showWarning]);
+  };
 
   // ─── Theme-aware styles ─────────────────────────────────────────
   const inputBg = isWhiteTheme ? "bg-white" : "bg-zinc-900";
@@ -71,9 +64,8 @@ const ProjectJoinInput = React.memo(({ user, onProjectJoined, refreshProjects, i
       <div className="flex items-center justify-between">
         <span className={`text-xs font-medium ${labelText}`}>Join Project</span>
         <button
-          type="button"
           onClick={handleJoinProject}
-          disabled={isJoining || !joinCodeInput.trim()}
+          disabled={isJoining}
           className={`
             px-3 py-1 rounded text-xs font-medium transition-all
             bg-blue-600 hover:bg-blue-500 text-white
@@ -93,48 +85,37 @@ const ProjectJoinInput = React.memo(({ user, onProjectJoined, refreshProjects, i
           placeholder="Paste join code here..."
           value={joinCodeInput}
           onChange={(e) => setJoinCodeInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              handleJoinProject();
-            }
-          }}
           disabled={isJoining}
           className={`
-            flex-1 px-3 py-1.5 text-xs rounded outline-none transition-all font-mono
+            flex-1 px-3 py-1.5 text-xs rounded outline-none transition-all
             ${inputBg} ${inputBorder} ${inputText} ${inputPlaceholder}
             ${inputFocus}
             disabled:opacity-50 disabled:cursor-not-allowed
           `}
         />
-        {joinCodeInput && (
-          <button
-            type="button"
-            onClick={() => setJoinCodeInput("")}
-            disabled={isJoining}
-            className={`
-              px-2.5 py-1.5 text-xs rounded border transition-all
-              ${clearBtnBg} ${clearBtnBorder}
-              disabled:opacity-40 disabled:cursor-not-allowed
-              hover:scale-105 active:scale-95
-            `}
-            aria-label="Clear join code input"
-          >
-            ✕
-          </button>
-        )}
+        <button
+          onClick={() => setJoinCodeInput("")}
+          disabled={isJoining}
+          className={`
+            px-2.5 py-1.5 text-xs rounded border transition-all
+            ${clearBtnBg} ${clearBtnBorder}
+            disabled:opacity-40 disabled:cursor-not-allowed
+            hover:scale-105 active:scale-95
+          `}
+          aria-label="Clear join code"
+        >
+          ✕
+        </button>
       </div>
 
       {/* Success message */}
       {successMessage && (
-        <div className="text-xs text-center text-emerald-500 mt-0.5 animate-pulse font-medium">
+        <div className="text-xs text-center text-emerald-500 mt-0.5 animate-pulse">
           {successMessage}
         </div>
       )}
     </div>
   );
 });
-
-ProjectJoinInput.displayName = "ProjectJoinInput";
 
 export default ProjectJoinInput;

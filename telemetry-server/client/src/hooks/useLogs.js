@@ -5,7 +5,6 @@ const MAX_LOGS = 5000;
 
 export function useLogs() {
   const [logs, setLogs] = useState([]);
-  const [metricsMap, setMetricsMap] = useState(new Map());
 
   // ─── Add a new log ──────────────────────────────────────────
   const addLog = useCallback((log) => {
@@ -23,18 +22,6 @@ export function useLogs() {
     });
   }, []);
 
-  // ─── Update Metrics Map ──────────────────────────────────────
-  const updateMetrics = useCallback((metricsList) => {
-    if (!Array.isArray(metricsList)) return;
-    setMetricsMap((prev) => {
-      const next = new Map(prev);
-      metricsList.forEach((m) => {
-        if (m && m.nodeId) next.set(m.nodeId, m);
-      });
-      return next;
-    });
-  }, []);
-
   // ─── Clear all logs ────────────────────────────────────────
   const clearLogs = useCallback(() => {
     setLogs([]);
@@ -44,12 +31,6 @@ export function useLogs() {
   const getLogsForNode = useCallback(
     (nodeId) => logs.filter((l) => l.container === nodeId),
     [logs]
-  );
-
-  // ─── Get metrics for a specific node ───────────────────────
-  const getMetricsForNode = useCallback(
-    (nodeId) => metricsMap.get(nodeId) || null,
-    [metricsMap]
   );
 
   // ─── Error logs for a node ─────────────────────────────────
@@ -92,10 +73,7 @@ export function useLogs() {
 
   return {
     logs,
-    metricsMap,
     addLog,
-    updateMetrics,
-    getMetricsForNode,
     clearLogs,
     getLogsForNode,
     errorLogsForNode,
