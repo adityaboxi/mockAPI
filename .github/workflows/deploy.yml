@@ -42,36 +42,37 @@ jobs:
             # 2. WRITE .env FILES FROM SECRETS (RAW LITERAL WRITE)
             # -----------------------------------------------------------
             cat << 'EOF' > server/.env
-            ${{ secrets.SERVER_ENV }}
-            EOF
+${{ secrets.SERVER_ENV }}
+EOF
 
             cat << 'EOF' > client/.env
-            ${{ secrets.CLIENT_ENV }}
-            EOF
+${{ secrets.CLIENT_ENV }}
+EOF
 
             cat << 'EOF' > mock-server/.env
-            ${{ secrets.MOCK_SERVER_ENV }}
-            EOF
+${{ secrets.MOCK_SERVER_ENV }}
+EOF
 
             mkdir -p telemetry-server
             if [ -n "${{ secrets.TELEMETRY_ENV }}" ]; then
               cat << 'EOF' > telemetry-server/.env
-              ${{ secrets.TELEMETRY_ENV }}
-              EOF
+${{ secrets.TELEMETRY_ENV }}
+EOF
             else
               # Production defaults for Telemetry
               cat << 'EOF' > telemetry-server/.env
-            PORT=3003
-            SESSION_SECRET=your-strong-secret
-            REDIS_URL=redis://redis:6378
-            DASHBOARD_USER=admin
-            DASHBOARD_PASS=password
-            CLIENT_ORIGIN=https://opentelemetry.client.mockapi.info
-            NODE_ENV=production
-            VITE_API_BASE_URL=/api
-            VITE_WS_URL=/api
-            EOF
+PORT=3003
+SESSION_SECRET=your-strong-secret
+REDIS_URL=redis://redis:6378
+DASHBOARD_USER=admin
+DASHBOARD_PASS=password
+CLIENT_ORIGIN=https://opentelemetry.client.mockapi.info
+NODE_ENV=production
+VITE_API_BASE_URL=/api
+VITE_WS_URL=/api
+EOF
             fi
+
 
             # -----------------------------------------------------------
             # 3. DETERMINE DEPLOYMENT FLAGS
