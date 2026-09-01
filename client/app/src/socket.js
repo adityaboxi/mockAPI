@@ -15,7 +15,9 @@ const getSocketUrl = () => {
 
 const SOCKET_URL = getSocketUrl();
 
-// Prevent multiple socket instances during React / Vite Hot Module Replacement
+
+
+// Prevent multiple  socket instances during React / Vite Hot Module Replacement
 const globalScope = typeof window !== 'undefined' ? window : globalThis;
 
 export const socket =

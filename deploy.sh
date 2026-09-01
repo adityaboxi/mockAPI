@@ -276,3 +276,5 @@ echo "════════════════════════�
 echo "✅ All deployed services are healthy."
 echo "✅ Deployment completed successfully."
 exit 0
+
+

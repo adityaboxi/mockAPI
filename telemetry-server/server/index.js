@@ -613,7 +613,6 @@ io.use((socket, next) => {
   });
 });
 
-
 io.on('connection', (socket) => {
   const username = socket.user?.username || 'admin';
   console.log(`[Socket.IO] ✅ Client connected: ${socket.id} (user: ${username})`);

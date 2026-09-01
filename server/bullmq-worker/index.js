@@ -9,6 +9,7 @@ async function start() {
   console.log('[bullmq-worker] AI Worker started (Groq)');
 }
 
+
 const gracefulShutdown = async () => {
   console.log('[bullmq-worker] Shutting down gracefully...');
   try {

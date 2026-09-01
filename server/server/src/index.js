@@ -809,7 +809,6 @@ const startServer = async () => {
       }
     });
 
-    
     socket.on('disconnect', () => {
       console.log(`[Socket] Client disconnected: ${socket.id}`);
     });
