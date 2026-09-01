@@ -2,10 +2,10 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { socket } from "../socket";
 
-const SocketContext = createContext(socket);
+const SocketContext = createContext({ socket, isConnected: socket.connected });
 
 export const SocketProvider = ({ children }) => {
-  const [, setIsConnected] = useState(socket.connected);
+  const [isConnected, setIsConnected] = useState(socket.connected);
 
   useEffect(() => {
     const handleConnect = () => setIsConnected(true);
@@ -21,7 +21,7 @@ export const SocketProvider = ({ children }) => {
   }, []);
 
   return (
-    <SocketContext.Provider value={socket}>
+    <SocketContext.Provider value={{ socket, isConnected }}>
       {children}
     </SocketContext.Provider>
   );
@@ -29,5 +29,5 @@ export const SocketProvider = ({ children }) => {
 
 export const useSocket = () => {
   const context = useContext(SocketContext);
-  return context || socket;
+  return context || { socket, isConnected: false };
 };
