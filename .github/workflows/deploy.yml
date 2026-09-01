@@ -11,6 +11,8 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # Fetches the previous commit so git diff is always accurate
 
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.0.0
@@ -30,22 +32,22 @@ jobs:
             cd /home/ubuntu
 
             # -----------------------------------------------------------
-            # 1. CLONE / UPDATE REPOSITORY
+            # 1. CLONE / SELF-HEAL REPOSITORY
             # -----------------------------------------------------------
             CLONED=false
             if [ ! -d "mockAPI/.git" ]; then
-              echo "📦 Cloning mockAPI repository..."
+              echo "📦 Self-healing: mockAPI directory missing. Performing fresh clone..."
               rm -rf mockAPI
               git clone https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/adityaboxi/mockAPI.git mockAPI
               CLONED=true
             fi
 
             cd mockAPI
-            git fetch origin main
-            git reset --hard FETCH_HEAD
+            git fetch origin main --depth=2
+            git reset --hard origin/main
 
             # -----------------------------------------------------------
-            # 2. WRITE .env FILES FROM SECRETS (RAW LITERAL WRITE)
+            # 2. WRITE .env FILES FROM ACTION SECRETS
             # -----------------------------------------------------------
             printf '%s\n' "$SERVER_ENV" > server/.env
             printf '%s\n' "$CLIENT_ENV" > client/.env
@@ -55,14 +57,11 @@ jobs:
             if [ -n "$TELEMETRY_ENV" ]; then
               printf '%s\n' "$TELEMETRY_ENV" > telemetry-server/.env
             else
-              # Production defaults for Telemetry
               printf "PORT=3003\nSESSION_SECRET=your-strong-secret\nREDIS_URL=redis://redis:6378\nDASHBOARD_USER=admin\nDASHBOARD_PASS=password\nCLIENT_ORIGIN=https://opentelemetry.client.mockapi.info\nNODE_ENV=production\nVITE_API_BASE_URL=/api\nVITE_WS_URL=/api\n" > telemetry-server/.env
             fi
 
-
-
             # -----------------------------------------------------------
-            # 3. DETERMINE DEPLOYMENT FLAGS
+            # 3. SELECTIVE MICROSERVICE DETECTION
             # -----------------------------------------------------------
             DEPLOY_SERVER=false
             DEPLOY_MOCK=false
@@ -75,91 +74,91 @@ jobs:
             }
 
             if [ "${{ github.event_name }}" == "workflow_dispatch" ] || [ "$CLONED" == "true" ]; then
-              echo "🔄 Manual trigger or fresh clone - deploying all existing services"
+              echo "🔄 Manual dispatch or fresh clone detected - deploying all services."
               folder_exists "telemetry-server" && DEPLOY_TELEMETRY=true
               folder_exists "server" && DEPLOY_SERVER=true
               folder_exists "mock-server" && DEPLOY_MOCK=true
               folder_exists "client" && DEPLOY_CLIENT=true
               folder_exists "domainservice" && DEPLOY_DOMAIN=true
             else
-              if git rev-parse --verify HEAD^ >/dev/null 2>&1; then
-                CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
-              else
-                CHANGED_FILES=$(git diff --name-only --diff-filter=A HEAD)
-              fi
-              echo "Changed files:"
+              CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || git diff --name-only --diff-filter=A HEAD)
+              echo "🔍 Changed files in this commit:"
               echo "$CHANGED_FILES"
 
-              # If root deployment scripts or workflows change, deploy everything
+              # Global configs triggers full stack deployment
               if echo "$CHANGED_FILES" | grep -qE "(^deploy\.sh|^package\.json|^\.github/)"; then
-                echo "🚀 Global configuration modified - deploying full stack"
+                echo "🚀 Core infrastructure modified - rebuilding full stack."
                 folder_exists "telemetry-server" && DEPLOY_TELEMETRY=true
                 folder_exists "server" && DEPLOY_SERVER=true
                 folder_exists "mock-server" && DEPLOY_MOCK=true
                 folder_exists "client" && DEPLOY_CLIENT=true
                 folder_exists "domainservice" && DEPLOY_DOMAIN=true
               else
-                if folder_exists "telemetry-server" && echo "$CHANGED_FILES" | grep -q "^telemetry-server/"; then
-                  DEPLOY_TELEMETRY=true
-                fi
+                # Microservice-specific deployment
                 if folder_exists "server" && echo "$CHANGED_FILES" | grep -q "^server/"; then
+                  echo "📦 Server changes detected."
                   DEPLOY_SERVER=true
                 fi
-                if folder_exists "mock-server" && echo "$CHANGED_FILES" | grep -q "^mock-server/"; then
-                  DEPLOY_MOCK=true
-                fi
                 if folder_exists "client" && echo "$CHANGED_FILES" | grep -q "^client/"; then
+                  echo "📦 Client changes detected."
                   DEPLOY_CLIENT=true
                 fi
+                if folder_exists "mock-server" && echo "$CHANGED_FILES" | grep -q "^mock-server/"; then
+                  echo "📦 Mock-server changes detected."
+                  DEPLOY_MOCK=true
+                fi
+                if folder_exists "telemetry-server" && echo "$CHANGED_FILES" | grep -q "^telemetry-server/"; then
+                  echo "📦 Telemetry changes detected."
+                  DEPLOY_TELEMETRY=true
+                fi
                 if folder_exists "domainservice" && echo "$CHANGED_FILES" | grep -q "^domainservice/"; then
+                  echo "📦 Domain proxy changes detected."
                   DEPLOY_DOMAIN=true
                 fi
               fi
             fi
 
-            # If nothing to deploy, exit early
+            # Skip if no microservice changed
             if [ "$DEPLOY_SERVER" = false ] && [ "$DEPLOY_MOCK" = false ] && [ "$DEPLOY_CLIENT" = false ] && [ "$DEPLOY_DOMAIN" = false ] && [ "$DEPLOY_TELEMETRY" = false ]; then
-              echo "ℹ️ No service folder changed - skipping deployment."
+              echo "ℹ️ No microservices changed. Skipping deployment."
               exit 0
             fi
 
             export DEPLOY_SERVER DEPLOY_MOCK DEPLOY_CLIENT DEPLOY_DOMAIN DEPLOY_TELEMETRY
 
             # -----------------------------------------------------------
-            # 4. ENSURE DOCKER NETWORKS EXIST
+            # 4. RESTORE DOCKER NETWORKS
             # -----------------------------------------------------------
             docker network create orch-net 2>/dev/null || true
             docker network create shared-net 2>/dev/null || true
 
             # -----------------------------------------------------------
-            # 5. RUN DEPLOY.SH WITH RETRIES & AUTOMATIC RECOVERY
+            # 5. EXECUTE DEPLOYMENT WITH RETRIES
             # -----------------------------------------------------------
             chmod +x deploy.sh
-            echo "🚀 Running deploy.sh for active services (SERVER=$DEPLOY_SERVER MOCK=$DEPLOY_MOCK CLIENT=$DEPLOY_CLIENT DOMAIN=$DEPLOY_DOMAIN TELEMETRY=$DEPLOY_TELEMETRY)"
+            echo "🚀 Deploying active services: SERVER=$DEPLOY_SERVER MOCK=$DEPLOY_MOCK CLIENT=$DEPLOY_CLIENT DOMAIN=$DEPLOY_DOMAIN TELEMETRY=$DEPLOY_TELEMETRY"
 
             MAX_RETRIES=3
             ATTEMPT=1
             while [ $ATTEMPT -le $MAX_RETRIES ]; do
-              echo "▶️ Attempt $ATTEMPT of $MAX_RETRIES"
+              echo "▶️ Deployment attempt $ATTEMPT of $MAX_RETRIES..."
               if ./deploy.sh; then
                 echo "✅ Deployment succeeded on attempt $ATTEMPT."
                 break
               else
                 echo "❌ Deployment attempt $ATTEMPT failed."
                 if [ $ATTEMPT -eq $MAX_RETRIES ]; then
-                  echo "❌ All retries exhausted. Exiting with failure."
+                  echo "❌ All retries exhausted. Deployment failed."
                   exit 1
                 fi
-                echo "⏳ Waiting 5 seconds before retry..."
+                echo "⏳ Retrying in 5 seconds..."
                 sleep 5
                 ATTEMPT=$((ATTEMPT + 1))
               fi
             done
 
             # -----------------------------------------------------------
-            # 6. POST-DEPLOYMENT CLEANUP (FREE AWS DISK SPACE)
+            # 6. POST-DEPLOYMENT CLEANUP
             # -----------------------------------------------------------
-            echo "🧹 Pruning unused dangling Docker layers..."
             docker image prune -f --filter "dangling=true" 2>/dev/null || true
-
-            echo "✅ Deployment and health checks successfully completed."
+            echo "✅ Deployment and health checks completed successfully."
