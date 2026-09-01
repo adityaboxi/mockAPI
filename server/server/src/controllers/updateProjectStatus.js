@@ -1,4 +1,5 @@
-require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+// server/server/src/controllers/updateProjectStatus.js
+require('../opentelemetry/universal-logger');
 
 const Project = require('../models/Project');
 const { connectRedis } = require('../config/redis');
@@ -12,7 +13,7 @@ async function updateProjectStatus(req, res) {
   const role = req.user?.role;
 
   if (typeof isActive !== 'boolean') {
-    return res.status(400).json({ error: 'isActive must be boolean' });
+    return res.status(400).json({ error: 'isActive must be a boolean' });
   }
 
   if (!username) {
@@ -32,6 +33,7 @@ async function updateProjectStatus(req, res) {
     project.isActive = isActive;
     await project.save();
 
+    // 1. Dispatch background orchestration job
     await projectQueue.add(
       'update',
       {
@@ -42,6 +44,7 @@ async function updateProjectStatus(req, res) {
       { jobId: `update_${project.id}_${isActive}_${Date.now()}` }
     );
 
+    // 2. Invalidate Redis Caches
     try {
       await cache.invalidate('projects', project.id);
       const usersToInvalidate = new Set([project.username, ...(project.members || [])]);
@@ -53,20 +56,24 @@ async function updateProjectStatus(req, res) {
       console.error('[updateProjectStatus] Cache invalidation error:', cacheError.message);
     }
 
-    if (req.io) {
-      req.io.to(project.id).emit('project_status_changed', {
+    // 3. Emit Real-time WebSocket Updates
+    const io = req.io || req.app?.get('io');
+    if (io) {
+      io.to(project.id).emit('project_status_changed', {
         projectId: project.id,
         isActive: project.isActive,
       });
+
       const allMembers = new Set([project.username, ...(project.members || [])]);
       allMembers.forEach((member) => {
-        req.io.to(`user_${member}`).emit('project_status_changed', {
+        io.to(`user_${member}`).emit('project_status_changed', {
           projectId: project.id,
           isActive: project.isActive,
         });
       });
     }
 
+    // 4. Publish to Redis Pub/Sub
     try {
       const client = await connectRedis();
       if (client.isOpen) {
