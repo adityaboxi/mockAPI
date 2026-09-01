@@ -1,7 +1,7 @@
-require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+require('../opentelemetry/universal-logger'); // OpenTelemetry tracing initialized first
 
 const User = require('../models/User');
-const { connectRedis } = require('../config/redis');
+const { redisClient } = require('../config/redis');
 
 async function unsubscribe(req, res) {
   const username = req.user?.username;
@@ -15,25 +15,26 @@ async function unsubscribe(req, res) {
       return res.status(404).json({ error: 'User not found' });
     }
     if (user.subscribe === false) {
-      return res.status(400).json({ error: 'Not subscribed' });
+      return res.status(400).json({ error: 'Not currently subscribed' });
     }
 
     user.subscribe = false;
     await user.save();
 
     try {
-      const client = await connectRedis();
-      await client.del(`user:projects:${username}`);
-      await client.del(`user_profile:${user._id}`);
+      if (redisClient && redisClient.isOpen) {
+        await redisClient.del(`dashboard:${username}`);
+        await redisClient.del(`user:projects:${username}`);
+      }
     } catch (_) {}
 
     return res.status(200).json({
       success: true,
-      message: 'Subscription cancelled',
+      message: 'Subscription cancelled successfully',
       subscribe: false,
     });
   } catch (error) {
-    console.error('Unsubscription error:', error.message);
+    console.error('[unsubscribe] Error:', error.message);
     return res.status(500).json({ error: 'Internal server error' });
   }
 }

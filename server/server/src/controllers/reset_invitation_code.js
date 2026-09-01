@@ -1,19 +1,19 @@
-require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+require('../opentelemetry/universal-logger'); // OpenTelemetry tracing initialized first
 
-const nodemailer = require('nodemailer');
+const crypto = require('crypto');
 const Project = require('../models/Project');
+const { redisClient } = require('../config/redis');
 const User = require('../models/User');
-const { connectRedis } = require('../config/redis');
+const nodemailer = require('nodemailer');
 
-// Read configuration from environment with fallbacks
-const INVITATION_CHARSET = process.env.INVITATION_CHARSET || 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-const INVITATION_CODE_LENGTH = parseInt(process.env.INVITATION_CODE_LENGTH, 10) || 6;
-const RESET_INVITE_OTP_TTL = parseInt(process.env.RESET_INVITE_OTP_TTL, 10) || 300;
-const FROM_EMAIL = process.env.FROM_EMAIL || process.env.SMTP_USER;
+// Read configuration from environment with reliable fallbacks
+const INVITATION_CHARSET = process.env.INVITATION_CHARSET || 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+const INVITATION_CODE_LENGTH = parseInt(process.env.INVITATION_CODE_LENGTH, 10) || 8;
+const RESET_INVITE_OTP_TTL = parseInt(process.env.RESET_INVITE_OTP_TTL, 10) || 120;
+const FROM_EMAIL = process.env.FROM_EMAIL || 'krishnaboxi1983@gmail.com';
 
+// Google SMTP transporter
 const transporter = nodemailer.createTransport({
-  pool: true,
-  maxConnections: 3,
   host: process.env.SMTP_HOST || 'smtp.gmail.com',
   port: parseInt(process.env.SMTP_PORT, 10) || 587,
   secure: parseInt(process.env.SMTP_PORT, 10) === 465,
@@ -27,12 +27,11 @@ async function reset_invitation_code(req, res) {
   const username = req.user?.username;
   const { project_id } = req.body;
 
-  if (!username) {
-    return res.status(401).json({ error: 'Authentication required' });
-  }
-
   if (!project_id) {
     return res.status(400).json({ error: 'Project ID is required' });
+  }
+  if (!username) {
+    return res.status(401).json({ error: 'Authentication required' });
   }
 
   try {
@@ -45,25 +44,30 @@ async function reset_invitation_code(req, res) {
       return res.status(403).json({ error: 'Only the project creator can reset the invitation code' });
     }
 
-    // Generate new invitation code
+    // Generate new random invitation code
     let newCode = '';
     for (let i = 0; i < INVITATION_CODE_LENGTH; i++) {
       newCode += INVITATION_CHARSET.charAt(Math.floor(Math.random() * INVITATION_CHARSET.length));
     }
 
     // Generate OTP
-    const client = await connectRedis();
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const otpKey = `reset_invite:${project_id}:${username}`;
-    await client.setEx(otpKey, RESET_INVITE_OTP_TTL, otp);
-
     const pendingCodeKey = `pending_invite:${project_id}:${username}`;
-    await client.setEx(pendingCodeKey, RESET_INVITE_OTP_TTL, newCode);
+
+    try {
+      if (redisClient && redisClient.isOpen) {
+        await redisClient.setEx(otpKey, RESET_INVITE_OTP_TTL, otp);
+        await redisClient.setEx(pendingCodeKey, RESET_INVITE_OTP_TTL, newCode);
+      }
+    } catch (redisErr) {
+      console.warn('[reset-invitation-code] Redis setEx warning:', redisErr.message);
+    }
 
     // Send OTP email
     let emailSent = false;
     try {
-      const user = await User.findOne({ username }).select('email').lean();
+      const user = await User.findOne({ username });
       if (user?.email && FROM_EMAIL) {
         await transporter.sendMail({
           from: FROM_EMAIL,

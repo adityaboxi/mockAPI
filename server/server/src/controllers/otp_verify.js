@@ -1,7 +1,7 @@
-require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+require('../opentelemetry/universal-logger'); // OpenTelemetry tracing initialized first
 
 const User = require('../models/User');
-const { connectRedis } = require('../config/redis');
+const { redisClient } = require('../config/redis');
 const jwt = require('jsonwebtoken');
 
 async function otp_verify(req, res) {
@@ -11,40 +11,37 @@ async function otp_verify(req, res) {
     return res.status(400).json({ message: 'All fields are required' });
   }
 
-  const normalizedUsername = username.trim().toLowerCase();
-  const normalizedEmail = email.trim().toLowerCase();
-  const key = `${normalizedUsername}_${normalizedEmail}`;
+  const cleanUsername = String(username).trim().toLowerCase();
+  const cleanEmail = String(email).trim().toLowerCase();
+  const key = `${cleanUsername}_${cleanEmail}`;
 
   try {
-    const client = await connectRedis();
-    const storedOTP = await client.get(key);
-    if (!storedOTP || otp !== storedOTP) {
-      return res.status(400).json({ message: 'Invalid OTP. Please try again.' });
+    let storedOTP = null;
+    if (redisClient && redisClient.isOpen) {
+      storedOTP = await redisClient.get(key);
     }
-    await client.del(key);
+
+    if (!storedOTP || String(otp).trim() !== storedOTP) {
+      return res.status(400).json({ message: 'Invalid or expired OTP. Please try again.' });
+    }
 
     const existingUser = await User.findOne({
-      $or: [{ username: normalizedUsername }, { email: normalizedEmail }],
-    }).lean();
+      $or: [{ username: cleanUsername }, { email: cleanEmail }],
+    });
 
     if (existingUser) {
-      return res.status(400).json({ message: 'User already exists' });
+      return res.status(409).json({ message: 'User already exists' });
     }
 
     const newUser = await User.create({
-      username: normalizedUsername,
-      email: normalizedEmail,
+      username: cleanUsername,
+      email: cleanEmail,
       password,
-      name: name.trim(),
+      name: String(name).trim(),
       role: 'user',
     });
 
-    const jwtSecret = process.env.JWT_SECRET || 'jwt_default_secret_key';
-    const jwtExpiry = process.env.JWT_EXPIRY || '7d';
-    const cookieMaxAge = parseInt(process.env.COOKIE_MAX_AGE, 10) || 7 * 24 * 60 * 60 * 1000;
-    const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https' || process.env.COOKIE_SECURE === 'true';
-    const sameSite = process.env.COOKIE_SAMESITE || (isHttps ? 'none' : 'lax');
-    const isSecure = isHttps;
+    const isProd = process.env.NODE_ENV === 'production';
 
     const token = jwt.sign(
       {
@@ -52,35 +49,35 @@ async function otp_verify(req, res) {
         email: newUser.email,
         name: newUser.name,
         id: newUser._id,
-        userId: newUser._id,
         role: 'user',
       },
-      jwtSecret,
-      { expiresIn: jwtExpiry }
+      process.env.JWT_SECRET || 'local_dev_secret_change_me',
+      { expiresIn: process.env.JWT_EXPIRY || '7d' }
     );
 
     res.cookie('token', token, {
       httpOnly: true,
-      secure: isSecure,
-      sameSite,
-      maxAge: cookieMaxAge,
+      secure: isProd,
+      sameSite: process.env.COOKIE_SAMESITE || 'lax',
+      maxAge: parseInt(process.env.COOKIE_MAX_AGE, 10) || 604800000,
       path: '/',
     });
 
-    await client.del(key);
-    await client.del(`user_exists:${normalizedUsername}`);
-    await client.del(`email_exists:${normalizedEmail}`);
-
-    res.clearCookie('guest_token', {
-      path: '/',
-      httpOnly: true,
-      secure: isSecure,
-      sameSite,
+    res.clearCookie('guest_token', { 
+      path: '/', 
+      httpOnly: true, 
+      secure: isProd,
+      sameSite: process.env.COOKIE_SAMESITE || 'lax',
     });
 
-    return res.json({
+    if (redisClient && redisClient.isOpen) {
+      await redisClient.del(key);
+      await redisClient.del(`user_exists:${cleanUsername}`);
+      await redisClient.del(`email_exists:${cleanEmail}`);
+    }
+
+    return res.status(200).json({
       success: true,
-      token,
       message: 'OTP verified successfully',
       user: {
         username: newUser.username,
@@ -90,7 +87,7 @@ async function otp_verify(req, res) {
       },
     });
   } catch (error) {
-    console.error('OTP verification error:', error.message);
+    console.error('[otp_verify] Error:', error.message);
     return res.status(500).json({ message: 'Server error', error: error.message });
   }
 }

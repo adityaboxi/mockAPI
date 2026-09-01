@@ -1,5 +1,6 @@
+// server/index.js
 require('dotenv').config();
-require('./opentelemetry/universal-logger');  // <-- Add this line FIRST
+require('./opentelemetry/universal-logger'); // OpenTelemetry tracing initialized first
 
 const express = require('express');
 const cors = require('cors');
@@ -10,10 +11,7 @@ const { createClient } = require('redis');
 const { createAdapter } = require('@socket.io/redis-adapter');
 const xss = require('xss');
 const { doubleCsrf } = require('csrf-csrf');
-const multer = require('multer');
 const { Queue } = require('bullmq');
-const { v4: uuidv4 } = require('uuid');
-const yaml = require('js-yaml');
 
 const connectDB = require('./config/db');
 const { connectRedis } = require('./config/redis');
@@ -35,15 +33,15 @@ const app = express();
 const server = http.createServer(app);
 
 console.log('[Server] 🚀 Starting server...');
-console.log('[Server] 📌 Environment variables:');
+console.log('[Server] 📌 Environment configuration:');
+console.log(`  - NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
 console.log(`  - PORT: ${process.env.PORT || 3000}`);
 console.log(`  - CLIENT_URL: ${process.env.CLIENT_URL || 'http://localhost:8082'}`);
-console.log(`  - REDIS_URL: ${process.env.REDIS_URL ? '✅ set' : '❌ missing'}`);
-console.log(`  - MONGO_URI: ${process.env.MONGO_URI ? '✅ set' : '❌ missing'}`);
-console.log(`  - CSRF_SECRET: ${process.env.CSRF_SECRET ? '✅ set' : '❌ missing'}`);
+console.log(`  - REDIS_URL: ${process.env.REDIS_URL ? '✅ configured' : '❌ missing'}`);
+console.log(`  - MONGO_URI: ${process.env.MONGO_URI ? '✅ configured' : '❌ missing'}`);
 
 // ================================================================
-// TIME WINDOW HELPER (shared by dashboard + latency-stats)
+// TIME WINDOW HELPER
 // ================================================================
 const TIME_WINDOWS_MS = {
   '1h': 60 * 60 * 1000,
@@ -56,7 +54,7 @@ function resolveTimeWindow(range) {
 }
 
 // ================================================================
-// 🚀 SOCKET.IO
+// 🚀 SOCKET.IO SETUP
 // ================================================================
 const io = new Server(server, {
   cors: {
@@ -68,21 +66,19 @@ const io = new Server(server, {
   pingInterval: 60000,
   pingTimeout: 20000,
 });
-console.log('[Socket] ✅ Socket.IO server initialized');
 
 let pubClient, subClient;
 let mainRedisClient;
 let aiSubscriber, logSubscriber, historySubscriber;
 let latencyQueue, projectQueue, mockSyncQueue, openapiImportQueue;
 let heartbeatInterval, dataPollingInterval;
+let isRedisLogStreamActive = false;
 
 // -----------------------------------------------------------------
-//  HELPER: aggregateAllLatencies
+// HELPER: aggregateAllLatencies
 // -----------------------------------------------------------------
 async function aggregateAllLatencies(projectIds) {
-  console.log(`[DB] aggregateAllLatencies called for ${projectIds.length} projects`);
   if (!projectIds || projectIds.length === 0) {
-    console.log('[DB] No project IDs provided, returning empty map');
     return new Map();
   }
 
@@ -91,30 +87,31 @@ async function aggregateAllLatencies(projectIds) {
       {
         $match: {
           project_id: { $in: projectIds },
-          timestamp: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) }
-        }
+          timestamp: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+        },
       },
       {
         $group: {
           _id: {
             project_id: '$project_id',
             path: '$path',
-            method: '$method'
+            method: '$method',
           },
-          avgLatency: { $avg: { $ifNull: ['$total_latency', '$latency_ms'] } }
-        }
-      }
+          avgLatency: {
+            $avg: { $ifNull: ['$total_latency', { $ifNull: ['$latency_ms', 0] }] },
+          },
+        },
+      },
     ]);
-    console.log(`[DB] aggregateAllLatencies returned ${stats.length} aggregated entries`);
 
     const map = new Map();
     for (const s of stats) {
       const key = `${s._id.project_id}::${s._id.path}::${s._id.method}`;
-      map.set(key, Math.round(s.avgLatency));
+      map.set(key, Math.round(s.avgLatency || 0));
     }
     return map;
   } catch (err) {
-    console.error('[DB] aggregateAllLatencies error:', err);
+    console.error('[DB] aggregateAllLatencies error:', err.message);
     return new Map();
   }
 }
@@ -123,13 +120,9 @@ async function aggregateAllLatencies(projectIds) {
 // START SERVER
 // ================================================================
 const startServer = async () => {
-  // --- Check critical environment variables ---
   if (!process.env.CSRF_SECRET) {
     console.error('[FATAL] CSRF_SECRET is not set in environment');
     process.exit(1);
-  }
-  if (!process.env.CLIENT_URL) {
-    console.warn('[WARN] CLIENT_URL not set, defaulting to http://localhost:8082');
   }
 
   console.log('[Server] 🔌 Connecting to MongoDB...');
@@ -143,20 +136,22 @@ const startServer = async () => {
   // -------------- Redis adapter for Socket.IO ----------
   const redisUrl = process.env.REDIS_URL || 'redis://redis-external:6379';
   try {
-    console.log('[Socket] Setting up Redis adapter...');
     pubClient = createClient({ url: redisUrl });
     subClient = pubClient.duplicate();
+    pubClient.on('error', (err) => console.error('[Socket Redis pubClient] Error:', err.message));
+    subClient.on('error', (err) => console.error('[Socket Redis subClient] Error:', err.message));
+
     await Promise.all([pubClient.connect(), subClient.connect()]);
     io.adapter(createAdapter(pubClient, subClient));
-    console.log('[Socket] ✅ Redis adapter connected');
+    console.log('[Socket] ✅ Clustered Redis adapter connected');
   } catch (err) {
-    console.error('[Socket] ❌ Redis adapter failed (non-fatal):', err.message);
+    console.error('[Socket] ❌ Redis adapter failed (falling back to in-memory):', err.message);
   }
 
   // ---------- Redis Pub/Sub listener for AI events ----------
-  console.log('[Redis] Setting up AI Pub/Sub listener...');
   try {
     aiSubscriber = mainRedisClient.duplicate();
+    aiSubscriber.on('error', (err) => console.error('[AI Pub/Sub] Redis error:', err.message));
     await aiSubscriber.connect();
 
     const AI_CHANNELS = ['ws:ai:chunk', 'ws:ai:response', 'ws:ai:error'];
@@ -164,25 +159,25 @@ const startServer = async () => {
       try {
         const data = JSON.parse(message);
         const { userId, jobId, ...payload } = data;
-        if (!userId) {
-          return;
-        }
+        if (!userId) return;
         const eventName = channel.replace('ws:ai:', '');
         io.to(`user:${userId}`).emit(`ai:${eventName}`, { jobId, ...payload });
       } catch (err) {
         console.error('[AI Pub/Sub] Failed to parse message:', err.message);
       }
     });
-    aiSubscriber.on('error', (err) => console.error('[AI Pub/Sub] Redis error:', err.message));
-    console.log('[Redis] ✅ AI Pub/Sub listener started');
+    console.log('[Redis] ✅ AI Pub/Sub subscriber active');
   } catch (err) {
-    console.error('[Redis] AI Pub/Sub listener failed to connect:', err.message);
+    console.error('[Redis] AI Pub/Sub subscriber connection error:', err.message);
   }
 
-  // ---------- Redis Pub/Sub listener for new API logs ----------
-  console.log('[Redis] Setting up log Pub/Sub listener...');
+  // ---------- Redis Pub/Sub listener for live API logs ----------
   try {
     logSubscriber = mainRedisClient.duplicate();
+    logSubscriber.on('error', (err) => {
+      isRedisLogStreamActive = false;
+      console.error('[Log Pub/Sub] Redis error:', err.message);
+    });
     await logSubscriber.connect();
 
     logSubscriber.subscribe('ws:new_api_log', (message) => {
@@ -195,29 +190,25 @@ const startServer = async () => {
           io.emit('new_api_log', logData);
         }
 
-        // Invalidate cached latency-stats for this project so fresh data is immediately available
+        // Cache invalidation for active stats
         if (targetProjectId && mainRedisClient && mainRedisClient.isOpen) {
-          const pattern = `latStats:${targetProjectId}:*`;
-          mainRedisClient.keys(pattern).then((keys) => {
-            if (keys && keys.length > 0) {
-              mainRedisClient.del(keys).catch(() => {});
-            }
-          }).catch(() => {});
+          mainRedisClient.del(`latStats:${targetProjectId}:*`).catch(() => {});
         }
       } catch (err) {
         console.error('[Log Pub/Sub] Failed to parse log message:', err.message);
       }
     });
-    logSubscriber.on('error', (err) => console.error('[Log Pub/Sub] Redis error:', err.message));
-    console.log('[Redis] ✅ Log Pub/Sub listener started');
+    isRedisLogStreamActive = true;
+    console.log('[Redis] ✅ Real-time Log Pub/Sub subscriber active');
   } catch (err) {
-    console.error('[Redis] Log Pub/Sub listener failed to connect:', err.message);
+    isRedisLogStreamActive = false;
+    console.error('[Redis] Log Pub/Sub subscriber connection error:', err.message);
   }
 
   // ---------- Redis Pub/Sub listener for API history updates ----------
-  console.log('[Redis] Setting up API history Pub/Sub listener...');
   try {
     historySubscriber = mainRedisClient.duplicate();
+    historySubscriber.on('error', (err) => console.error('[History Pub/Sub] Redis error:', err.message));
     await historySubscriber.connect();
 
     historySubscriber.subscribe('api_history_update', (message) => {
@@ -230,14 +221,12 @@ const startServer = async () => {
         console.error('[History Pub/Sub] Failed to parse message:', err.message);
       }
     });
-    historySubscriber.on('error', (err) => console.error('[History Pub/Sub] Redis error:', err.message));
-    console.log('[Redis] ✅ API history Pub/Sub listener started');
+    console.log('[Redis] ✅ API History Pub/Sub subscriber active');
   } catch (err) {
-    console.error('[Redis] History Pub/Sub listener failed to connect:', err.message);
+    console.error('[Redis] History Pub/Sub subscriber connection error:', err.message);
   }
 
-  // ---------- BullMQ queues ----------
-  console.log('[Queue] Initializing BullMQ queues...');
+  // ---------- BullMQ Queues ----------
   const queueConnection = {
     connection: {
       url: redisUrl,
@@ -251,14 +240,14 @@ const startServer = async () => {
   mockSyncQueue = require('./queues/mockSyncQueue');
   openapiImportQueue = require('./queues/importQueue');
 
-  console.log('[Queue] ✅ Queues initialized');
-
-  // Load email worker
+  // Load Email Queue Worker
   require('./queues/emailQueue');
-  console.log('[Queue] ✅ Email worker loaded');
+  console.log('[Queue] ✅ Background BullMQ queues & workers initialized');
 
-  // ---------- CORS ---------------
-  const envOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()) : [];
+  // ---------- CORS Configuration ----------
+  const envOrigins = process.env.ALLOWED_ORIGINS
+    ? process.env.ALLOWED_ORIGINS.split(',').map((o) => o.trim())
+    : [];
   const allowedOrigins = [
     process.env.CLIENT_URL,
     ...envOrigins,
@@ -268,24 +257,38 @@ const startServer = async () => {
     'http://localhost:3000',
   ].filter(Boolean);
 
-  app.use(cors({
-    origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
-        callback(null, true);
-      } else {
-        callback(null, true);
-      }
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'X-Requested-With', 'Accept', 'x-guest-token', 'x-auth-token'],
-  }));
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
+          callback(null, true);
+        } else {
+          callback(new Error('Cross-Origin Request Blocked by CORS'));
+        }
+      },
+      credentials: true,
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+      allowedHeaders: [
+        'Content-Type',
+        'Authorization',
+        'Cookie',
+        'X-Requested-With',
+        'Accept',
+        'x-guest-token',
+        'x-auth-token',
+        'x-csrf-token',
+      ],
+    })
+  );
 
-  app.use(express.json());
+  app.use(express.json({ limit: '20mb' }));
   app.use(cookieParser());
-  app.use((req, res, next) => { req.io = io; next(); });
+  app.use((req, res, next) => {
+    req.io = io;
+    next();
+  });
 
-  // ---------- XSS sanitization ----------
+  // ---------- XSS Sanitization ----------
   app.use((req, res, next) => {
     const sanitize = (obj) => {
       for (const key in obj) {
@@ -296,7 +299,9 @@ const startServer = async () => {
         }
       }
     };
-    if (req.body) sanitize(req.body);
+    if (req.body && !req.path.startsWith('/api/ask-ai') && !req.path.startsWith('/api/update-api')) {
+      sanitize(req.body);
+    }
     if (req.query) sanitize(req.query);
     if (req.params) sanitize(req.params);
     next();
@@ -308,25 +313,32 @@ const startServer = async () => {
     cookieName: 'x-csrf-token',
     cookieOptions: {
       httpOnly: true,
-      sameSite: 'strict',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
       secure: process.env.NODE_ENV === 'production',
     },
     size: 64,
     ignoredMethods: ['GET', 'HEAD', 'OPTIONS'],
   });
+
   app.use((req, res, next) => {
     if (req.path.startsWith('/api/') || req.path === '/health') return next();
     doubleCsrfProtection(req, res, next);
   });
+
   app.get('/api/csrf-token', (req, res) => {
     res.json({ csrfToken: generateToken(req, res) });
   });
+
   app.get(['/health', '/api/health'], (req, res) => {
-    res.status(200).json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
+    res.status(200).json({
+      status: 'ok',
+      uptime: process.uptime(),
+      timestamp: new Date().toISOString(),
+    });
   });
 
   // ================================================================
-  // CONTROLLERS (imports)
+  // CONTROLLERS
   // ================================================================
   const login = require('./controllers/login');
   const setuser = require('./controllers/setuser');
@@ -368,11 +380,11 @@ const startServer = async () => {
   const changePassword = require('./controllers/changePassword');
 
   // ================================================================
-  // ROUTES
+  // ROUTES REGISTRATION
   // ================================================================
-  console.log('[Server] 📡 Registering routes...');
+  console.log('[Server] 📡 Registering API endpoints...');
 
-  // Auth routes
+  // Auth & Identity
   app.post('/api/isemailvalid', isemailvalid);
   app.post('/api/isvalidusername', isvalidusername);
   app.post('/api/setuser', setuser);
@@ -382,10 +394,18 @@ const startServer = async () => {
   app.post('/api/otp-verify', otp_verify);
   app.get('/api/sync-auth', sync_auth);
   app.post('/api/guest-session', guest_session);
+  app.post('/api/forgot-password', forgotPassword);
+  app.post('/api/verify-forgot-otp', verifyForgotOtp);
+  app.post('/api/reset-password', resetPassword);
+  app.post('/api/change-password', authenticateToken, changePassword);
 
+  // Subscriptions & Telemetry Access
   app.post('/api/subscribe', authenticateToken, subscribe);
   app.post('/api/unsubscribe', authenticateToken, unsubscribe);
+  app.post('/api/subscribeproject', authenticateToken, subscribeRouter);
+  app.post('/api/unsubscribeproject', authenticateToken, unsubscribeProject);
 
+  // Workspaces & Projects
   app.post('/api/create-project', authenticateToken, create_project);
   app.post('/api/join-project', authenticateToken, join_project);
   app.get('/api/projects', authenticateToken, projects);
@@ -395,11 +415,13 @@ const startServer = async () => {
   app.post('/api/verify-invitationcode-otp', authenticateToken, verify_invitationcode_otp);
   app.delete('/api/deleteproject', authenticateToken, delete_project);
 
+  // Invitations & Requests
   app.get('/api/requests/received', authenticateToken, get_received_requests);
   app.get('/api/requests/sent', authenticateToken, get_sent_requests);
   app.post('/api/requests/accept/:requestId', authenticateToken, approve_project_request);
   app.delete('/api/requests/revoke/:requestId', authenticateToken, revoke_request);
 
+  // API Versioning & Endpoints
   app.get('/api/user-apis', authenticateToken, get_user_apis);
   app.post('/api/update-api', authenticateToken, update_api);
   app.post('/api/add-api', authenticateToken, add_api);
@@ -407,35 +429,24 @@ const startServer = async () => {
   app.get('/api/api-history', authenticateToken, api_history);
   app.delete('/api/versions/delete/:versionId', authenticateToken, delete_api_version);
 
+  // AI Generation & Rollback
   app.post('/api/ask-ai', authenticateToken, ask_ai);
   app.get('/api/ai-result/:jobId', authenticateToken, getAiResult);
   app.post('/api/reverse-ai', authenticateToken, reverse_ai);
 
+  // Telemetry Logs & OpenAPI Importer
   app.post('/api/logs', authenticateToken, logs);
+  app.use('/api', importRoutes);
 
-  app.post('/api/forgot-password', forgotPassword);
-  app.post('/api/verify-forgot-otp', verifyForgotOtp);
-  app.post('/api/reset-password', resetPassword);
-  app.post('/api/unsubscribeproject', authenticateToken, unsubscribeProject);
-  app.post('/api/subscribeproject', authenticateToken, subscribeRouter);
-  app.post('/api/change-password', authenticateToken, changePassword);
-
-  app.get('/', (req, res) => {
-    res.json({ status: 'ok', message: 'Server is running' });
-  });
-
-  // ---- LATENCY TEST -----
+  // Latency & Real-Time Analytics
   app.get('/api/latency-test', (req, res) => {
     res.json({ timestamp: Date.now() });
   });
 
-  // ---- LATENCY REPORT ----
   app.post('/api/latency-report', authenticateToken, async (req, res) => {
-    console.log(`[API] POST /api/latency-report (user: ${req.user.username})`, req.body);
     try {
       const { project_id, rtts } = req.body;
       if (!project_id) {
-        console.warn('[API] Missing project_id in latency-report');
         return res.status(400).json({ error: 'Missing project_id' });
       }
 
@@ -446,35 +457,21 @@ const startServer = async () => {
       } else if (typeof rtts === 'number') {
         avgRtt = Math.round(rtts);
       } else {
-        console.warn('[API] Invalid rtts format:', rtts);
         return res.status(400).json({ error: 'Invalid rtts, expected array or number' });
       }
-      console.log(`[API] Computed avgRtt: ${avgRtt}ms`);
 
       const username = req.user.username;
 
-      // 1. Update User's latency field
-      console.log(`[DB] Updating user ${username} latency to ${avgRtt}`);
-      const user = await User.findOneAndUpdate(
-        { username },
-        { latency: avgRtt },
-        { new: true }
-      );
-      if (!user) {
-        console.warn(`[DB] User ${username} not found`);
-      } else {
-        console.log(`[DB] User ${username} updated`);
-      }
+      // 1. Update User latency field
+      await User.findOneAndUpdate({ username }, { latency: avgRtt }, { new: true });
 
-      // 2. Update or create TeamLatency
-      console.log(`[DB] Updating TeamLatency for ${username} in project ${project_id}`);
+      // 2. Update TeamLatency
       let teamLat = await TeamLatency.findOne({ project_id, username });
       if (teamLat) {
         const total = teamLat.averageRtt * teamLat.sampleCount + avgRtt;
         teamLat.sampleCount += 1;
         teamLat.averageRtt = Math.round(total / teamLat.sampleCount);
         await teamLat.save();
-        console.log(`[DB] TeamLatency updated: avg=${teamLat.averageRtt}, samples=${teamLat.sampleCount}`);
       } else {
         teamLat = await TeamLatency.create({
           project_id,
@@ -482,17 +479,14 @@ const startServer = async () => {
           averageRtt: avgRtt,
           sampleCount: 1,
         });
-        console.log(`[DB] TeamLatency created: avg=${avgRtt}`);
       }
 
       // 3. Recalculate global ProjectLatency
-      console.log(`[DB] Recalculating ProjectLatency for project ${project_id}`);
       const allTeamLatencies = await TeamLatency.find({ project_id });
       let projectAvg = null;
       if (allTeamLatencies.length > 0) {
         const total = allTeamLatencies.reduce((sum, doc) => sum + doc.averageRtt, 0);
         projectAvg = Math.round(total / allTeamLatencies.length);
-        console.log(`[DB] ProjectLatency computed: ${projectAvg}ms from ${allTeamLatencies.length} members`);
 
         await ProjectLatency.findOneAndUpdate(
           { project_id },
@@ -504,98 +498,72 @@ const startServer = async () => {
         );
       }
 
-      // Send the PROJECT AVERAGE to BullMQ for OpenResty
+      // Enqueue to OpenResty sync queue
       if (projectAvg !== null && projectAvg > 0) {
-        try {
-          await latencyQueue.add('update-project-avg', {
-            project_id,
-            averageRtt: projectAvg,
-          });
-          console.log(`[Queue] ✅ Enqueued project average for ${project_id}: ${projectAvg}ms`);
-        } catch (err) {
-          console.error('[Queue] Failed to enqueue project average:', err);
-        }
+        latencyQueue.add('update-project-avg', {
+          project_id,
+          averageRtt: projectAvg,
+        }).catch(() => {});
       }
 
-      // Enqueue per-user job
-      console.log(`[Queue] Adding latency job to bullmq-latency-store for ${username}`);
       latencyQueue.add('store-member-latency', {
         project_id,
         username,
         rtt: avgRtt,
-      }).catch(err => console.error('[Queue] Failed to add latency job:', err));
+      }).catch(() => {});
 
-      res.json({
+      return res.json({
         success: true,
         userLatency: avgRtt,
         teamLatency: teamLat.averageRtt,
         projectAverage: projectAvg,
       });
-
     } catch (err) {
       console.error('[API] Error in latency-report:', err);
-      res.status(500).json({ error: 'Failed to save latency report' });
+      return res.status(500).json({ error: 'Failed to record latency report' });
     }
   });
-
-  // ---- IMPORT ROUTES ----
-  // This handles /api/import-openapi and /api/import-status/:jobId
-  app.use('/api', importRoutes);
 
   // ---- DASHBOARD DATA ----
   app.get('/api/dashboard-data', authenticateToken, async (req, res) => {
     const username = req.user.username;
-    console.log(`[API] GET /api/dashboard-data (user: ${username})`);
     try {
       const cacheKey = `dashboard:${username}`;
       if (mainRedisClient && mainRedisClient.isOpen) {
         try {
           const cached = await mainRedisClient.get(cacheKey);
-          if (cached) {
-            console.log(`[Redis] Cache hit for ${cacheKey}`);
-            return res.json(JSON.parse(cached));
-          }
-          console.log(`[Redis] Cache miss for ${cacheKey}`);
+          if (cached) return res.json(JSON.parse(cached));
         } catch (_) {}
       }
 
-      console.log(`[DB] Fetching projects for user ${username}`);
-      const projects = await Project.find({
-        $or: [{ username }, { members: username }]
+      const userProjects = await Project.find({
+        $or: [{ username }, { members: username }],
       }).lean();
-      console.log(`[DB] Found ${projects.length} projects`);
 
-      if (projects.length === 0) {
+      if (userProjects.length === 0) {
         return res.json({ projects: [] });
       }
 
-      const projectIds = projects.map(p => p.id);
-      console.log(`[DB] Project IDs: ${projectIds.join(', ')}`);
+      const projectIds = userProjects.map((p) => p.id);
 
-      const latencyDocs = await ProjectLatency.find({
-        project_id: { $in: projectIds }
-      }).lean();
-      const latencyMap = new Map(latencyDocs.map(d => [d.project_id, d]));
+      const [latencyDocs, histories] = await Promise.all([
+        ProjectLatency.find({ project_id: { $in: projectIds } }).lean(),
+        ProjectApiHistory.find({ projectID: { $in: projectIds } }).lean(),
+      ]);
 
-      const histories = await ProjectApiHistory.find({
-        projectID: { $in: projectIds }
-      }).lean();
-      const historyMap = new Map(histories.map(h => [h.projectID, h]));
+      const latencyMap = new Map(latencyDocs.map((d) => [d.project_id, d]));
+      const historyMap = new Map(histories.map((h) => [h.projectID, h]));
 
-      const rttKeys = projectIds.map(id => `latency:${id}:${username}`);
+      const rttKeys = projectIds.map((id) => `latency:${id}:${username}`);
       const networkRttMap = new Map();
       if (mainRedisClient && mainRedisClient.isOpen) {
         try {
-          console.log(`[Redis] Fetching RTT for keys: ${rttKeys.join(', ')}`);
           const pipeline = mainRedisClient.multi();
-          rttKeys.forEach(key => pipeline.get(key));
+          rttKeys.forEach((key) => pipeline.get(key));
           const rttResults = await pipeline.exec();
           projectIds.forEach((id, idx) => {
             const val = rttResults[idx]?.[1];
-            if (val) {
-              networkRttMap.set(id, parseInt(val, 10));
-              console.log(`[Redis] RTT for ${id}: ${val}ms`);
-            }
+            if (val) networkRttMap.set(id, parseInt(val, 10));
           });
         } catch (_) {}
       }
@@ -603,11 +571,9 @@ const startServer = async () => {
       let latStatsMap = new Map();
       try {
         latStatsMap = await aggregateAllLatencies(projectIds);
-      } catch (aggErr) {
-        console.warn('[dashboard-data] aggregateAllLatencies warning:', aggErr.message);
-      }
+      } catch (_) {}
 
-      const enriched = projects.map(project => {
+      const enriched = userProjects.map((project) => {
         const rttDoc = latencyMap.get(project.id);
         const projectRtt = rttDoc ? rttDoc.averageRtt : null;
         const userRtt = networkRttMap.get(project.id) ?? null;
@@ -615,8 +581,8 @@ const startServer = async () => {
         const history = historyMap.get(project.id);
         const endpoints = history ? history.endpoints : [];
 
-        const apisWithLatency = endpoints.map(endpoint => {
-          const versionsWithLatency = (endpoint.versions || []).map(ver => {
+        const apisWithLatency = endpoints.map((endpoint) => {
+          const versionsWithLatency = (endpoint.versions || []).map((ver) => {
             const key = `${project.id}::${ver.urlPath}::${ver.method}`;
             const serverLatency = latStatsMap.get(key) || 0;
             const totalLatency = userRtt !== null ? serverLatency + userRtt : serverLatency;
@@ -624,7 +590,7 @@ const startServer = async () => {
               version: ver.version,
               label: ver.version,
               latency: totalLatency,
-              urlPath: ver.urlPath
+              urlPath: ver.urlPath,
             };
           });
 
@@ -633,7 +599,7 @@ const startServer = async () => {
             id: endpoint._id,
             path: endpoint.baseUrlPath,
             method: primaryVer.method || 'GET',
-            versions: versionsWithLatency
+            versions: versionsWithLatency,
           };
         });
 
@@ -641,7 +607,7 @@ const startServer = async () => {
           id: project.id,
           name: project.projectname,
           averageRtt: projectRtt,
-          apis: apisWithLatency
+          apis: apisWithLatency,
         };
       });
 
@@ -649,13 +615,12 @@ const startServer = async () => {
       if (mainRedisClient && mainRedisClient.isOpen) {
         try {
           await mainRedisClient.setEx(cacheKey, 15, JSON.stringify(response));
-          console.log(`[Redis] Cached dashboard data for ${cacheKey}`);
         } catch (_) {}
       }
-      res.json(response);
+      return res.json(response);
     } catch (err) {
       console.error('[API] Error in dashboard-data:', err);
-      res.status(500).json({ error: err.message || 'Failed to load dashboard data' });
+      return res.status(500).json({ error: err.message || 'Failed to load dashboard data' });
     }
   });
 
@@ -663,26 +628,19 @@ const startServer = async () => {
   app.get('/api/latency-stats', authenticateToken, async (req, res) => {
     const { project_id, path, method } = req.query;
     const range = req.query.range || '6h';
-    console.log(`[API] GET /api/latency-stats (user: ${req.user.username}) – project: ${project_id}, path: ${path}, method: ${method}, range: ${range}`);
 
     try {
       if (!project_id || !path || !method) {
-        console.warn('[API] Missing query params');
         return res.status(400).json({ error: 'Missing project_id, path, or method' });
       }
 
       const since = new Date(Date.now() - resolveTimeWindow(range));
-      console.log(`[API] Fetching stats since ${since.toISOString()}`);
-
       const cacheKey = `latStats:${project_id}:${path}:${method}:${range}`;
+
       if (mainRedisClient && mainRedisClient.isOpen) {
         try {
           const cached = await mainRedisClient.get(cacheKey);
-          if (cached) {
-            console.log(`[Redis] Cache hit for ${cacheKey}`);
-            return res.json(JSON.parse(cached));
-          }
-          console.log(`[Redis] Cache miss for ${cacheKey}`);
+          if (cached) return res.json(JSON.parse(cached));
         } catch (_) {}
       }
 
@@ -692,8 +650,8 @@ const startServer = async () => {
             project_id,
             path,
             method: method.toUpperCase(),
-            timestamp: { $gte: since }
-          }
+            timestamp: { $gte: since },
+          },
         },
         {
           $group: {
@@ -701,13 +659,15 @@ const startServer = async () => {
               $toDate: {
                 $subtract: [
                   { $toLong: '$timestamp' },
-                  { $mod: [{ $toLong: '$timestamp' }, 1000 * 60 * 5] }
-                ]
-              }
+                  { $mod: [{ $toLong: '$timestamp' }, 1000 * 60 * 5] },
+                ],
+              },
             },
-            avgLatency: { $avg: { $ifNull: ['$total_latency', '$latency_ms'] } },
-            requests: { $sum: 1 }
-          }
+            avgLatency: {
+              $avg: { $ifNull: ['$total_latency', { $ifNull: ['$latency_ms', 0] }] },
+            },
+            requests: { $sum: 1 },
+          },
         },
         { $sort: { _id: 1 } },
         {
@@ -715,89 +675,91 @@ const startServer = async () => {
             _id: 0,
             time: { $dateToString: { format: '%Y-%m-%dT%H:%M:%S.000Z', date: '$_id' } },
             latency: { $round: ['$avgLatency', 0] },
-            requests: 1
-          }
-        }
+            requests: 1,
+          },
+        },
       ];
 
-      console.log(`[DB] Executing latency stats aggregation for project ${project_id}`);
       const points = await ApiCallLog.aggregate(pipeline);
-      console.log(`[DB] Got ${points.length} data points`);
       const response = { points };
 
       if (mainRedisClient && mainRedisClient.isOpen) {
         try {
           await mainRedisClient.setEx(cacheKey, 30, JSON.stringify(response));
-          console.log(`[Redis] Cached latency stats for ${cacheKey}`);
         } catch (_) {}
       }
-      res.json(response);
+      return res.json(response);
     } catch (err) {
       console.error('[API] Error in latency-stats:', err);
-      res.status(500).json({ error: err.message || 'Failed to fetch latency stats' });
+      return res.status(500).json({ error: err.message || 'Failed to fetch latency stats' });
     }
   });
 
-  // ---- RECENT API CALL LOGS (Real-Time Live Telemetry) ----
+  // ---- RECENT API CALL LOGS ----
   app.get('/api/recent-logs', authenticateToken, async (req, res) => {
     const { project_id } = req.query;
     try {
       if (!project_id) {
         return res.status(400).json({ error: 'Missing project_id' });
       }
-      const logs = await ApiCallLog.find({ project_id })
+      const recentLogs = await ApiCallLog.find({ project_id })
         .sort({ timestamp: -1 })
         .limit(30)
         .lean();
-      return res.json({ logs: logs || [] });
+      return res.json({ logs: recentLogs || [] });
     } catch (err) {
       console.error('[API] Error in recent-logs:', err);
       return res.status(500).json({ error: err.message || 'Failed to fetch recent logs' });
     }
   });
 
+  // Root status
+  app.get('/', (req, res) => {
+    res.json({ status: 'ok', message: 'MockAPI Microservice Engine Running' });
+  });
+
   // ================================================================
-  // SOCKET.IO EVENTS
+  // SOCKET.IO REAL-TIME EVENTS
   // ================================================================
   let lastCheckedTime = new Date();
 
   io.engine.on('connection_error', (err) => {
-    console.error('[Socket] Handshake error:', err.message, err.context);
+    console.error('[Socket] Connection handshake warning:', err.message);
   });
 
   io.on('connection', (socket) => {
-    console.log(`[Socket] Client connected: ${socket.id}`);
     socket.on('join_room', (roomName) => {
       if (roomName && typeof roomName === 'string') {
         socket.join(roomName);
-        console.log(`[Socket] ${socket.id} joined room ${roomName}`);
       }
     });
 
     socket.on('join_project', async (projectId) => {
       if (!projectId) return;
       socket.join(projectId);
-      console.log(`[Socket] ${socket.id} joined project room ${projectId}`);
       try {
         const cacheKey = `initial_logs:${projectId}`;
-        let logs = null;
-        if (pubClient) {
+        let cachedLogs = null;
+        if (pubClient && pubClient.isOpen) {
           const cached = await pubClient.get(cacheKey);
-          if (cached) logs = JSON.parse(cached);
-          console.log(`[Socket] ${cached ? 'Cache hit' : 'Cache miss'} for ${cacheKey}`);
-        }
-        if (!logs) {
-          logs = await SystemEventLog.find({ projectId })
-            .sort({ createdAt: -1 })
-            .limit(50);
-          console.log(`[Socket] Fetched ${logs.length} logs from DB`);
-          if (pubClient) {
-            await pubClient.setEx(cacheKey, 30, JSON.stringify(logs));
+          if (cached) {
+            try {
+              cachedLogs = JSON.parse(cached);
+            } catch (_) {}
           }
         }
-        socket.emit('initial_logs', logs);
+        if (!cachedLogs) {
+          cachedLogs = await SystemEventLog.find({ projectId })
+            .sort({ createdAt: -1 })
+            .limit(50)
+            .lean();
+          if (pubClient && pubClient.isOpen && cachedLogs.length > 0) {
+            await pubClient.setEx(cacheKey, 30, JSON.stringify(cachedLogs));
+          }
+        }
+        socket.emit('initial_logs', cachedLogs || []);
       } catch (err) {
-        console.error('[Socket] Error fetching logs:', err);
+        console.error('[Socket] Error loading initial logs:', err.message);
         socket.emit('initial_logs', []);
       }
     });
@@ -805,44 +767,40 @@ const startServer = async () => {
     socket.on('leave_project', (projectId) => {
       if (projectId) {
         socket.leave(projectId);
-        console.log(`[Socket] ${socket.id} left project room ${projectId}`);
       }
-    });
-
-    socket.on('disconnect', () => {
-      console.log(`[Socket] Client disconnected: ${socket.id}`);
     });
   });
 
+  // Heartbeat keep-alive
   const HEARTBEAT_INTERVAL = parseInt(process.env.HEARTBEAT_INTERVAL, 10) || 60000;
   heartbeatInterval = setInterval(() => {
     io.emit('heartbeat', { timestamp: Date.now() });
   }, HEARTBEAT_INTERVAL);
-  console.log(`[Socket] Heartbeat interval set to ${HEARTBEAT_INTERVAL}ms`);
 
+  // Fallback Polling Worker (Activates strictly if Redis Pub/Sub stream is interrupted)
   const LOG_POLLING_INTERVAL = parseInt(process.env.LOG_POLLING_INTERVAL, 10) || 30000;
   dataPollingInterval = setInterval(async () => {
+    if (isRedisLogStreamActive) return; // Redis Pub/Sub handles active delivery
     const now = new Date();
     try {
-      const newLogs = await SystemEventLog.find({ createdAt: { $gt: lastCheckedTime } })
-        .sort({ createdAt: 1 });
-      if (newLogs.length) {
-        console.log(`[Socket] Polling found ${newLogs.length} new logs`);
+      const missedLogs = await SystemEventLog.find({ createdAt: { $gt: lastCheckedTime } })
+        .sort({ createdAt: 1 })
+        .lean();
+      if (missedLogs.length) {
         const logsByProject = {};
-        newLogs.forEach(log => {
+        missedLogs.forEach((log) => {
           if (!logsByProject[log.projectId]) logsByProject[log.projectId] = [];
           logsByProject[log.projectId].push(log);
         });
-        for (const [projectId, logs] of Object.entries(logsByProject)) {
-          logs.forEach(singleLog => io.to(projectId).emit('new_api_log', singleLog));
+        for (const [projectId, projectLogs] of Object.entries(logsByProject)) {
+          projectLogs.forEach((l) => io.to(projectId).emit('new_api_log', l));
         }
       }
       lastCheckedTime = now;
     } catch (err) {
-      console.error('[Socket] Polling error:', err.message);
+      console.error('[Socket Polling Fallback] Error:', err.message);
     }
   }, LOG_POLLING_INTERVAL);
-  console.log(`[Socket] Log polling interval set to ${LOG_POLLING_INTERVAL}ms`);
 
   // ================================================================
   // GRACEFUL SHUTDOWN
@@ -852,13 +810,11 @@ const startServer = async () => {
     if (heartbeatInterval) clearInterval(heartbeatInterval);
     if (dataPollingInterval) clearInterval(dataPollingInterval);
 
-    console.log('[Queue] Closing queues...');
     if (latencyQueue) await latencyQueue.close().catch(() => {});
     if (projectQueue) await projectQueue.close().catch(() => {});
     if (mockSyncQueue) await mockSyncQueue.close().catch(() => {});
     if (openapiImportQueue) await openapiImportQueue.close().catch(() => {});
 
-    console.log('[Redis] Quitting Redis clients...');
     if (pubClient) await pubClient.quit().catch(() => {});
     if (subClient) await subClient.quit().catch(() => {});
     if (mainRedisClient) await mainRedisClient.quit().catch(() => {});
@@ -866,16 +822,17 @@ const startServer = async () => {
     if (logSubscriber) await logSubscriber.quit().catch(() => {});
     if (historySubscriber) await historySubscriber.quit().catch(() => {});
 
-    console.log('[Server] Closing HTTP server...');
     server.close(() => {
       console.log('[Server] ✅ Shutdown complete');
       process.exit(0);
     });
+
     setTimeout(() => {
-      console.error('[Server] ⏰ Shutdown timeout, forcing exit');
+      console.error('[Server] ⏰ Forced shutdown timeout');
       process.exit(1);
     }, 5000);
   };
+
   process.on('SIGINT', gracefulShutdown);
   process.on('SIGTERM', gracefulShutdown);
 

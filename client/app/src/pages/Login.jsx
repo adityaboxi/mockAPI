@@ -1,68 +1,73 @@
-// src/pages/Login.jsx
-import React, { useState, useCallback } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { authenticateUser } from "../auth/authenticateUser";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
-import { useToast } from "../context/ToastContext";
-import { apiClient } from "../services/apiClient";
 
 function Login() {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, createGuestSession } = useAuth();
   const { theme } = useTheme();
-  const { showSuccess, showError, showWarning } = useToast();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState("");
 
   const isWhiteTheme = theme === "white";
 
   const handleSignup = () => navigate("/signup");
 
-  const handleLogin = useCallback(async (e) => {
-    if (e) e.preventDefault();
+  const handleLogin = async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    setErrorMessage("");
+
     const cleanUsername = username.trim();
     const cleanPassword = password.trim();
 
     if (!cleanUsername || !cleanPassword) {
-      showWarning("Please enter both username and password");
+      setErrorMessage("Please enter both username and password");
       return;
     }
+
     setIsLoading(true);
     try {
       const result = await authenticateUser(cleanUsername, cleanPassword);
-      if (result.success && result.data) {
-        if (result.data.token) {
-          localStorage.setItem('auth_token', result.data.token);
-        }
-        await login(result.data.user || { username: cleanUsername }, result.data.token);
-        showSuccess(`Welcome back, @${cleanUsername}!`);
+      if (result && result.success) {
+        login({
+          username: result.data?.user?.username || cleanUsername,
+          email: result.data?.user?.email,
+          role: result.data?.user?.role || "user",
+          subscribe: result.data?.user?.subscribe === true,
+        });
         navigate("/");
       } else {
-        showError(result.error || "Invalid username or password");
+        setErrorMessage(result?.error || "Invalid username or password");
       }
     } catch (error) {
-      showError(error.message || "Login failed. Please try again.");
+      setErrorMessage(error?.message || "An unexpected error occurred during login");
     } finally {
       setIsLoading(false);
     }
-  }, [username, password, login, navigate, showError, showSuccess, showWarning]);
+  };
 
-  const handleGuestLogin = useCallback(async () => {
-    if (isLoading) return;
+  const handleGuestLogin = async () => {
     setIsLoading(true);
+    setErrorMessage("");
     try {
-      await apiClient.post('/api/guest-session');
-      await login({ username: "Guest", role: "guest", subscribe: false });
-      showSuccess("Signed in as Guest");
+      if (createGuestSession) {
+        const ok = await createGuestSession();
+        if (ok) {
+          navigate("/");
+          return;
+        }
+      }
       navigate("/");
-    } catch (err) {
-      showError(err.message || "Failed to create guest session");
+    } catch (error) {
+      setErrorMessage("Failed to start guest session");
     } finally {
       setIsLoading(false);
     }
-  }, [isLoading, login, navigate, showError, showSuccess]);
+  };
 
   // ─── Theme-aware styles ──────────────────────────────────────────
   const pageBg = isWhiteTheme ? "bg-gray-50" : "bg-zinc-950";
@@ -81,7 +86,7 @@ function Login() {
 
   return (
     <div
-      className={`min-h-screen flex items-center justify-center font-sans selection:bg-blue-500/30 transition-colors duration-200 ${pageBg}`}
+      className={`min-h-screen flex items-center justify-center font-sans selection:bg-blue-500/30 transition-colors duration-200 ${pageBg} px-4`}
     >
       {/* Card container */}
       <div
@@ -89,12 +94,18 @@ function Login() {
       >
         {/* Logo / Branding */}
         <div className="text-center mb-6">
-          <img src="/logo-2.svg" alt="MockAPI Logo" width="32" height="32" className="block mx-auto w-8 h-8 mb-1 select-none" />
+          <img src="/logo-2.svg" alt="Logo" className="block mx-auto w-8 h-8 mb-1" />
           <h1 className={`text-lg font-semibold ${isWhiteTheme ? "text-gray-800" : "text-white"}`}>
             MockAPI
           </h1>
           <p className={`text-xs ${labelText}`}>Sign in to your account</p>
         </div>
+
+        {errorMessage && (
+          <div className="mb-4 p-2.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 text-xs text-center font-medium">
+            {errorMessage}
+          </div>
+        )}
 
         <form onSubmit={handleLogin}>
           {/* Username */}
@@ -104,13 +115,12 @@ function Login() {
             </label>
             <input
               type="text"
-              autoFocus
+              autoComplete="username"
               onChange={(e) => setUsername(e.target.value)}
               value={username}
               disabled={isLoading}
               placeholder="Enter your username"
               className={inputBase}
-              autoComplete="username"
             />
           </div>
 
@@ -121,12 +131,12 @@ function Login() {
             </label>
             <input
               type="password"
+              autoComplete="current-password"
               onChange={(e) => setPassword(e.target.value)}
               value={password}
               disabled={isLoading}
               placeholder="Enter your password"
               className={inputBase}
-              autoComplete="current-password"
             />
           </div>
 
@@ -154,9 +164,7 @@ function Login() {
           <button
             type="submit"
             disabled={isLoading}
-            className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${buttonPrimary} disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-              isWhiteTheme ? "focus:ring-offset-white" : "focus:ring-offset-zinc-900"
-            }`}
+            className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${buttonPrimary} disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${isWhiteTheme ? "focus:ring-offset-white" : "focus:ring-offset-zinc-900"}`}
           >
             {isLoading ? (
               <span className="flex items-center justify-center gap-2">
@@ -187,17 +195,13 @@ function Login() {
           type="button"
           onClick={handleGuestLogin}
           disabled={isLoading}
-          className={`w-full py-2.5 rounded-lg text-sm font-medium transition-all duration-200 border ${
-            isWhiteTheme ? "border-gray-300 hover:bg-gray-50 text-gray-600" : "border-zinc-700 hover:bg-zinc-800 text-zinc-400"
-          } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
-            isWhiteTheme ? "focus:ring-offset-white" : "focus:ring-offset-zinc-900"
-          } disabled:opacity-50 disabled:cursor-not-allowed`}
+          className={`w-full py-2.5 rounded-lg text-sm font-medium transition-all duration-200 border ${isWhiteTheme ? "border-gray-300 hover:bg-gray-50 text-gray-600" : "border-zinc-700 hover:bg-zinc-800 text-zinc-400"} focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${isWhiteTheme ? "focus:ring-offset-white" : "focus:ring-offset-zinc-900"} disabled:opacity-50`}
         >
           Continue as Guest
         </button>
 
         {/* Footer */}
-        <div className={`mt-6 text-center text-[10px] ${labelText} select-none`}>
+        <div className={`mt-6 text-center text-[10px] ${labelText}`}>
           <span>MockAPI v1.0</span>
           <span className="mx-2">•</span>
           <span>Secure • Encrypted</span>
@@ -207,4 +211,4 @@ function Login() {
   );
 }
 
-export default React.memo(Login);
+export default Login;

@@ -1,4 +1,4 @@
-require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+require('../opentelemetry/universal-logger'); // OpenTelemetry tracing initialized first
 
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
@@ -7,13 +7,11 @@ async function login(req, res) {
   const { username, password } = req.body;
 
   if (!username || !password) {
-    return res.status(400).json({ message: 'Username and password required' });
+    return res.status(400).json({ message: 'Username and password are required' });
   }
 
   try {
-    const normalizedUsername = username.trim().toLowerCase();
-    const user = await User.findOne({ username: normalizedUsername });
-
+    const user = await User.findOne({ username });
     if (!user) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
@@ -23,54 +21,46 @@ async function login(req, res) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https' || process.env.COOKIE_SECURE === 'true';
-    const sameSite = process.env.COOKIE_SAMESITE || (isHttps ? 'none' : 'lax');
-    const isSecure = isHttps;
-    const jwtSecret = process.env.JWT_SECRET || 'jwt_default_secret_key';
-    const jwtExpiry = process.env.JWT_EXPIRY || '7d';
-    const cookieMaxAge = parseInt(process.env.COOKIE_MAX_AGE, 10) || 7 * 24 * 60 * 60 * 1000;
+    const isProd = process.env.NODE_ENV === 'production';
 
     res.clearCookie('guest_token', {
       httpOnly: true,
-      secure: isSecure,
-      sameSite,
+      sameSite: process.env.COOKIE_SAMESITE || 'lax',
+      secure: isProd,
       path: '/',
     });
 
     const token = jwt.sign(
-      {
-        username: user.username,
-        email: user.email,
-        name: user.name,
-        role: user.role,
+      { 
+        username: user.username, 
+        email: user.email, 
+        name: user.name, 
+        role: user.role || 'user',
         userId: user._id,
-        id: user._id,
       },
-      jwtSecret,
-      { expiresIn: jwtExpiry }
+      process.env.JWT_SECRET || 'local_dev_secret_change_me',
+      { expiresIn: process.env.JWT_EXPIRY || '7d' }
     );
 
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: isSecure,
-      sameSite,
-      maxAge: cookieMaxAge,
+    res.cookie('token', token, { 
+      httpOnly: true, 
+      sameSite: process.env.COOKIE_SAMESITE || 'lax', 
+      secure: isProd,
+      maxAge: parseInt(process.env.COOKIE_MAX_AGE, 10) || 604800000,
       path: '/',
     });
 
-    return res.json({
+    return res.status(200).json({ 
       success: true,
-      token,
       user: {
         username: user.username,
         email: user.email,
         name: user.name,
-        role: user.role,
-        subscribe: Boolean(user.subscribe),
+        role: user.role || 'user',
       },
     });
   } catch (error) {
-    console.error('Login error:', error.message);
+    console.error('[login] Error:', error.message);
     return res.status(500).json({ message: 'Server error', error: error.message });
   }
 }

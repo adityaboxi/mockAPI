@@ -1,23 +1,21 @@
-require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+require('../opentelemetry/universal-logger'); // OpenTelemetry tracing initialized first
 
 async function logout(req, res) {
-  const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https' || process.env.COOKIE_SECURE === 'true';
-  const sameSite = process.env.COOKIE_SAMESITE || (isHttps ? 'none' : 'lax');
-  const isSecure = isHttps;
+  const isProd = process.env.NODE_ENV === 'production';
 
   res.clearCookie('token', {
     httpOnly: true,
-    secure: isSecure,
-    sameSite,
+    sameSite: process.env.COOKIE_SAMESITE || 'lax',
+    secure: isProd,
     path: '/',
   });
   res.clearCookie('guest_token', {
     httpOnly: true,
-    secure: isSecure,
-    sameSite,
+    sameSite: process.env.COOKIE_SAMESITE || 'lax',
+    secure: isProd,
     path: '/',
   });
-  return res.json({ success: true, message: 'Logged out successfully' });
+  return res.status(200).json({ success: true, message: 'Logged out successfully' });
 }
 
 module.exports = logout;

@@ -1,54 +1,49 @@
 
-require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+require('../opentelemetry/universal-logger'); // OpenTelemetry tracing initialized first
 
 const jwt = require('jsonwebtoken');
+const { v4: uuidv4 } = require('uuid');
 
 async function guestSession(req, res) {
   try {
-    const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https' || process.env.COOKIE_SECURE === 'true';
-    const sameSite = process.env.COOKIE_SAMESITE || (isHttps ? 'none' : 'lax');
-    const isSecure = isHttps;
-    const jwtSecret = process.env.JWT_SECRET || 'jwt_default_secret_key';
-    const jwtExpiry = process.env.JWT_EXPIRY || '7d';
-    const cookieMaxAge = parseInt(process.env.COOKIE_MAX_AGE, 10) || 7 * 24 * 60 * 60 * 1000;
+    const isProd = process.env.NODE_ENV === 'production';
 
-    // Only clear token if explicit guest request
-    if (!req.cookies?.token) {
-      res.clearCookie('token', {
-        httpOnly: true,
-        secure: isSecure,
-        sameSite,
-        path: '/',
-      });
-    }
+    res.clearCookie('token', {
+      httpOnly: true,
+      sameSite: process.env.COOKIE_SAMESITE || 'lax',
+      secure: isProd,
+      path: '/',
+    });
 
+    const sessionId = uuidv4();
     const guestToken = jwt.sign(
-      {
-        role: 'guest',
-        timestamp: Date.now(),
-        sessionId: Math.random().toString(36).substring(2, 10),
+      { 
+        role: 'guest', 
+        timestamp: Date.now(), 
+        sessionId,
       },
-      jwtSecret,
-      { expiresIn: jwtExpiry }
+      process.env.JWT_SECRET || 'local_dev_secret_change_me',
+      { expiresIn: process.env.JWT_EXPIRY || '7d' }
     );
 
     res.cookie('guest_token', guestToken, {
       httpOnly: true,
-      secure: isSecure,
-      sameSite,
-      maxAge: cookieMaxAge,
+      sameSite: process.env.COOKIE_SAMESITE || 'lax',
+      secure: isProd,
+      maxAge: parseInt(process.env.COOKIE_MAX_AGE, 10) || 604800000,
       path: '/',
     });
 
-    return res.json({
-      success: true,
-      token: guestToken,
-      role: 'guest',
+    return res.status(200).json({ 
+      success: true, 
+      role: 'guest', 
+      isGuest: true,
       subscribe: false,
-      message: 'Guest session created',
+      sessionId,
+      message: 'Guest session created successfully',
     });
   } catch (error) {
-    console.error('Guest session error:', error.message);
+    console.error('[guest-session] Error:', error.message);
     return res.status(500).json({ error: 'Failed to create guest session' });
   }
 }

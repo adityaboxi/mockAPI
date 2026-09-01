@@ -1,7 +1,7 @@
-require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+require('../opentelemetry/universal-logger'); // OpenTelemetry tracing initialized first
 
 const User = require('../models/User');
-const { connectRedis } = require('../config/redis');
+const { redisClient } = require('../config/redis');
 
 async function subscribe(req, res) {
   const username = req.user?.username;
@@ -32,9 +32,10 @@ async function subscribe(req, res) {
     }
 
     try {
-      const client = await connectRedis();
-      await client.del(`user:projects:${username}`);
-      await client.del(`user_profile:${user._id}`);
+      if (redisClient && redisClient.isOpen) {
+        await redisClient.del(`dashboard:${username}`);
+        await redisClient.del(`user:projects:${username}`);
+      }
     } catch (_) {}
 
     return res.status(200).json({
@@ -44,7 +45,7 @@ async function subscribe(req, res) {
       user: { id: user._id, username: user.username, subscribe: user.subscribe },
     });
   } catch (error) {
-    console.error('Subscription error:', error.message);
+    console.error('[subscribe] Error:', error.message);
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
