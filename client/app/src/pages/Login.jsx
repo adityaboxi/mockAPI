@@ -12,6 +12,7 @@ function Login() {
   const { login } = useAuth();
   const { theme } = useTheme();
   const { showSuccess, showError, showWarning } = useToast();
+
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -21,29 +22,44 @@ function Login() {
   const handleSignup = () => navigate("/signup");
 
   const handleLogin = useCallback(async (e) => {
-    if (e) e.preventDefault();
-    const cleanUsername = username.trim();
-    const cleanPassword = password.trim();
+    if (e && e.preventDefault) e.preventDefault();
+
+    const cleanUsername = (username || "").trim();
+    const cleanPassword = password || "";
 
     if (!cleanUsername || !cleanPassword) {
       showWarning("Please enter both username and password");
       return;
     }
+
     setIsLoading(true);
     try {
       const result = await authenticateUser(cleanUsername, cleanPassword);
-      if (result.success && result.data) {
-        if (result.data.token) {
-          localStorage.setItem('auth_token', result.data.token);
+
+      if (result && result.success && result.data) {
+        // 1. Persist JWT token for WebSockets and API headers
+        const token = result.data.token;
+        if (token) {
+          try {
+            localStorage.setItem("auth_token", token);
+          } catch (_) {}
         }
-        await login(result.data.user || { username: cleanUsername }, result.data.token);
+
+        // 2. Populate AuthContext user state
+        const userData = result.data.user || {
+          username: cleanUsername,
+          role: "user",
+          subscribe: false,
+        };
+        login(userData);
+
         showSuccess(`Welcome back, @${cleanUsername}!`);
         navigate("/");
       } else {
-        showError(result.error || "Invalid username or password");
+        showError(result?.error || "Invalid username or password");
       }
     } catch (error) {
-      showError(error.message || "Login failed. Please try again.");
+      showError(error?.message || "Login failed. Please check your connection.");
     } finally {
       setIsLoading(false);
     }
@@ -52,13 +68,14 @@ function Login() {
   const handleGuestLogin = useCallback(async () => {
     if (isLoading) return;
     setIsLoading(true);
+
     try {
-      await apiClient.post('/api/guest-session');
-      await login({ username: "Guest", role: "guest", subscribe: false });
+      await apiClient.post("/api/guest-session");
+      login({ username: "Guest", role: "guest", subscribe: false });
       showSuccess("Signed in as Guest");
       navigate("/");
     } catch (err) {
-      showError(err.message || "Failed to create guest session");
+      showError(err?.message || "Failed to create guest session");
     } finally {
       setIsLoading(false);
     }
@@ -81,7 +98,7 @@ function Login() {
 
   return (
     <div
-      className={`min-h-screen flex items-center justify-center font-sans selection:bg-blue-500/30 transition-colors duration-200 ${pageBg}`}
+      className={`min-h-screen flex items-center justify-center font-sans selection:bg-blue-500/30 transition-colors duration-200 ${pageBg} px-4`}
     >
       {/* Card container */}
       <div
@@ -89,7 +106,13 @@ function Login() {
       >
         {/* Logo / Branding */}
         <div className="text-center mb-6">
-          <img src="/logo-2.svg" alt="MockAPI Logo" width="32" height="32" className="block mx-auto w-8 h-8 mb-1 select-none" />
+          <img
+            src="/logo-2.svg"
+            alt="MockAPI Logo"
+            width="32"
+            height="32"
+            className="block mx-auto w-8 h-8 mb-1 select-none"
+          />
           <h1 className={`text-lg font-semibold ${isWhiteTheme ? "text-gray-800" : "text-white"}`}>
             MockAPI
           </h1>
@@ -105,12 +128,12 @@ function Login() {
             <input
               type="text"
               autoFocus
+              autoComplete="username"
               onChange={(e) => setUsername(e.target.value)}
               value={username}
               disabled={isLoading}
               placeholder="Enter your username"
               className={inputBase}
-              autoComplete="username"
             />
           </div>
 
@@ -121,12 +144,12 @@ function Login() {
             </label>
             <input
               type="password"
+              autoComplete="current-password"
               onChange={(e) => setPassword(e.target.value)}
               value={password}
               disabled={isLoading}
               placeholder="Enter your password"
               className={inputBase}
-              autoComplete="current-password"
             />
           </div>
 
@@ -188,7 +211,9 @@ function Login() {
           onClick={handleGuestLogin}
           disabled={isLoading}
           className={`w-full py-2.5 rounded-lg text-sm font-medium transition-all duration-200 border ${
-            isWhiteTheme ? "border-gray-300 hover:bg-gray-50 text-gray-600" : "border-zinc-700 hover:bg-zinc-800 text-zinc-400"
+            isWhiteTheme
+              ? "border-gray-300 hover:bg-gray-50 text-gray-600"
+              : "border-zinc-700 hover:bg-zinc-800 text-zinc-400"
           } focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
             isWhiteTheme ? "focus:ring-offset-white" : "focus:ring-offset-zinc-900"
           } disabled:opacity-50 disabled:cursor-not-allowed`}

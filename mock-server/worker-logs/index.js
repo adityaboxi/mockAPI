@@ -1,3 +1,4 @@
+// mock-server/worker-logs/index.js
 require('./opentelemetry/universal-logger');  // <-- Add this line FIRST
 
 require('dotenv').config();
@@ -14,7 +15,6 @@ const Project = require('./models/Project');
 const User = require('./models/User');
 
 console.log('[worker-logs] 🚀 Starting worker-logs (High-Concurrency Optimized)...');
-
 
 // -------- MongoDB Connection (Connection Pooled) ----------
 if (!process.env.MONGO_URI) {
@@ -180,7 +180,6 @@ async function handleDosAlert(data) {
     return;
   }
 
-  // 1. Record 24-hour IP ban in MongoDB
   const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
   try {
     await BlockedIP.findOneAndUpdate(
@@ -202,7 +201,6 @@ async function handleDosAlert(data) {
     console.error('[email] ❌ Error saving BlockedIP record:', err.message);
   }
 
-  // 2. Fetch team member emails
   const memberUsernames = [project.username, ...(project.members || [])];
   const uniqueMembers = [...new Set(memberUsernames)];
   const users = await User.find({ username: { $in: uniqueMembers } }).select('email').lean();
@@ -239,13 +237,11 @@ const emailWorker = new Worker(
 
       const { project_id, ip, is_private } = data;
 
-      // ---- DoS Alert Branch ----
       if (project_id && ip && is_private === true) {
         await handleDosAlert(data);
         return;
       }
 
-      // ---- Regular Email Branch ----
       if (!data.to) return;
       console.log(`[email] 📧 Sending general email to: ${data.to}`);
       try {
@@ -342,7 +338,6 @@ async function shutdown() {
   await latencyWorker.close().catch(() => {});
   await mongoose.disconnect().catch(() => {});
   await redis.quit().catch(() => {});
-  await redisInternal.quit().catch(() => {});
   console.log('[worker-logs] 👋 All workers shut down cleanly');
   process.exit(0);
 }

@@ -1,5 +1,5 @@
-// server/queues/aiQueue.js
-require('../opentelemetry/universal-logger'); // OpenTelemetry tracing initialized first
+// server/server/src/queues/aiQueue.js
+require('../opentelemetry/universal-logger');
 
 const { Queue } = require('bullmq');
 
@@ -18,20 +18,19 @@ const aiQueue = new Queue('ai-queue', {
     attempts: 3,
     backoff: {
       type: 'exponential',
-      delay: 2000,
+      delay: 2000, // 2s -> 4s -> 8s backoff on AI provider rate limits
     },
     removeOnComplete: {
-      age: 3600, // Keep completed job metadata for 1 hour
-      count: 1000, // Keep last 1,000 completed jobs
+      age: 3600,  // Keep completed jobs for 1 hour
+      count: 1000, // Retain last 1,000 completed jobs
     },
     removeOnFail: {
-      age: 86400, // Keep failed job trace for 24 hours
-      count: 2000, // Keep last 2,000 failed jobs for debugging
+      age: 86400, // Keep failed jobs for 24 hours for debugging
+      count: 2000,
     },
   },
 });
 
-// Intercept queue errors to prevent unhandled node process termination
 aiQueue.on('error', (err) => {
   console.error('[aiQueue] Redis connection or BullMQ internal error:', err.message);
 });

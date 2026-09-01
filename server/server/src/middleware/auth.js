@@ -1,16 +1,17 @@
-
-
-require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+require('../opentelemetry/universal-logger');
 
 const jwt = require('jsonwebtoken');
 
 const authenticateToken = (req, res, next) => {
   const secret = process.env.JWT_SECRET || 'jwt_default_secret_key';
 
-  // 1. Extract token from cookies or Authorization Bearer header
+  // 1. Check Cookies, Authorization Header, or x-auth-token Header
   let token = req.cookies?.token;
-  if (!token && req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
+  if (!token && req.headers.authorization?.startsWith('Bearer ')) {
     token = req.headers.authorization.substring(7);
+  }
+  if (!token && req.headers['x-auth-token']) {
+    token = req.headers['x-auth-token'];
   }
 
   if (token) {
@@ -19,16 +20,12 @@ const authenticateToken = (req, res, next) => {
       req.user = { ...decoded, isGuest: false };
       return next();
     } catch {
-      return res.status(403).json({ error: 'Invalid token' });
+      return res.status(403).json({ error: 'Invalid or expired token' });
     }
   }
 
-  // 2. Extract guest token
-  let guestToken = req.cookies?.guest_token;
-  if (!guestToken && req.headers['x-guest-token']) {
-    guestToken = req.headers['x-guest-token'];
-  }
-
+  // 2. Fallback to Guest Token
+  let guestToken = req.cookies?.guest_token || req.headers['x-guest-token'];
   if (guestToken) {
     try {
       const decoded = jwt.verify(guestToken, secret);
@@ -39,7 +36,6 @@ const authenticateToken = (req, res, next) => {
     }
   }
 
-  // 3. Unauthenticated
   return res.status(401).json({ error: 'Authentication required' });
 };
 
@@ -50,11 +46,4 @@ const requireAuth = (req, res, next) => {
   next();
 };
 
-const requireAdmin = (req, res, next) => {
-  if (!req.user || req.user.role !== 'admin') {
-    return res.status(403).json({ error: 'Admin access required' });
-  }
-  next();
-};
-
-module.exports = { authenticateToken, requireAuth, requireAdmin };
+module.exports = { authenticateToken, requireAuth };
