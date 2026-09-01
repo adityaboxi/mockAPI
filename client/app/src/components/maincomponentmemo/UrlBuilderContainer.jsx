@@ -1,4 +1,5 @@
-import React, { useState, useCallback } from "react";
+// src/components/maincomponentmemo/UrlBuilderContainer.jsx
+import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import UrlBuilder from "./UrlBuilder";
 import PathParamsSection from "./PathParamsSection";
 import QueryParamsSection from "./QueryParamsSection";
@@ -18,12 +19,20 @@ const UrlBuilderContainer = React.memo(({
   const [showPathParamInput, setShowPathParamInput] = useState(false);
   const [newPathKey, setNewPathKey] = useState("");
   const [newPathValue, setNewPathValue] = useState("");
+  const [copied, setCopied] = useState(false);
+  const copyTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    };
+  }, []);
 
   const extractPathParams = useCallback((path) => {
     const regex = /:([a-zA-Z_][a-zA-Z0-9_]*)/g;
     const matches = [...path.matchAll(regex)];
-    const keys = matches.map(m => m[1]);
-    const newParams = keys.map(key => ({ key, value: "" }));
+    const keys = matches.map((m) => m[1]);
+    const newParams = keys.map((key) => ({ key, value: "" }));
     setPathParams(newParams);
   }, []);
 
@@ -34,41 +43,80 @@ const UrlBuilderContainer = React.memo(({
   }, [extractPathParams]);
 
   const updatePathParam = useCallback((key, value) => {
-    setPathParams(prev => prev.map(p => p.key === key ? { ...p, value } : p));
+    setPathParams((prev) => prev.map((p) => (p.key === key ? { ...p, value } : p)));
   }, []);
 
+  const removePathParam = useCallback((key) => {
+    const newPath = urlPath.replace(new RegExp(`\/?:${key}(?=\/|$)`), '').replace(/\/+/g, '/');
+    setUrlPath(newPath);
+    extractPathParams(newPath);
+  }, [urlPath, extractPathParams]);
+
   const addPathParamHandler = useCallback(() => {
-    if (newPathKey.trim()) {
+    const trimmedKey = newPathKey.trim();
+    if (trimmedKey) {
       let currentPath = urlPath;
-      if (!currentPath.includes(`:${newPathKey}`)) {
-        currentPath = currentPath + (currentPath.endsWith('/') ? '' : '/') + `:${newPathKey}`;
+      if (!currentPath.includes(`:${trimmedKey}`)) {
+        currentPath = currentPath + (currentPath.endsWith('/') ? '' : '/') + `:${trimmedKey}`;
         setUrlPath(currentPath);
         extractPathParams(currentPath);
       }
-      setPathParams(prev => [...prev, { key: newPathKey, value: newPathValue }]);
+      setPathParams((prev) => [...prev, { key: trimmedKey, value: newPathValue.trim() }]);
       setNewPathKey('');
       setNewPathValue('');
       setShowPathParamInput(false);
+      return true;
     }
+    return false;
   }, [newPathKey, newPathValue, urlPath, extractPathParams]);
 
-  const buildFinalUrl = useCallback(() => {
-    let finalUrl = `${protocol}://api.localhost`;
-    let path = urlPath;
-    pathParams.forEach(param => {
+  const finalUrl = useMemo(() => {
+    let base = `${protocol || 'http'}://api.localhost`;
+    let path = urlPath || '';
+    pathParams.forEach((param) => {
       path = path.replace(`:${param.key}`, param.value || `{${param.key}}`);
     });
-    finalUrl += path;
-    const activeParams = queryParams.filter(q => q.key && q.value);
+    if (path && !path.startsWith('/')) path = '/' + path;
+    base += path;
+
+    const activeParams = (queryParams || []).filter((q) => q.key && q.value);
     if (activeParams.length > 0) {
-      finalUrl += '?' + activeParams.map(q =>
+      base += '?' + activeParams.map((q) =>
         `${encodeURIComponent(q.key)}=${encodeURIComponent(q.value)}`
       ).join('&');
     }
-    return finalUrl;
+    return base;
   }, [protocol, urlPath, pathParams, queryParams]);
 
-  const finalUrl = buildFinalUrl();
+  const copyToClipboard = useCallback(async () => {
+    const triggerSuccess = () => {
+      setCopied(true);
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+      copyTimeoutRef.current = setTimeout(() => setCopied(false), 2000);
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        await navigator.clipboard.writeText(finalUrl);
+        triggerSuccess();
+        return;
+      } catch (_) {}
+    }
+
+    const textarea = document.createElement("textarea");
+    textarea.value = finalUrl;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand("copy");
+      triggerSuccess();
+    } catch (_) {
+    } finally {
+      document.body.removeChild(textarea);
+    }
+  }, [finalUrl]);
 
   // Theme-aware styles
   const borderColor = w ? "border-gray-200" : "border-zinc-800";
@@ -77,7 +125,7 @@ const UrlBuilderContainer = React.memo(({
 
   return (
     <div className={`rounded-xl ${cardBg} ${borderColor} ${shadow} border overflow-hidden`}>
-      {/* UrlBuilder section – already styled internally */}
+      {/* UrlBuilder section */}
       <UrlBuilder
         protocol={protocol}
         setProtocol={setProtocol}
@@ -86,15 +134,15 @@ const UrlBuilderContainer = React.memo(({
         urlPath={urlPath}
         setUrlPath={handleUrlPathChange}
         finalUrl={finalUrl}
-        copied={false} // pass from parent if needed
-        copyToClipboard={() => {}} // pass from parent
+        copied={copied}
+        copyToClipboard={copyToClipboard}
         mutedTxt={mutedTxt}
         inp={inp}
         miniBtn={miniBtn}
         w={w}
       />
 
-      {/* Path & Query parameters – now in a clean grid with borders */}
+      {/* Path & Query parameters */}
       <div className={`grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x ${borderColor}`}>
         <div className="p-4">
           <PathParamsSection
@@ -108,6 +156,7 @@ const UrlBuilderContainer = React.memo(({
             newPathValue={newPathValue}
             setNewPathValue={setNewPathValue}
             addPathParam={addPathParamHandler}
+            removePathParam={removePathParam}
             labelTxt={labelTxt}
             miniBtn={miniBtn}
             inp={inp}
@@ -138,5 +187,7 @@ const UrlBuilderContainer = React.memo(({
     </div>
   );
 });
+
+UrlBuilderContainer.displayName = "UrlBuilderContainer";
 
 export default UrlBuilderContainer;

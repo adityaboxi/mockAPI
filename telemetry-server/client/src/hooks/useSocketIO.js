@@ -1,13 +1,14 @@
 import { useEffect, useState, useRef } from 'react';
 import io from 'socket.io-client';
 
-export function useSocketIO(serverUrl, enabled, token, onLog, onTrace) {
+export function useSocketIO(serverUrl, enabled, token, onLog, onTrace, onMetrics) {
   const [isConnected, setIsConnected] = useState(false);
   const socketRef = useRef(null);
 
   // ─── Keep latest callbacks in refs ──────────────────────────
   const onLogRef = useRef(onLog);
   const onTraceRef = useRef(onTrace);
+  const onMetricsRef = useRef(onMetrics);
 
   // Update refs when callbacks change (without re‑connecting)
   useEffect(() => {
@@ -17,6 +18,10 @@ export function useSocketIO(serverUrl, enabled, token, onLog, onTrace) {
   useEffect(() => {
     onTraceRef.current = onTrace;
   }, [onTrace]);
+
+  useEffect(() => {
+    onMetricsRef.current = onMetrics;
+  }, [onMetrics]);
 
   // ─── Socket lifecycle ───────────────────────────────────────
   useEffect(() => {
@@ -54,7 +59,11 @@ export function useSocketIO(serverUrl, enabled, token, onLog, onTrace) {
     });
 
     socket.on('log', (logData) => {
-      onLogRef.current(logData);
+      if (onLogRef.current) onLogRef.current(logData);
+    });
+
+    socket.on('metrics', (metricsData) => {
+      if (onMetricsRef.current) onMetricsRef.current(metricsData);
     });
 
     socket.on('trace', (traceData) => {

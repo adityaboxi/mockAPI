@@ -1,4 +1,5 @@
-import React from "react";
+// src/components/maincomponentmemo/Authtokenetc.jsx
+import React, { useCallback } from "react";
 
 const Authtokenetc = ({
   isAuthEnabled = false,
@@ -11,13 +12,20 @@ const Authtokenetc = ({
   setAuthScheme,
   w = false,
   mutedTxt = "text-zinc-500",
-  inp = "bg-zinc-800 text-zinc-200 border-zinc-700",
   labelTxt = "text-zinc-400"
 }) => {
-  const handleNumericChange = (value, setter) => {
+  const handleNumericChange = useCallback((value, setter, max = Infinity) => {
+    if (value === "") {
+      setter?.(0);
+      return;
+    }
     const parsed = parseInt(value, 10);
-    setter(isNaN(parsed) || parsed < 0 ? 0 : parsed);
-  };
+    if (isNaN(parsed) || parsed < 0) {
+      setter?.(0);
+    } else {
+      setter?.(Math.min(parsed, max));
+    }
+  }, []);
 
   const isWhiteTheme = w;
   const borderColor = isWhiteTheme ? "border-gray-200" : "border-zinc-800";
@@ -58,13 +66,14 @@ const Authtokenetc = ({
         <span>{isAuthEnabled ? "Auth Required" : "Public Access"}</span>
       </button>
 
-      {/* Auth scheme selector (only when auth enabled) */}
+      {/* Auth scheme selector */}
       {isAuthEnabled && (
         <div className="flex items-center gap-2 animate-fadeIn">
           <span className={`text-xs font-medium ${labelTxt}`}>Strategy:</span>
           <select
             value={authScheme}
             onChange={(e) => setAuthScheme?.(e.target.value)}
+            aria-label="Authentication Strategy"
             className={`
               text-xs px-2.5 py-1 rounded border outline-none
               font-medium transition-all duration-200
@@ -73,8 +82,12 @@ const Authtokenetc = ({
               cursor-pointer
             `}
           >
-            <option value="BearerAuth">Bearer JWT</option>
-            <option value="ApiKeyAuth">X-API-Key</option>
+            <option value="BearerAuth" className={isWhiteTheme ? "bg-white text-gray-800" : "bg-zinc-900 text-zinc-100"}>
+              Bearer JWT
+            </option>
+            <option value="ApiKeyAuth" className={isWhiteTheme ? "bg-white text-gray-800" : "bg-zinc-900 text-zinc-100"}>
+              X-API-Key
+            </option>
           </select>
         </div>
       )}
@@ -87,9 +100,12 @@ const Authtokenetc = ({
         <span className={`text-xs font-medium ${isWhiteTheme ? "text-gray-600" : "text-zinc-400"}`}>Latency</span>
         <input
           type="number"
+          min="0"
+          max="10000"
           value={latency || ""}
-          onChange={(e) => handleNumericChange(e.target.value, setLatency)}
+          onChange={(e) => handleNumericChange(e.target.value, setLatency, 10000)}
           placeholder="0"
+          aria-label="Simulation Latency (ms)"
           className={`
             w-16 px-2 py-1 pr-7 text-xs rounded border text-right font-mono outline-none
             transition-all duration-200
@@ -97,7 +113,7 @@ const Authtokenetc = ({
             ${focusRing}
           `}
         />
-        <span className="absolute right-2 bottom-1.5 text-[10px] font-medium text-zinc-500 pointer-events-none">ms</span>
+        <span className="absolute right-2 bottom-1.5 text-[10px] font-medium text-zinc-500 pointer-events-none select-none">ms</span>
       </div>
 
       {/* Rate limit input */}
@@ -108,9 +124,11 @@ const Authtokenetc = ({
         <span className={`text-xs font-medium ${isWhiteTheme ? "text-gray-600" : "text-zinc-400"}`}>Rate</span>
         <input
           type="number"
+          min="0"
           value={rateLimit || ""}
           onChange={(e) => handleNumericChange(e.target.value, setRateLimit)}
           placeholder="∞"
+          aria-label="Rate Limit per minute"
           className={`
             w-20 px-2 py-1 pr-9 text-xs rounded border text-right font-mono outline-none
             transition-all duration-200
@@ -118,10 +136,12 @@ const Authtokenetc = ({
             ${focusRing}
           `}
         />
-        <span className="absolute right-2 bottom-1.5 text-[10px] font-medium text-zinc-500 pointer-events-none">req/m</span>
+        <span className="absolute right-2 bottom-1.5 text-[10px] font-medium text-zinc-500 pointer-events-none select-none">req/m</span>
       </div>
     </div>
   );
 };
 
-export default Authtokenetc;
+Authtokenetc.displayName = "Authtokenetc";
+
+export default React.memo(Authtokenetc);

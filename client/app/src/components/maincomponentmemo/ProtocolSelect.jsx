@@ -1,15 +1,20 @@
+// src/components/maincomponentmemo/ProtocolSelect.jsx
 import React from "react";
 
 const ProtocolSelect = React.memo(({ protocol, setProtocol, w }) => {
   const isWhiteTheme = w;
-  
+  const isProduction = import.meta.env.PROD || import.meta.env.MODE === "production";
+  const supportedProtocols = isProduction ? ["https"] : ["http"];
+  const currentProtocol = protocol || (isProduction ? "https" : "http");
+
   return (
     <select
-      value={protocol}
-      onChange={(e) => setProtocol(e.target.value)}
+      value={currentProtocol}
+      onChange={(e) => setProtocol?.(e.target.value)}
+      aria-label="API Protocol Selector"
       className={`
         rounded-lg px-3 py-1.5 text-xs font-semibold tracking-wide outline-none cursor-pointer
-        transition-all duration-200
+        transition-all duration-200 uppercase font-mono
         ${isWhiteTheme
           ? "bg-white border border-gray-300 text-blue-600 hover:border-blue-400"
           : "bg-zinc-800 border border-zinc-700 text-blue-400 hover:border-blue-500/50"
@@ -21,10 +26,19 @@ const ProtocolSelect = React.memo(({ protocol, setProtocol, w }) => {
         bg-[length:12px_12px] bg-[right_10px_center] bg-no-repeat
       `}
     >
-      <option value="http">http</option>
-      <option value="https">https</option>
+      {supportedProtocols.map((p) => (
+        <option
+          key={p}
+          value={p}
+          className={isWhiteTheme ? "bg-white text-gray-800" : "bg-zinc-900 text-zinc-100"}
+        >
+          {p.toUpperCase()}
+        </option>
+      ))}
     </select>
   );
 });
+
+ProtocolSelect.displayName = "ProtocolSelect";
 
 export default ProtocolSelect;

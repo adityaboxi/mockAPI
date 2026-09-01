@@ -21,5 +21,6 @@ RUN npm run build
 
 # ======================== STAGE 2: SERVE ========================
 FROM nginx:alpine
+COPY app/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/build /usr/share/nginx/html
 EXPOSE 80

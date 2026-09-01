@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useState, useCallback, useRef } from 'react';
+// src/context/ApiVersionContext.jsx
+import React, { createContext, useContext, useState, useCallback, useRef, useMemo, useEffect } from 'react';
+import { apiClient } from '../services/apiClient';
 
 /**
  * @typedef {Object} ApiVersionData
@@ -23,7 +25,7 @@ import React, { createContext, useContext, useState, useCallback, useRef } from 
  * @property {boolean} airesponse
  */
 
-const ApiVersionContext = createContext();
+const ApiVersionContext = createContext(null);
 
 export const useApiVersion = () => {
   const context = useContext(ApiVersionContext);
@@ -33,35 +35,39 @@ export const useApiVersion = () => {
   return context;
 };
 
-
 export const ApiVersionProvider = ({ children }) => {
   const [currentVersionData, setCurrentVersionData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Cache for already-loaded versions (projectId + username + baseurlpath + version)
+  // Cache for already-loaded versions
   const cacheRef = useRef(new Map());
   // Track in-flight requests to prevent duplicates
   const pendingRequestsRef = useRef(new Map());
+  // Sequence counter to prevent out-of-order resolution on fast clicks
+  const currentRequestIdRef = useRef(0);
+  const isMountedRef = useRef(true);
 
-  const API_VERSION_DATA_URL = import.meta.env.VITE_API_URL_API_VERSION_DATA;
+  const API_VERSION_DATA_URL = import.meta.env.VITE_API_URL_API_VERSION_DATA || '/api/api-version-data';
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      pendingRequestsRef.current.clear();
+    };
+  }, []);
 
   /**
-   * Generate a cache key from the request parameters
+   * Generate a normalized cache key
    */
   const getCacheKey = useCallback((projectId, username, baseurlpath, version) => {
-    return `${projectId}|${username}|${baseurlpath}|${version}`;
+    const cleanPath = (baseurlpath || '').trim().replace(/^\/+|\/+$/g, '');
+    return `${projectId}|${username}|${cleanPath}|${version}`;
   }, []);
 
   /**
    * Load a specific API version's data
-   * @param {string} projectId - The project ID
-   * @param {string} username - The user's username
-   * @param {string} baseurlpath - The base URL path
-   * @param {string} version - The version string (e.g., "v1")
-   * @param {Object} options - Optional configuration
-   * @param {boolean} options.skipCache - Force a fresh fetch even if cached
-   * @returns {Promise<ApiVersionData|null>} The version data or null on error
    */
   const loadVersion = useCallback(async (
     projectId,
@@ -70,88 +76,91 @@ export const ApiVersionProvider = ({ children }) => {
     version,
     options = { skipCache: false }
   ) => {
-    // Validate required params
     if (!projectId || !username || !baseurlpath || !version) {
       const err = new Error('Missing required parameters: projectId, username, baseurlpath, and version are required');
-      setError(err.message);
+      if (isMountedRef.current) setError(err.message);
       return null;
     }
 
     const cacheKey = getCacheKey(projectId, username, baseurlpath, version);
+    const requestId = ++currentRequestIdRef.current;
 
-    // Return cached data if available and not skipping cache
+    // Return cached data if available
     if (!options.skipCache && cacheRef.current.has(cacheKey)) {
       const cachedData = cacheRef.current.get(cacheKey);
-      setCurrentVersionData(cachedData);
-      setError(null);
+      if (requestId === currentRequestIdRef.current && isMountedRef.current) {
+        setCurrentVersionData(cachedData);
+        setError(null);
+      }
       return cachedData;
     }
 
-    // If there's already a pending request for this exact version, return that promise
+    // In-flight deduplication
     if (pendingRequestsRef.current.has(cacheKey)) {
-      return pendingRequestsRef.current.get(cacheKey);
+      const pendingPromise = pendingRequestsRef.current.get(cacheKey);
+      const data = await pendingPromise;
+      if (requestId === currentRequestIdRef.current && isMountedRef.current && data) {
+        setCurrentVersionData(data);
+      }
+      return data;
     }
 
-    setLoading(true);
-    setError(null);
+    if (isMountedRef.current) {
+      setLoading(true);
+      setError(null);
+    }
 
-    // Create the fetch promise
     const fetchPromise = (async () => {
       try {
-        const response = await fetch(API_VERSION_DATA_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          credentials: 'include',
-          body: JSON.stringify({ projectId, username, baseurlpath, version })
+        const result = await apiClient.post(API_VERSION_DATA_URL, {
+          projectId,
+          username,
+          baseurlpath,
+          version,
         });
 
-        if (!response.ok) {
-          let errorMessage = `Failed to load version: ${response.status} ${response.statusText}`;
-          try {
-            const errorData = await response.json();
-            if (errorData?.error) errorMessage = errorData.error;
-          } catch {
-            // If response isn't JSON, use the status text
-          }
-          throw new Error(errorMessage);
-        }
-
-        const result = await response.json();
-
-        // Validate response structure
         if (!result.data || typeof result.data !== 'object') {
           throw new Error('Invalid response format: missing "data" field');
         }
 
         const versionData = { ...result.data };
-
-        // Cache the result
         cacheRef.current.set(cacheKey, versionData);
 
-        // Update state
-        setCurrentVersionData(versionData);
-        setError(null);
+        if (requestId === currentRequestIdRef.current && isMountedRef.current) {
+          setCurrentVersionData(versionData);
+          setError(null);
+        }
         return versionData;
-
       } catch (err) {
         const errorMessage = err.message || 'Failed to load version data';
-        setError(errorMessage);
+        if (requestId === currentRequestIdRef.current && isMountedRef.current) {
+          setError(errorMessage);
+        }
         return null;
       } finally {
-        setLoading(false);
-        // Clean up pending request reference
+        if (requestId === currentRequestIdRef.current && isMountedRef.current) {
+          setLoading(false);
+        }
         pendingRequestsRef.current.delete(cacheKey);
       }
     })();
 
-    // Store the pending request
     pendingRequestsRef.current.set(cacheKey, fetchPromise);
-
     return fetchPromise;
   }, [API_VERSION_DATA_URL, getCacheKey]);
 
   /**
-   * Clear the currently loaded version data and any associated errors
+   * Update current in-memory version data optimistically
+   */
+  const updateCurrentVersionData = useCallback((updater) => {
+    setCurrentVersionData((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : { ...prev, ...updater };
+      return next;
+    });
+  }, []);
+
+  /**
+   * Clear the currently loaded version data
    */
   const clearVersion = useCallback(() => {
     setCurrentVersionData(null);
@@ -159,7 +168,7 @@ export const ApiVersionProvider = ({ children }) => {
   }, []);
 
   /**
-   * Clear the entire cache (useful after significant changes)
+   * Clear cache
    */
   const clearCache = useCallback(() => {
     cacheRef.current.clear();
@@ -175,17 +184,26 @@ export const ApiVersionProvider = ({ children }) => {
     pendingRequestsRef.current.delete(cacheKey);
   }, [getCacheKey]);
 
-  const value = {
+  const value = useMemo(() => ({
     currentVersionData,
     loadVersion,
+    updateCurrentVersionData,
     clearVersion,
     clearCache,
     invalidateCache,
     loading,
-    error
-  };
+    error,
+  }), [
+    currentVersionData,
+    loadVersion,
+    updateCurrentVersionData,
+    clearVersion,
+    clearCache,
+    invalidateCache,
+    loading,
+    error,
+  ]);
 
-  
   return (
     <ApiVersionContext.Provider value={value}>
       {children}

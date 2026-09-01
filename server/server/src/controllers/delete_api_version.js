@@ -5,6 +5,7 @@ const ProjectApiHistory = require('../models/ProjectApiHistory');
 const SystemEventLog = require('../models/SystemEventLog');
 const { deleteMockDefinition } = require('../utils/redisMock');
 const { addMockSyncJob } = require('../queues/mockSyncQueue');
+const { redisClient } = require('../config/redis');
 
 async function delete_api_version(req, res) {
   const { versionId } = req.params;
@@ -20,21 +21,21 @@ async function delete_api_version(req, res) {
   }
 
   try {
-    // ─── 1. Fetch project ──────────────────────────────────
     const project = await Project.findOne({ id: projectId });
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
     const isCreator = project.username === username;
+    const isMember = project.members && project.members.includes(username);
     const isAdmin = role === 'admin';
-    if (!isCreator && !isAdmin) {
+    if (!isCreator && !isMember && !isAdmin) {
       return res.status(403).json({ error: 'Permission denied' });
     }
 
-    // ─── 2. Fetch project history ──────────────────────────
-    const projectHistory = await ProjectApiHistory.findOne({ projectCode: project.invitationCode });
+    const projectHistory = await ProjectApiHistory.findOne({
+      $or: [{ projectID: project.id }, { projectCode: project.invitationCode }],
+    });
     if (!projectHistory) return res.status(404).json({ error: 'No API history found' });
 
-    // ─── 3. Find the version to delete ────────────────────
     let targetEndpointIndex = -1;
     let targetVersionIndex = -1;
     let deletedVersion = null;
@@ -63,61 +64,79 @@ async function delete_api_version(req, res) {
       return res.status(404).json({ error: 'Version not found' });
     }
 
-    // ─── 4. Remove the version from the endpoint ──────────
     const endpoint = projectHistory.endpoints[targetEndpointIndex];
     endpoint.versions.splice(targetVersionIndex, 1);
+    endpoint.noofVersions = endpoint.versions.length;
 
-    // ─── 5. Update the version count on the endpoint ──────
-    endpoint.noofVersions = endpoint.versions.length; // <-- NEW: keep count accurate
-
-    // ─── 6. If no versions left, remove the endpoint ──────
     let endpointRemoved = false;
     if (endpoint.versions.length === 0) {
       projectHistory.endpoints.splice(targetEndpointIndex, 1);
       endpointRemoved = true;
-      // noofVersions is already 0, but the endpoint is gone
     }
 
-    // ─── 7. Save history ──────────────────────────────────
     await projectHistory.save();
 
-    // ─── 8. If endpoint was removed, decrement project API count ──
     if (endpointRemoved) {
-      project.noofApis = Math.max(0, project.noofApis - 1);
-      await project.save();
+      await Project.updateOne({ id: projectId, noofApis: { $gt: 0 } }, { $inc: { noofApis: -1 } });
     }
 
-    // ─── 9. Clean up Redis and queue ──────────────────────
     const customId = project.id;
-    await deleteMockDefinition(customId, deletedVersion.version, method, endpointBasePath);
-    await addMockSyncJob('delete', {
-      projectId: customId,
-      version: deletedVersion.version,
-      method,
-      urlpath: endpointBasePath,
-    });
-
-    // ─── 10. Log event ─────────────────────────────────────
-    const newLog = await SystemEventLog.create({
-      projectId: project.id,
-      method,
-      url: endpointBasePath,
-      action: 'deleted',
-      version: deletedVersion.version,
-      username,
-      statusCode: 200,
-      createdAt: new Date(),
-    });
-
-    if (req.io) {
-      req.io.to(project.id).emit('new_api_log', newLog.toObject());
+    try {
+      await deleteMockDefinition(customId, deletedVersion.version, method, endpointBasePath);
+    } catch (cacheErr) {
+      console.warn('[delete-api-version] deleteMockDefinition warning:', cacheErr.message);
     }
+
+    try {
+      await addMockSyncJob('delete', {
+        projectId: customId,
+        version: deletedVersion.version,
+        method,
+        urlpath: endpointBasePath,
+      });
+    } catch (queueErr) {
+      console.warn('[delete-api-version] addMockSyncJob warning:', queueErr.message);
+    }
+
+    let newLog = null;
+    try {
+      newLog = await SystemEventLog.create({
+        projectId: project.id,
+        method: (method || 'GET').toUpperCase(),
+        url: endpointBasePath,
+        action: 'deleted',
+        version: deletedVersion.version,
+        username,
+        statusCode: 200,
+        createdAt: new Date(),
+      });
+    } catch (logErr) {
+      console.warn('[delete-api-version] SystemEventLog warning:', logErr.message);
+    }
+
+    if (req.io && newLog) {
+      req.io.to(project.id).emit('new_api_log', newLog.toObject ? newLog.toObject() : newLog);
+      req.io.to(project.id).emit('api_history_update', { projectId: project.id });
+    }
+
+    try {
+      if (redisClient && redisClient.isOpen) {
+        const keys = await redisClient.keys(`api_history:${project.id}:*`);
+        if (keys && keys.length > 0) {
+          await redisClient.del(keys);
+        }
+        const userApiKeys = await redisClient.keys(`user_apis:*`);
+        if (userApiKeys && userApiKeys.length > 0) {
+          await redisClient.del(userApiKeys);
+        }
+        await redisClient.publish('api_history_update', JSON.stringify({ projectId: project.id }));
+      }
+    } catch (_) {}
 
     return res.status(200).json({ success: true, message: 'Version deleted successfully' });
-
   } catch (error) {
-    console.error('[delete-api-version] Error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+    console.error('[delete-api-version] Error:', error.message);
+    return res.status(500).json({ error: error.message || 'Internal server error' });
   }
 }
 

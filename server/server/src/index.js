@@ -141,9 +141,10 @@ const startServer = async () => {
   console.log('[Server] ✅ Redis connected');
 
   // -------------- Redis adapter for Socket.IO ----------
+  const redisUrl = process.env.REDIS_URL || 'redis://redis-external:6379';
   try {
     console.log('[Socket] Setting up Redis adapter...');
-    pubClient = createClient({ url: process.env.REDIS_URL });
+    pubClient = createClient({ url: redisUrl });
     subClient = pubClient.duplicate();
     await Promise.all([pubClient.connect(), subClient.connect()]);
     io.adapter(createAdapter(pubClient, subClient));
@@ -154,83 +155,130 @@ const startServer = async () => {
 
   // ---------- Redis Pub/Sub listener for AI events ----------
   console.log('[Redis] Setting up AI Pub/Sub listener...');
-  aiSubscriber = mainRedisClient.duplicate();
-  await aiSubscriber.connect();
+  try {
+    aiSubscriber = mainRedisClient.duplicate();
+    await aiSubscriber.connect();
 
-  const AI_CHANNELS = ['ws:ai:chunk', 'ws:ai:response', 'ws:ai:error'];
-  aiSubscriber.subscribe(AI_CHANNELS, (message, channel) => {
-    try {
-      const data = JSON.parse(message);
-      const { userId, jobId, ...payload } = data;
-      if (!userId) {
-        console.warn('[AI Pub/Sub] Missing userId in message:', data);
-        return;
+    const AI_CHANNELS = ['ws:ai:chunk', 'ws:ai:response', 'ws:ai:error'];
+    aiSubscriber.subscribe(AI_CHANNELS, (message, channel) => {
+      try {
+        const data = JSON.parse(message);
+        const { userId, jobId, ...payload } = data;
+        if (!userId) {
+          return;
+        }
+        const eventName = channel.replace('ws:ai:', '');
+        io.to(`user:${userId}`).emit(`ai:${eventName}`, { jobId, ...payload });
+      } catch (err) {
+        console.error('[AI Pub/Sub] Failed to parse message:', err.message);
       }
-      const eventName = channel.replace('ws:ai:', '');
-      console.log(`[AI Pub/Sub] Emitting ai:${eventName} to user:${userId}`);
-      io.to(`user:${userId}`).emit(`ai:${eventName}`, { jobId, ...payload });
-    } catch (err) {
-      console.error('[AI Pub/Sub] Failed to parse message:', err);
-    }
-  });
-  aiSubscriber.on('error', (err) => console.error('[AI Pub/Sub] Redis error:', err));
-  console.log('[Redis] ✅ AI Pub/Sub listener started');
+    });
+    aiSubscriber.on('error', (err) => console.error('[AI Pub/Sub] Redis error:', err.message));
+    console.log('[Redis] ✅ AI Pub/Sub listener started');
+  } catch (err) {
+    console.error('[Redis] AI Pub/Sub listener failed to connect:', err.message);
+  }
 
   // ---------- Redis Pub/Sub listener for new API logs ----------
   console.log('[Redis] Setting up log Pub/Sub listener...');
-  logSubscriber = mainRedisClient.duplicate();
-  await logSubscriber.connect();
+  try {
+    logSubscriber = mainRedisClient.duplicate();
+    await logSubscriber.connect();
 
-  logSubscriber.subscribe('ws:new_api_log', (message) => {
-    try {
-      const logData = JSON.parse(message);
-      console.log('[Redis] 📨 Received new_api_log:', logData);
-      io.emit('new_api_log', logData);
-    } catch (err) {
-      console.error('[Log Pub/Sub] Failed to parse log message:', err);
-    }
-  });
-  logSubscriber.on('error', (err) => console.error('[Log Pub/Sub] Redis error:', err));
-  console.log('[Redis] ✅ Log Pub/Sub listener started');
+    logSubscriber.subscribe('ws:new_api_log', (message) => {
+      try {
+        const logData = JSON.parse(message);
+        const targetProjectId = logData.projectId || logData.project_id;
+        if (targetProjectId) {
+          io.to(targetProjectId).emit('new_api_log', logData);
+        } else {
+          io.emit('new_api_log', logData);
+        }
+
+        // Invalidate cached latency-stats for this project so fresh data is immediately available
+        if (targetProjectId && mainRedisClient && mainRedisClient.isOpen) {
+          const pattern = `latStats:${targetProjectId}:*`;
+          mainRedisClient.keys(pattern).then((keys) => {
+            if (keys && keys.length > 0) {
+              mainRedisClient.del(keys).catch(() => {});
+            }
+          }).catch(() => {});
+        }
+      } catch (err) {
+        console.error('[Log Pub/Sub] Failed to parse log message:', err.message);
+      }
+    });
+    logSubscriber.on('error', (err) => console.error('[Log Pub/Sub] Redis error:', err.message));
+    console.log('[Redis] ✅ Log Pub/Sub listener started');
+  } catch (err) {
+    console.error('[Redis] Log Pub/Sub listener failed to connect:', err.message);
+  }
 
   // ---------- Redis Pub/Sub listener for API history updates ----------
   console.log('[Redis] Setting up API history Pub/Sub listener...');
-  historySubscriber = mainRedisClient.duplicate();
-  await historySubscriber.connect();
+  try {
+    historySubscriber = mainRedisClient.duplicate();
+    await historySubscriber.connect();
 
-  historySubscriber.subscribe('api_history_update', (message) => {
-    try {
-      const { projectId } = JSON.parse(message);
-      console.log(`[Redis] 📨 API history update for project ${projectId}`);
-      io.to(projectId).emit('api_history_update', { projectId });
-    } catch (err) {
-      console.error('[History Pub/Sub] Failed to parse message:', err);
-    }
-  });
-  historySubscriber.on('error', (err) => console.error('[History Pub/Sub] Redis error:', err));
-  console.log('[Redis] ✅ API history Pub/Sub listener started');
+    historySubscriber.subscribe('api_history_update', (message) => {
+      try {
+        const { projectId } = JSON.parse(message);
+        if (projectId) {
+          io.to(projectId).emit('api_history_update', { projectId });
+        }
+      } catch (err) {
+        console.error('[History Pub/Sub] Failed to parse message:', err.message);
+      }
+    });
+    historySubscriber.on('error', (err) => console.error('[History Pub/Sub] Redis error:', err.message));
+    console.log('[Redis] ✅ API history Pub/Sub listener started');
+  } catch (err) {
+    console.error('[Redis] History Pub/Sub listener failed to connect:', err.message);
+  }
 
   // ---------- BullMQ queues ----------
   console.log('[Queue] Initializing BullMQ queues...');
-  const queueConnection = { connection: { url: process.env.REDIS_URL } };
+  const queueConnection = {
+    connection: {
+      url: redisUrl,
+      maxRetriesPerRequest: null,
+      enableReadyCheck: false,
+    },
+  };
 
   latencyQueue = new Queue('bullmq-latency-store', queueConnection);
-  projectQueue = new Queue('projectQueue', queueConnection);
-  mockSyncQueue = new Queue('mockSyncQueue', queueConnection);
-  openapiImportQueue = new Queue('openapi-import', queueConnection);
+  projectQueue = require('./queues/projectQueue');
+  mockSyncQueue = require('./queues/mockSyncQueue');
+  openapiImportQueue = require('./queues/importQueue');
 
-  console.log('[Queue] ✅ Queues initialized: latency-store, projectQueue, mockSyncQueue, openapi-import');
+  console.log('[Queue] ✅ Queues initialized');
 
   // Load email worker
   require('./queues/emailQueue');
   console.log('[Queue] ✅ Email worker loaded');
 
   // ---------- CORS ---------------
+  const envOrigins = process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()) : [];
+  const allowedOrigins = [
+    process.env.CLIENT_URL,
+    ...envOrigins,
+    'http://localhost:8082',
+    'http://localhost:5173',
+    'http://localhost:8081',
+    'http://localhost:3000',
+  ].filter(Boolean);
+
   app.use(cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:8082',
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV !== 'production') {
+        callback(null, true);
+      } else {
+        callback(null, true);
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie']
+    allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'X-Requested-With', 'Accept', 'x-guest-token', 'x-auth-token'],
   }));
 
   app.use(express.json());
@@ -267,11 +315,14 @@ const startServer = async () => {
     ignoredMethods: ['GET', 'HEAD', 'OPTIONS'],
   });
   app.use((req, res, next) => {
-    if (req.path.startsWith('/api/')) return next();
+    if (req.path.startsWith('/api/') || req.path === '/health') return next();
     doubleCsrfProtection(req, res, next);
   });
   app.get('/api/csrf-token', (req, res) => {
     res.json({ csrfToken: generateToken(req, res) });
+  });
+  app.get(['/health', '/api/health'], (req, res) => {
+    res.status(200).json({ status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
   });
 
   // ================================================================
@@ -497,13 +548,15 @@ const startServer = async () => {
     console.log(`[API] GET /api/dashboard-data (user: ${username})`);
     try {
       const cacheKey = `dashboard:${username}`;
-      if (mainRedisClient) {
-        const cached = await mainRedisClient.get(cacheKey);
-        if (cached) {
-          console.log(`[Redis] Cache hit for ${cacheKey}`);
-          return res.json(JSON.parse(cached));
-        }
-        console.log(`[Redis] Cache miss for ${cacheKey}`);
+      if (mainRedisClient && mainRedisClient.isOpen) {
+        try {
+          const cached = await mainRedisClient.get(cacheKey);
+          if (cached) {
+            console.log(`[Redis] Cache hit for ${cacheKey}`);
+            return res.json(JSON.parse(cached));
+          }
+          console.log(`[Redis] Cache miss for ${cacheKey}`);
+        } catch (_) {}
       }
 
       console.log(`[DB] Fetching projects for user ${username}`);
@@ -531,21 +584,28 @@ const startServer = async () => {
 
       const rttKeys = projectIds.map(id => `latency:${id}:${username}`);
       const networkRttMap = new Map();
-      if (mainRedisClient) {
-        console.log(`[Redis] Fetching RTT for keys: ${rttKeys.join(', ')}`);
-        const pipeline = mainRedisClient.multi();
-        rttKeys.forEach(key => pipeline.get(key));
-        const rttResults = await pipeline.exec();
-        projectIds.forEach((id, idx) => {
-          const val = rttResults[idx]?.[1];
-          if (val) {
-            networkRttMap.set(id, parseInt(val, 10));
-            console.log(`[Redis] RTT for ${id}: ${val}ms`);
-          }
-        });
+      if (mainRedisClient && mainRedisClient.isOpen) {
+        try {
+          console.log(`[Redis] Fetching RTT for keys: ${rttKeys.join(', ')}`);
+          const pipeline = mainRedisClient.multi();
+          rttKeys.forEach(key => pipeline.get(key));
+          const rttResults = await pipeline.exec();
+          projectIds.forEach((id, idx) => {
+            const val = rttResults[idx]?.[1];
+            if (val) {
+              networkRttMap.set(id, parseInt(val, 10));
+              console.log(`[Redis] RTT for ${id}: ${val}ms`);
+            }
+          });
+        } catch (_) {}
       }
 
-      const latStatsMap = await aggregateAllLatencies(projectIds);
+      let latStatsMap = new Map();
+      try {
+        latStatsMap = await aggregateAllLatencies(projectIds);
+      } catch (aggErr) {
+        console.warn('[dashboard-data] aggregateAllLatencies warning:', aggErr.message);
+      }
 
       const enriched = projects.map(project => {
         const rttDoc = latencyMap.get(project.id);
@@ -556,7 +616,7 @@ const startServer = async () => {
         const endpoints = history ? history.endpoints : [];
 
         const apisWithLatency = endpoints.map(endpoint => {
-          const versionsWithLatency = endpoint.versions.map(ver => {
+          const versionsWithLatency = (endpoint.versions || []).map(ver => {
             const key = `${project.id}::${ver.urlPath}::${ver.method}`;
             const serverLatency = latStatsMap.get(key) || 0;
             const totalLatency = userRtt !== null ? serverLatency + userRtt : serverLatency;
@@ -568,7 +628,7 @@ const startServer = async () => {
             };
           });
 
-          const primaryVer = endpoint.versions[0] || {};
+          const primaryVer = (endpoint.versions && endpoint.versions[0]) || {};
           return {
             id: endpoint._id,
             path: endpoint.baseUrlPath,
@@ -586,14 +646,16 @@ const startServer = async () => {
       });
 
       const response = { projects: enriched };
-      if (mainRedisClient) {
-        await mainRedisClient.setEx(cacheKey, 15, JSON.stringify(response));
-        console.log(`[Redis] Cached dashboard data for ${cacheKey}`);
+      if (mainRedisClient && mainRedisClient.isOpen) {
+        try {
+          await mainRedisClient.setEx(cacheKey, 15, JSON.stringify(response));
+          console.log(`[Redis] Cached dashboard data for ${cacheKey}`);
+        } catch (_) {}
       }
       res.json(response);
     } catch (err) {
       console.error('[API] Error in dashboard-data:', err);
-      res.status(500).json({ error: 'Failed to load dashboard data' });
+      res.status(500).json({ error: err.message || 'Failed to load dashboard data' });
     }
   });
 
@@ -613,13 +675,15 @@ const startServer = async () => {
       console.log(`[API] Fetching stats since ${since.toISOString()}`);
 
       const cacheKey = `latStats:${project_id}:${path}:${method}:${range}`;
-      if (mainRedisClient) {
-        const cached = await mainRedisClient.get(cacheKey);
-        if (cached) {
-          console.log(`[Redis] Cache hit for ${cacheKey}`);
-          return res.json(JSON.parse(cached));
-        }
-        console.log(`[Redis] Cache miss for ${cacheKey}`);
+      if (mainRedisClient && mainRedisClient.isOpen) {
+        try {
+          const cached = await mainRedisClient.get(cacheKey);
+          if (cached) {
+            console.log(`[Redis] Cache hit for ${cacheKey}`);
+            return res.json(JSON.parse(cached));
+          }
+          console.log(`[Redis] Cache miss for ${cacheKey}`);
+        } catch (_) {}
       }
 
       const pipeline = [
@@ -661,14 +725,34 @@ const startServer = async () => {
       console.log(`[DB] Got ${points.length} data points`);
       const response = { points };
 
-      if (mainRedisClient) {
-        await mainRedisClient.setEx(cacheKey, 30, JSON.stringify(response));
-        console.log(`[Redis] Cached latency stats for ${cacheKey}`);
+      if (mainRedisClient && mainRedisClient.isOpen) {
+        try {
+          await mainRedisClient.setEx(cacheKey, 30, JSON.stringify(response));
+          console.log(`[Redis] Cached latency stats for ${cacheKey}`);
+        } catch (_) {}
       }
       res.json(response);
     } catch (err) {
       console.error('[API] Error in latency-stats:', err);
-      res.status(500).json({ error: 'Failed to fetch latency stats' });
+      res.status(500).json({ error: err.message || 'Failed to fetch latency stats' });
+    }
+  });
+
+  // ---- RECENT API CALL LOGS (Real-Time Live Telemetry) ----
+  app.get('/api/recent-logs', authenticateToken, async (req, res) => {
+    const { project_id } = req.query;
+    try {
+      if (!project_id) {
+        return res.status(400).json({ error: 'Missing project_id' });
+      }
+      const logs = await ApiCallLog.find({ project_id })
+        .sort({ timestamp: -1 })
+        .limit(30)
+        .lean();
+      return res.json({ logs: logs || [] });
+    } catch (err) {
+      console.error('[API] Error in recent-logs:', err);
+      return res.status(500).json({ error: err.message || 'Failed to fetch recent logs' });
     }
   });
 

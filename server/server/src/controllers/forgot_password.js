@@ -1,6 +1,8 @@
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 const User = require('../models/User');
 const { sendOTPEmail } = require('../services/emailService');
-const { redisClient } = require('../config/redis');
+const { connectRedis } = require('../config/redis');
 const crypto = require('crypto');
 
 module.exports = async (req, res) => {
@@ -17,38 +19,34 @@ module.exports = async (req, res) => {
 
     const user = await User.findOne({
       $or: [
-        { username: trimmedId },
-        { email: trimmedId.toLowerCase() }
-      ]
-    });
+        { username: trimmedId.toLowerCase() },
+        { email: trimmedId.toLowerCase() },
+      ],
+    }).lean();
 
-    // Generic response (no user enumeration)
     if (!user) {
       return res.status(200).json({
-        message: 'If an account with that username or email exists, an OTP has been sent.'
+        message: 'If an account with that username or email exists, an OTP has been sent.',
       });
     }
 
     const otp = crypto.randomInt(100000, 999999).toString();
-
-    // Store OTP in Redis with TTL from env (default 600s)
     const ttl = parseInt(process.env.OTP_VALIDATION_TIME, 10) || 600;
     const key = `reset:otp:${user._id.toString()}`;
-    await redisClient.set(key, otp, { EX: ttl });
+
+    const client = await connectRedis();
+    await client.setEx(key, ttl, otp);
 
     const result = await sendOTPEmail(user.email, otp, user.username);
-
     if (!result.success) {
       console.error('[Forgot Password] Email send failed:', result.error);
-      // Still generic
     }
 
-    res.status(200).json({
-      message: 'If an account with that username or email exists, an OTP has been sent.'
+    return res.status(200).json({
+      message: 'If an account with that username or email exists, an OTP has been sent.',
     });
-
   } catch (error) {
-    console.error('[Forgot Password] Error:', error);
-    res.status(500).json({ error: 'Failed to send OTP. Please try again later.' });
+    console.error('[Forgot Password] Error:', error.message);
+    return res.status(500).json({ error: 'Failed to send OTP. Please try again later.' });
   }
 };

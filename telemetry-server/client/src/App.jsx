@@ -11,14 +11,45 @@ import './styles/index.css';
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3003';
 const WS_URL = import.meta.env.VITE_WS_URL || 'http://localhost:3003';
 
+function isValidJwt(token) {
+  if (!token || typeof token !== 'string') return false;
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return false;
+    const payload = JSON.parse(atob(parts[1]));
+    if (payload.exp && payload.exp * 1000 < Date.now()) {
+      return false; // Expired
+    }
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 function App() {
-  const [isAuth, setIsAuth] = useState(false);
+  const [jwtToken, setJwtToken] = useState(() => {
+    try {
+      const saved = localStorage.getItem('telemetry_jwt_token');
+      return isValidJwt(saved) ? saved : null;
+    } catch (_) {
+      return null;
+    }
+  });
+
+  const [isAuth, setIsAuth] = useState(() => {
+    try {
+      const saved = localStorage.getItem('telemetry_jwt_token');
+      return isValidJwt(saved);
+    } catch (_) {
+      return false;
+    }
+  });
+
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loginError, setLoginError] = useState('');
-  const [jwtToken, setJwtToken] = useState(null);
 
-  const { logs, addLog, getLogsForNode, errorLogsForNode, completedLogsForNode, stats } = useLogs();
+  const { logs, metricsMap, addLog, updateMetrics, getMetricsForNode, getLogsForNode, errorLogsForNode, completedLogsForNode, stats } = useLogs();
   const { nodes, edges } = useNetwork(logs);
   const [selectedNode, setSelectedNode] = useState(null);
   const [edgeHoverLogs, setEdgeHoverLogs] = useState([]);
@@ -29,34 +60,64 @@ function App() {
     isAuth,
     jwtToken,
     (log) => addLog(log),
-    (trace) => console.log('Trace received', trace)
+    (trace) => console.log('Trace received', trace),
+    (metrics) => updateMetrics(metrics)
   );
 
-  // ─── Fetch initial logs after auth ──────────────────────────
+  // ─── Fetch initial logs and metrics after auth ──────────────────────────
   useEffect(() => {
-    if (!isAuth) return;
+    if (!isAuth || !jwtToken) return;
+    const authHeaders = { 'Authorization': `Bearer ${jwtToken}` };
+
     fetch(`${API_BASE}/logs?limit=100`, {
-      credentials: 'include',
-      ...(jwtToken && { headers: { 'Authorization': `Bearer ${jwtToken}` } }),
+      headers: authHeaders,
     })
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
+      .then((res) => res.ok ? res.json() : { logs: [] })
       .then((data) => {
         if (data.logs) data.logs.forEach((log) => addLog(log));
       })
       .catch((err) => console.error('[App] Failed to load logs:', err));
-  }, [isAuth, jwtToken]);
 
-  // ─── Check auth status on load ──────────────────────────────
-  useEffect(() => {
-    fetch(`${API_BASE}/check-auth`, { credentials: 'include' })
-      .then((res) => res.json())
+    fetch(`${API_BASE}/metrics`, {
+      headers: authHeaders,
+    })
+      .then((res) => res.ok ? res.json() : { metrics: [] })
       .then((data) => {
-        setIsAuth(data.authenticated);
+        if (data.metrics) updateMetrics(data.metrics);
       })
-      .catch(() => setIsAuth(false));
+      .catch((err) => console.error('[App] Failed to load metrics:', err));
+  }, [isAuth, jwtToken, addLog, updateMetrics]);
+
+  // ─── Validate JWT Token on Load / Refresh ────────────────────
+  useEffect(() => {
+    const saved = localStorage.getItem('telemetry_jwt_token');
+    if (!saved || !isValidJwt(saved)) {
+      setIsAuth(false);
+      setJwtToken(null);
+      return;
+    }
+
+    fetch(`${API_BASE}/check-auth`, {
+      headers: { 'Authorization': `Bearer ${saved}` },
+    })
+      .then((res) => {
+        if (res.status === 401) {
+          // Token rejected by server
+          localStorage.removeItem('telemetry_jwt_token');
+          setIsAuth(false);
+          setJwtToken(null);
+        } else if (res.ok) {
+          setIsAuth(true);
+          setJwtToken(saved);
+        }
+      })
+      .catch(() => {
+        // Network offline / momentary hiccup: trust valid local JWT
+        if (isValidJwt(saved)) {
+          setIsAuth(true);
+          setJwtToken(saved);
+        }
+      });
   }, []);
 
   // ─── Login handler ──────────────────────────────────────────
@@ -67,26 +128,33 @@ function App() {
       const res = await fetch(`${API_BASE}/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
         body: JSON.stringify({ username, password }),
       });
       if (res.ok) {
         const data = await res.json();
-        if (data.token) setJwtToken(data.token);
-        setIsAuth(true);
-        setUsername('');
-        setPassword('');
+        if (data.token) {
+          try {
+            localStorage.setItem('telemetry_jwt_token', data.token);
+          } catch (_) {}
+          setJwtToken(data.token);
+          setIsAuth(true);
+          setUsername('');
+          setPassword('');
+        }
       } else {
         const err = await res.json();
         setLoginError(err.error || 'Login failed');
       }
     } catch {
-      setLoginError('Network error');
+      setLoginError('Network error connecting to telemetry server');
     }
   };
 
   const handleLogout = async () => {
-    await fetch(`${API_BASE}/logout`, { method: 'POST', credentials: 'include' });
+    try {
+      localStorage.removeItem('telemetry_jwt_token');
+    } catch (_) {}
+    await fetch(`${API_BASE}/logout`, { method: 'POST' }).catch(() => {});
     setIsAuth(false);
     setJwtToken(null);
     setSelectedNode(null);
@@ -175,6 +243,7 @@ function App() {
               nodes={nodes}
               edges={edges}
               logs={logs}
+              metricsMap={metricsMap}
               onNodeClick={handleNodeClick}
               onEdgeHover={handleEdgeHover}
             />
@@ -183,6 +252,7 @@ function App() {
             {selectedNode ? (
               <NodeDetails
                 nodeId={selectedNode}
+                metrics={getMetricsForNode(selectedNode)}
                 logs={getLogsForNode(selectedNode)}
                 errorLogs={errorLogsForNode(selectedNode)}
                 completedLogs={completedLogsForNode(selectedNode)}
@@ -204,3 +274,4 @@ function App() {
 }
 
 export default App;
+

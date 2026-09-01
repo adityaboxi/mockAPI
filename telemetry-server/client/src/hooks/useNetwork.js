@@ -2,16 +2,16 @@ import { useState, useEffect, useCallback } from 'react';
 import { DataSet } from 'vis-data';
 import { NODE_DEFS, FIXED_EDGES } from './diagramData';
 
-const DYNAMIC_EDGES_FROM_OPENRESTY = { from: 'openresty-nginx', label: 'proxy' };
+const DYNAMIC_EDGES_FROM_OPENRESTY = { from: 'openresty-nginx uses lua', label: 'proxy', color: '#26c6da' };
 const DYNAMIC_EDGES_TO_BACKEND = [
-  { to: 'internal-redis', dashes: true },
-  { to: 'mongodb-atlas', dashes: false },
+  { to: 'internal redis', label: 'lookup', dashes: true, color: '#ef5350' },
+  { to: 'mongodb atlas', label: 'data', dashes: false, color: '#4caf50' },
 ];
 
 let dynamicNodeCount = 0;
-const DYNAMIC_START_X = 600;   // placed to the right of Redis nodes
+const DYNAMIC_START_X = 380;
 const DYNAMIC_START_Y = 200;
-const DYNAMIC_Y_STEP = 40;
+const DYNAMIC_Y_STEP = 60;
 
 export function useNetwork(logs) {
   // ─── Static nodes ──────────────────────────────────────────────
@@ -22,10 +22,17 @@ export function useNetwork(logs) {
         id,
         label: def.label,
         shape: 'box',
-        font: { color: '#cdd6f4', size: 12, face: 'monospace' },
+        font: { color: '#cdd6f4', size: 11, face: 'monospace' },
         margin: 10,
-        borderWidth: 1,
-        color: { background: def.color, border: '#6c7086' },
+        borderWidth: 1.5,
+        color: {
+          background: '#181825',
+          border: def.color || '#6c7086',
+          highlight: {
+            background: '#1e1e2e',
+            border: '#89b4fa',
+          },
+        },
         x: def.x,
         y: def.y,
         fixed: true,
@@ -42,43 +49,51 @@ export function useNetwork(logs) {
         id: `fixed-edge-${index}`,
         ...def,
         arrows: 'to',
-        smooth: false,
-        width: 1,
-        color: { color: '#6c7086', highlight: '#89b4fa' },
+        smooth: {
+          type: 'cubicBezier',
+          forceDirection: 'none',
+          roundness: 0.15,
+        },
+        width: 1.2,
+        color: { color: def.color || '#6c7086', highlight: '#89b4fa' },
       });
     });
     return ds;
   });
 
-  // ─── Dynamically add new containers and edges ──────────────────
+  // ─── Dynamically add new runtime project containers ────────────
   useEffect(() => {
-    // Find containers that are not static and not yet added
     const existingNodeIds = new Set(nodes.getIds());
 
     logs.forEach((log) => {
       const container = log.container;
       if (!container) return;
-      if (NODE_DEFS[container]) return;          // static – skip
-      if (existingNodeIds.has(container)) return; // already added
+      if (NODE_DEFS[container]) return;
+      if (existingNodeIds.has(container)) return;
 
-      // ── Add node ──
       const yPos = DYNAMIC_START_Y + dynamicNodeCount * DYNAMIC_Y_STEP;
       dynamicNodeCount++;
 
       nodes.add({
         id: container,
-        label: container,
+        label: `📦 ${container}`,
         shape: 'box',
-        font: { color: '#cdd6f4', size: 12, face: 'monospace' },
+        font: { color: '#cdd6f4', size: 11, face: 'monospace' },
         margin: 10,
-        borderWidth: 1,
-        color: { background: '#181825', border: '#89b4fa' },
+        borderWidth: 1.5,
+        color: {
+          background: '#181825',
+          border: '#81c784',
+          highlight: {
+            background: '#1e1e2e',
+            border: '#89b4fa',
+          },
+        },
         x: DYNAMIC_START_X,
         y: yPos,
         fixed: true,
       });
 
-      // ── Edge from openresty to container ──
       const edgeOpenId = `dyn-edge-openresty-${container}`;
       if (!edges.get(edgeOpenId)) {
         edges.add({
@@ -86,16 +101,15 @@ export function useNetwork(logs) {
           from: DYNAMIC_EDGES_FROM_OPENRESTY.from,
           to: container,
           arrows: 'to',
-          smooth: false,
-          width: 1,
-          color: { color: '#89b4fa' },
+          smooth: { type: 'cubicBezier', roundness: 0.15 },
+          width: 1.2,
+          color: { color: DYNAMIC_EDGES_FROM_OPENRESTY.color },
           label: DYNAMIC_EDGES_FROM_OPENRESTY.label,
         });
       }
 
-      // ── Edges from container to backends ──
-      DYNAMIC_EDGES_TO_BACKEND.forEach(({ to, dashes }) => {
-        if (nodes.get(to)) {   // only if the target node exists
+      DYNAMIC_EDGES_TO_BACKEND.forEach(({ to, label, dashes, color }) => {
+        if (nodes.get(to)) {
           const edgeBackId = `dyn-edge-${container}-${to}`;
           if (!edges.get(edgeBackId)) {
             edges.add({
@@ -104,34 +118,45 @@ export function useNetwork(logs) {
               to,
               dashes: dashes || false,
               arrows: 'to',
-              smooth: false,
-              width: 1,
-              color: { color: '#6c7086' },
-              label: to === 'mongodb-atlas' ? 'store' : 'session',
+              smooth: { type: 'cubicBezier', roundness: 0.15 },
+              width: 1.2,
+              color: { color: color || '#6c7086' },
+              label: label || '',
             });
           }
         }
       });
 
-      // Remember that we've added this container
       existingNodeIds.add(container);
     });
   }, [logs, nodes, edges]);
 
-  // ─── Update node borders based on recent logs ──────────────────
+  // ─── Update node health borders based on recent telemetry ──────
   const updateNodeStatus = useCallback(() => {
-    const recent = logs.slice(0, 30);
+    const recent = logs.slice(0, 50);
     nodes.forEach((node) => {
       const id = node.id;
       const nodeLogs = recent.filter((l) => l.container === id);
       const hasError = nodeLogs.some((l) => l.level === 'ERROR' || l.level === 'FATAL');
       const hasWarn = nodeLogs.some((l) => l.level === 'WARN');
 
-      let border = '#6c7086';
+      const originalColor = NODE_DEFS[id]?.color || '#81c784';
+      let border = originalColor;
+
       if (hasError) border = '#f38ba8';
       else if (hasWarn) border = '#f9e2af';
 
-      nodes.update({ id, color: { border, background: '#181825' } });
+      nodes.update({
+        id,
+        color: {
+          border,
+          background: '#181825',
+          highlight: {
+            border: '#89b4fa',
+            background: '#1e1e2e',
+          },
+        },
+      });
     });
   }, [nodes, logs]);
 

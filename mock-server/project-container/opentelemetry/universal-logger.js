@@ -1,90 +1,94 @@
-
 const os = require('os');
 
 // ---------- 1. CONFIGURATION ----------
 const LOG_SERVER_URL =
   process.env.LOG_SERVER_URL || 'http://telemetry-server:3003/v1/logs';
 
-const CONTAINER_NAME = process.env.CONTAINER_NAME || os.hostname() || 'unknown';
+const CONTAINER_NAME = process.env.CONTAINER_NAME || process.env.PROJECT_ID || os.hostname() || 'unknown';
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 // ---------- 2. BOUNDED BATCH BUFFER SETTINGS ----------
-const MAX_QUEUE_SIZE = 1000;      // Max logs in memory (~200 KB). Prevents OOM.
-const BATCH_INTERVAL = 3000;      // Flush every 3 seconds.
-
+const MAX_QUEUE_SIZE = 1000;      // Max logs in memory (~250 KB). Prevents OOM.
+const BATCH_INTERVAL = 2000;      // Flush every 2 seconds.
 
 let logQueue = [];
 let flushTimer = null;
+let isLogging = false;            // Recursion & re-entrancy guard
 
-// ---------- 3. FLUSH FUNCTION (Sends batch to server) ----------
+// ---------- 3. FLUSH FUNCTION (Sends batch with timeout) ----------
 function flushLogs() {
   if (logQueue.length === 0) return;
 
-  // Take a copy of the queue and clear it immediately
   const batch = logQueue.slice();
   logQueue = [];
 
-  // Send the batch in ONE HTTP request
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 2000);
+
   fetch(LOG_SERVER_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(batch), // Sends an ARRAY of logs
-  }).catch(() => {
-    // Silently drop logs if the server is down.
-    // We don't retry because retries could flood the network.
-  });
+    body: JSON.stringify(batch),
+    signal: controller.signal,
+  })
+    .catch(() => {
+      // Silently drop on server disconnect to prevent network storms
+    })
+    .finally(() => {
+      clearTimeout(timeoutId);
+    });
 }
 
-// ---------- 4. START THE TIMER ----------
+// ---------- 4. START FLUSH TIMER ----------
 flushTimer = setInterval(flushLogs, BATCH_INTERVAL);
 
 // ---------- 5. CORE sendLog FUNCTION ----------
 function sendLog(levelOrObject, messageOrExtra, extraData) {
-  let logEntry;
+  if (isLogging) return;
+  isLogging = true;
 
-  // ----- Flexible argument handling -----
-  if (typeof levelOrObject === 'object' && levelOrObject !== null) {
-    logEntry = { time: Date.now(), container: CONTAINER_NAME, ...levelOrObject };
-  } else if (typeof levelOrObject === 'string' && typeof messageOrExtra === 'string') {
-    logEntry = {
-      time: Date.now(),
-      container: CONTAINER_NAME,
-      level: levelOrObject,
-      message: messageOrExtra,
-      ...extraData,
-    };
-  } else {
-    logEntry = {
-      time: Date.now(),
-      container: CONTAINER_NAME,
-      level: 'INFO',
-      message: String(levelOrObject),
-      ...(typeof messageOrExtra === 'object' ? messageOrExtra : {}),
-    };
-  }
+  try {
+    let logEntry;
+    const now = Date.now();
 
-  if (!logEntry.container) logEntry.container = CONTAINER_NAME;
-  if (!logEntry.time) logEntry.time = Date.now();
+    if (typeof levelOrObject === 'object' && levelOrObject !== null) {
+      logEntry = { timestamp: now, container: CONTAINER_NAME, ...levelOrObject };
+    } else if (typeof levelOrObject === 'string' && typeof messageOrExtra === 'string') {
+      logEntry = {
+        timestamp: now,
+        container: CONTAINER_NAME,
+        level: levelOrObject.toUpperCase(),
+        message: messageOrExtra,
+        ...(extraData && typeof extraData === 'object' ? extraData : {}),
+      };
+    } else {
+      logEntry = {
+        timestamp: now,
+        container: CONTAINER_NAME,
+        level: 'INFO',
+        message: String(levelOrObject),
+        ...(typeof messageOrExtra === 'object' && messageOrExtra !== null ? messageOrExtra : {}),
+      };
+    }
 
-  // ---------- 6. BOUNDED QUEUE LOGIC (Memory Safety) ----------
-  // If the queue is FULL, drop the OLDEST log (FIFO) to make room.
-  // This prevents memory from growing forever during traffic spikes.
-  if (logQueue.length >= MAX_QUEUE_SIZE) {
-    logQueue.shift(); // Remove oldest
-  }
+    if (!logEntry.container) logEntry.container = CONTAINER_NAME;
+    if (!logEntry.timestamp) logEntry.timestamp = now;
 
-  // Push the new log
-  logQueue.push(logEntry);
+    if (logQueue.length >= MAX_QUEUE_SIZE) {
+      logQueue.shift(); // FIFO: Drop oldest log
+    }
 
-  // ---------- 7. EARLY FLUSH (Reduce memory pressure) ----------
-  // If the queue reaches 50% capacity, flush early.
-  // This prevents the queue from hitting the max limit in normal traffic.
-  if (logQueue.length >= MAX_QUEUE_SIZE / 2) {
-    flushLogs();
+    logQueue.push(logEntry);
+
+    if (logQueue.length >= MAX_QUEUE_SIZE / 2) {
+      flushLogs();
+    }
+  } finally {
+    isLogging = false;
   }
 }
 
-// ---------- 8. OVERRIDE GLOBAL CONSOLE METHODS ----------
+// ---------- 6. CONSOLE OVERRIDES ----------
 const originalLog = console.log;
 const originalWarn = console.warn;
 const originalError = console.error;
@@ -92,7 +96,10 @@ const originalError = console.error;
 function serializeArgs(args) {
   return args
     .map((a) => {
-      if (typeof a === 'object') {
+      if (a instanceof Error) {
+        return `${a.message}\n${a.stack || ''}`;
+      }
+      if (typeof a === 'object' && a !== null) {
         try {
           return JSON.stringify(a);
         } catch {
@@ -107,39 +114,31 @@ function serializeArgs(args) {
 console.log = function (...args) {
   const msg = serializeArgs(args);
   sendLog('INFO', msg);
-  if (!IS_PRODUCTION) originalLog(...args);
+  if (!IS_PRODUCTION) originalLog.apply(console, args);
 };
 
 console.warn = function (...args) {
   const msg = serializeArgs(args);
   sendLog('WARN', msg);
-  if (!IS_PRODUCTION) originalWarn(...args);
+  originalWarn.apply(console, args); // Always emit warnings
 };
 
 console.error = function (...args) {
   const msg = serializeArgs(args);
   sendLog('ERROR', msg);
-  if (!IS_PRODUCTION) originalError(...args);
+  originalError.apply(console, args); // Always emit errors
 };
 
-// ---------- 9. EXPOSE MANUAL FUNCTION ----------
+// ---------- 7. EXPORTS & CLEANUP ----------
 module.exports = { sendLog };
 
-// ---------- 10. CLEANUP ON EXIT ----------
 function cleanupAndFlush() {
   if (flushTimer) clearInterval(flushTimer);
   flushLogs();
 }
 
-
 process.on('beforeExit', cleanupAndFlush);
 process.on('SIGTERM', () => { cleanupAndFlush(); process.exit(0); });
 process.on('SIGINT', () => { cleanupAndFlush(); process.exit(0); });
 
-// ---------- 11. STARTUP MESSAGE ----------
-console.log(`✅ Universal logger loaded.`);
-console.log(`   🔗 Server: ${LOG_SERVER_URL}`);
-console.log(`   🐳 Container: ${CONTAINER_NAME}`);
-console.log(`   📦 Queue size: ${MAX_QUEUE_SIZE} logs`);
-console.log(`   ⏱️  Flush interval: ${BATCH_INTERVAL}ms`);
-console.log(`   💾 Disk-safe: ${IS_PRODUCTION ? 'ON' : 'OFF'}`);
+originalLog(`[Universal-Logger] ✅ Initialized for ${CONTAINER_NAME} -> ${LOG_SERVER_URL}`);

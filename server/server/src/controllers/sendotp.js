@@ -1,79 +1,49 @@
-/*const { redisClient } = require('../config/redis');
-const { emailQueue } = require('../queues/emailQueue');
-
-async function sendotp(username, email, password, name) {
-
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  const key = `${username}_${email}`;
-  const otptime = parseInt(process.env.OTP_VALIDATION_TIME);
-  
-
-  await redisClient.setEx(key, otptime, otp);
-await emailQueue.add('sendOTP', {
-    email: email,
-    otp: otp,
-    username: username
-  }, {
-    attempts: parseInt(process.env.EMAIL_RETRY_ATTEMPTS, 10),
-    backoff: {
-      type: 'exponential',
-      delay: parseInt(process.env.EMAIL_RETRY_BACKOFF_DELAY, 10)
-    }
-  });
-  
-  
-  return { success: true, message: 'OTP generation requested successfully' };
-}
-
-module.exports = { sendotp };*/
-
-
 require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 
-const { redisClient } = require('../config/redis');
+const { connectRedis } = require('../config/redis');
 const { emailQueue } = require('../queues/emailQueue');
 
 async function sendotp(username, email, password, name) {
-  // Validate required inputs
   if (!username || !email) {
     throw new Error('Username and email are required');
   }
 
+  const client = await connectRedis();
   const key = `${username}_${email}`;
 
-  // 🔥 Check if OTP already exists and still valid
-  const existingOtp = await redisClient.get(key);
+  const existingOtp = await client.get(key);
   if (existingOtp) {
-    // OTP already sent recently – skip sending another email
     return { success: true, message: 'OTP already sent, please check your email' };
   }
 
-  // Generate OTP
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  const otpTime = parseInt(process.env.OTP_VALIDATION_TIME, 10) || 120;
+  const otpTime = parseInt(process.env.OTP_VALIDATION_TIME, 10) || 300;
   const retryAttempts = parseInt(process.env.EMAIL_RETRY_ATTEMPTS, 10) || 3;
   const backoffDelay = parseInt(process.env.EMAIL_RETRY_BACKOFF_DELAY, 10) || 5000;
 
   try {
-    // Store OTP in Redis
-    await redisClient.setEx(key, otpTime, otp);
+    await client.setEx(key, otpTime, otp);
 
-    // Queue email
-    await emailQueue.add('sendOTP', {
-      email,
-      otp,
-      username
-    }, {
-      attempts: retryAttempts,
-      backoff: {
-        type: 'exponential',
-        delay: backoffDelay
+    await emailQueue.add(
+      'sendOTP',
+      {
+        email,
+        otp,
+        username,
+        name,
+      },
+      {
+        attempts: retryAttempts,
+        backoff: {
+          type: 'exponential',
+          delay: backoffDelay,
+        },
       }
-    });
+    );
 
     return { success: true, message: 'OTP generation requested successfully' };
   } catch (error) {
-    console.error('[sendotp] Error:', error);
+    console.error('[sendotp] Error:', error.message);
     throw new Error('Failed to generate or send OTP');
   }
 }

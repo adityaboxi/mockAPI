@@ -1,7 +1,9 @@
+// src/components/maincomponentmemo/FinalUrlDisplay.jsx
 import React from "react";
 
-const FinalUrlDisplay = ({ finalUrl, protocol, copied, copyToClipboard, miniBtn, w }) => {
+const FinalUrlDisplay = ({ finalUrl, protocol, copied, copyToClipboard, onOpenCodeExport, miniBtn, w }) => {
   const isWhiteTheme = w;
+  const isPlaceholder = !finalUrl || finalUrl.includes("No endpoint") || finalUrl.includes("No API");
 
   // Theme-aware styles
   const displayBg = isWhiteTheme
@@ -12,34 +14,55 @@ const FinalUrlDisplay = ({ finalUrl, protocol, copied, copyToClipboard, miniBtn,
     : "hover:border-blue-500/30";
 
   const copyBtnBase =
-    "shrink-0 px-2 py-1 rounded text-[11px] font-medium transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1";
+    "shrink-0 px-2 py-1 rounded text-[11px] font-medium transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 disabled:opacity-40 disabled:cursor-not-allowed";
 
   const copyBtnDefault = isWhiteTheme
     ? "bg-blue-600 hover:bg-blue-500 text-white focus:ring-offset-white"
     : "bg-blue-600 hover:bg-blue-500 text-white focus:ring-offset-zinc-900";
 
   const copyBtnSuccess =
-    "bg-green-600 hover:bg-green-500 text-white focus:ring-green-500";
+    "bg-emerald-600 hover:bg-emerald-500 text-white focus:ring-emerald-500";
+
+  const exportBtnClass = isWhiteTheme
+    ? "bg-gray-200 hover:bg-gray-300 text-gray-700 hover:text-gray-900"
+    : "bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white";
 
   return (
     <div
       className={`
-        flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-mono
-        max-w-64 min-w-[120px] transition-all duration-200
+        flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono
+        max-w-xs min-w-[140px] transition-all duration-200
         ${displayBg} ${displayHover}
       `}
     >
-      <span className="truncate flex-1" title={finalUrl}>
+      <span className="truncate flex-1 font-mono text-[11px]" title={finalUrl}>
         {finalUrl}
       </span>
+
+      {onOpenCodeExport && (
+        <button
+          type="button"
+          onClick={onOpenCodeExport}
+          disabled={isPlaceholder}
+          className={`${copyBtnBase} ${exportBtnClass} active:scale-95`}
+          title="Export Code Snippet (cURL, fetch, Python, Go)"
+          aria-label="Export Code Snippet"
+        >
+          <span>&lt;/&gt;</span>
+        </button>
+      )}
+
       <button
+        type="button"
         onClick={copyToClipboard}
+        disabled={isPlaceholder}
         className={`
           ${copyBtnBase}
           ${copied ? copyBtnSuccess : copyBtnDefault}
           active:scale-95
         `}
-        aria-label={copied ? "Copied!" : "Copy to clipboard"}
+        aria-label={copied ? "Copied URL to clipboard" : "Copy URL to clipboard"}
+        title={copied ? "Copied!" : "Copy URL"}
       >
         {copied ? (
           <span className="flex items-center gap-1">
@@ -64,4 +87,4 @@ const FinalUrlDisplay = ({ finalUrl, protocol, copied, copyToClipboard, miniBtn,
   );
 };
 
-export default FinalUrlDisplay;
+export default React.memo(FinalUrlDisplay);

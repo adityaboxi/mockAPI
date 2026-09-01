@@ -1,41 +1,23 @@
 require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 
 async function logout(req, res) {
+  const isHttps = req.secure || req.headers['x-forwarded-proto'] === 'https' || process.env.COOKIE_SECURE === 'true';
+  const sameSite = process.env.COOKIE_SAMESITE || (isHttps ? 'none' : 'lax');
+  const isSecure = isHttps;
+
   res.clearCookie('token', {
     httpOnly: true,
-    sameSite: process.env.COOKIE_SAMESITE,
-    path: '/'
+    secure: isSecure,
+    sameSite,
+    path: '/',
   });
   res.clearCookie('guest_token', {
     httpOnly: true,
-    sameSite: process.env.COOKIE_SAMESITE,
-    path: '/'
+    secure: isSecure,
+    sameSite,
+    path: '/',
   });
-  res.json({ success: true, message: 'Logged out successfully' });
+  return res.json({ success: true, message: 'Logged out successfully' });
 }
 
 module.exports = logout;
-
-/*
-function logout(req, res) {
-  try {
-    res.clearCookie('token', {
-      httpOnly: true,
-      sameSite: process.env.COOKIE_SAMESITE,
-      path: '/'
-    });
-
-    res.clearCookie('guest_token', {
-      httpOnly: true,
-      sameSite: process.env.COOKIE_SAMESITE,
-      path: '/'
-    });
-
-    return res.json({ success: true, message: 'Logged out successfully' });
-  } catch (error) {
-    console.error('[logout] Error:', error);
-    return res.status(500).json({ error: 'Failed to logout' });
-  }
-}
-
-module.exports = logout;*/
