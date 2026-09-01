@@ -2,15 +2,8 @@ require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 
 const User = require('../models/User');
 const Project = require('../models/Project');
+const { connectRedis } = require('../config/redis');
 
-/**
- * POST /api/unsubscribeproject
- * Sets the authenticated user's `subscribe` to false.
- * Optionally sets a specific project's `issubdcribe` to false if `projectId` is provided.
- *
- * Expects: { projectId?: string } in req.body
- * Authentication: JWT (via authenticateToken middleware)
- */
 const unsubscribeProject = async (req, res) => {
   try {
     const username = req.user?.username;
@@ -18,9 +11,8 @@ const unsubscribeProject = async (req, res) => {
       return res.status(401).json({ error: 'User not authenticated' });
     }
 
-    const { projectId } = req.body; // optional
+    const { projectId } = req.body;
 
-    // ─── 1. Update user subscription ──────────────────────
     const updatedUser = await User.findOneAndUpdate(
       { username },
       { $set: { subscribe: false } },
@@ -31,7 +23,6 @@ const unsubscribeProject = async (req, res) => {
       return res.status(404).json({ error: 'User not found' });
     }
 
-    // ─── 2. If projectId provided, update that project ──
     let updatedProject = null;
     if (projectId) {
       updatedProject = await Project.findOneAndUpdate(
@@ -39,10 +30,12 @@ const unsubscribeProject = async (req, res) => {
         { $set: { issubdcribe: false } },
         { new: true, select: 'id projectname issubdcribe' }
       );
-      if (!updatedProject) {
-        console.warn(`[Unsubscribe] Project ${projectId} not found for subscription update.`);
-      }
     }
+
+    try {
+      const client = await connectRedis();
+      await client.del(`user:projects:${username}`);
+    } catch (_) {}
 
     return res.status(200).json({
       success: true,
@@ -50,10 +43,9 @@ const unsubscribeProject = async (req, res) => {
       user: updatedUser,
       project: updatedProject || undefined,
     });
-
   } catch (error) {
-    console.error('[Unsubscribe] Error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+    console.error('[Unsubscribe] Error:', error.message);
+    return res.status(500).json({ error: error.message || 'Internal server error' });
   }
 };
 

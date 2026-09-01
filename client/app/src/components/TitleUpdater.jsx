@@ -1,37 +1,48 @@
-import { useEffect } from 'react';
+// src/components/TitleUpdater.jsx
+import React, { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 
-const matchers = [
-  // Exact path matches
-  { test: (path) => path === '/', title: 'MockAPI' },
-  { test: (path) => path === '/home', title: 'MockAPI - Home' },
-  { test: (path) => path === '/login', title: 'MockAPI - Login' },
-  { test: (path) => path === '/signup', title: 'MockAPI - Sign Up' },
-  { test: (path) => path === '/otp', title: 'MockAPI - Verify OTP' },
-  { test: (path) => path === '/terms', title: 'MockAPI - Terms & Conditions' },
-  { test: (path) => path === '/setting', title: 'MockAPI - Settings' }, // if used
-  { test: (path) => path === '/settings', title: 'MockAPI - Settings' },
-  { test: (path) => path === '/manageaccount', title: 'MockAPI - Manage Account' },
-  { test: (path) => path === '/subscribe', title: 'MockAPI - Subscribe' },
-  { test: (path) => path === '/projects', title: 'MockAPI - Projects' },
+// $O(1)$ Exact path map
+const staticTitles = {
+  '/': 'MockAPI',
+  '/home': 'MockAPI - Studio',
+  '/login': 'MockAPI - Sign In',
+  '/signup': 'MockAPI - Sign Up',
+  '/otp': 'MockAPI - Verify Security Code',
+  '/terms': 'MockAPI - Terms & Conditions',
+  '/setting': 'MockAPI - Settings',
+  '/settings': 'MockAPI - Settings',
+  '/manageaccount': 'MockAPI - Manage Account',
+  '/subscribe': 'MockAPI - Upgrade Plan',
+  '/projects': 'MockAPI - Workspaces',
+  '/forgot-password': 'MockAPI - Account Recovery',
+  '/change-password': 'MockAPI - Security & Password',
+  '/dashboard': 'MockAPI - Telemetry Dashboard',
+  '/tools': 'MockAPI - API Engineering Tools',
+  '/general-question': 'MockAPI - Onboarding',
+};
 
-  // ─── NEW PAGES ──────────────────────────────────────
-  { test: (path) => path === '/forgot-password', title: 'MockAPI - Forgot Password' },
-  { test: (path) => path === '/change-password', title: 'MockAPI - Change Password' },
-  { test: (path) => path === '/dashboard', title: 'MockAPI - Dashboard' },
-  { test: (path) => path === '/tools', title: 'MockAPI - Tools' },
-
-  // Pattern matches (regex)
-  { test: (path) => /^\/project\/[^/]+$/.test(path), title: 'MockAPI - Project Details' },
-  { test: (path) => /^\/api\/[^/]+$/.test(path), title: 'MockAPI - API Details' },
-  { test: (path) => /^\/user\/[^/]+$/.test(path), title: 'MockAPI - User Profile' },
+// Regex pattern matchers for parameterized URLs
+const dynamicMatchers = [
+  { regex: /^\/project\/[^/]+$/, title: 'MockAPI - Workspace Details' },
+  { regex: /^\/api\/[^/]+$/, title: 'MockAPI - API Endpoint Details' },
+  { regex: /^\/user\/[^/]+$/, title: 'MockAPI - User Profile' },
 ];
 
 function getTitleFromPath(pathname) {
-  for (const matcher of matchers) {
-    if (matcher.test(pathname)) return matcher.title;
+  if (!pathname) return 'MockAPI';
+
+  // Normalize path by stripping trailing slash (except root '/')
+  const normalized = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+
+  if (staticTitles[normalized]) {
+    return staticTitles[normalized];
   }
-  // Fallback – return a generic title for unmatched paths
+
+  for (const { regex, title } of dynamicMatchers) {
+    if (regex.test(normalized)) return title;
+  }
+
   return 'MockAPI';
 }
 
@@ -39,7 +50,9 @@ export default function TitleUpdater() {
   const { pathname } = useLocation();
 
   useEffect(() => {
-    document.title = getTitleFromPath(pathname);
+    if (typeof document !== 'undefined') {
+      document.title = getTitleFromPath(pathname);
+    }
   }, [pathname]);
 
   return null;

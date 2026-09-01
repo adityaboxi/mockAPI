@@ -1,4 +1,5 @@
-import React, { useState, useCallback } from "react";
+// src/components/maincomponentmemo/UrlPathInputWithParams.jsx
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import UrlBuilder from "./UrlBuilder";
 import PathParamsSection from "./PathParamsSection";
 
@@ -9,12 +10,19 @@ const UrlPathInputWithParams = React.memo(({ protocol, method, onUrlChange, w, i
   const [newPathKey, setNewPathKey] = useState("");
   const [newPathValue, setNewPathValue] = useState("");
   const [copied, setCopied] = useState(false);
+  const copyTimeoutRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+    };
+  }, []);
 
   const extractPathParams = useCallback((path) => {
     const regex = /:([a-zA-Z_][a-zA-Z0-9_]*)/g;
     const matches = [...path.matchAll(regex)];
-    const keys = matches.map(m => m[1]);
-    const newParams = keys.map(key => ({ key, value: "" }));
+    const keys = matches.map((m) => m[1]);
+    const newParams = keys.map((key) => ({ key, value: "" }));
     setPathParams(newParams);
     return newParams;
   }, []);
@@ -27,43 +35,76 @@ const UrlPathInputWithParams = React.memo(({ protocol, method, onUrlChange, w, i
   }, [extractPathParams, onUrlChange]);
 
   const updatePathParam = useCallback((key, value) => {
-    setPathParams(prev => prev.map(p => p.key === key ? { ...p, value } : p));
+    setPathParams((prev) => prev.map((p) => (p.key === key ? { ...p, value } : p)));
   }, []);
 
+  const removePathParam = useCallback((key) => {
+    const newPath = urlPath.replace(new RegExp(`\/?:${key}(?=\/|$)`), '').replace(/\/+/g, '/');
+    setUrlPath(newPath);
+    extractPathParams(newPath);
+  }, [urlPath, extractPathParams]);
+
   const addPathParam = useCallback(() => {
-    if (newPathKey.trim()) {
+    const trimmedKey = newPathKey.trim();
+    if (trimmedKey) {
       let currentPath = urlPath;
-      if (!currentPath.includes(`:${newPathKey}`)) {
-        currentPath = currentPath + (currentPath.endsWith('/') ? '' : '/') + `:${newPathKey}`;
+      if (!currentPath.includes(`:${trimmedKey}`)) {
+        currentPath = currentPath + (currentPath.endsWith('/') ? '' : '/') + `:${trimmedKey}`;
         setUrlPath(currentPath);
         extractPathParams(currentPath);
       }
-      setPathParams(prev => [...prev, { key: newPathKey, value: newPathValue }]);
+      setPathParams((prev) => [...prev, { key: trimmedKey, value: newPathValue.trim() }]);
       setNewPathKey('');
       setNewPathValue('');
       setShowPathParamInput(false);
+      return true;
     }
+    return false;
   }, [newPathKey, newPathValue, urlPath, extractPathParams]);
 
   const buildFinalUrl = useCallback(() => {
-    let finalUrl = `${protocol}://api.localhost`;
-    let path = urlPath;
-    pathParams.forEach(param => {
+    let finalUrl = `${protocol || 'http'}://api.localhost`;
+    let path = urlPath || '';
+    pathParams.forEach((param) => {
       path = path.replace(`:${param.key}`, param.value || `{${param.key}}`);
     });
+    if (path && !path.startsWith('/')) path = '/' + path;
     finalUrl += path;
     return finalUrl;
   }, [protocol, urlPath, pathParams]);
 
   const copyToClipboard = useCallback(async () => {
-    await navigator.clipboard.writeText(buildFinalUrl());
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const url = buildFinalUrl();
+    const triggerSuccess = () => {
+      setCopied(true);
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
+      copyTimeoutRef.current = setTimeout(() => setCopied(false), 2000);
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      try {
+        await navigator.clipboard.writeText(url);
+        triggerSuccess();
+        return;
+      } catch (_) {}
+    }
+
+    const textarea = document.createElement("textarea");
+    textarea.value = url;
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand("copy");
+      triggerSuccess();
+    } catch (_) {
+    } finally {
+      document.body.removeChild(textarea);
+    }
   }, [buildFinalUrl]);
 
   const finalUrl = buildFinalUrl();
-
-  // Theme-aware border colors
   const borderColor = w ? "border-gray-200" : "border-zinc-800";
 
   return (
@@ -71,7 +112,7 @@ const UrlPathInputWithParams = React.memo(({ protocol, method, onUrlChange, w, i
       {/* UrlBuilder section */}
       <UrlBuilder
         protocol={protocol}
-        setProtocol={() => {}} // not used; protocol/method are from parent
+        setProtocol={() => {}}
         method={method}
         setMethod={() => {}}
         urlPath={urlPath}
@@ -85,7 +126,7 @@ const UrlPathInputWithParams = React.memo(({ protocol, method, onUrlChange, w, i
         w={w}
       />
 
-      {/* Path Parameters section – directly below UrlBuilder */}
+      {/* Path Parameters section */}
       <div className={`border-t ${borderColor} mt-0`}>
         <PathParamsSection
           pathParams={pathParams}
@@ -98,6 +139,7 @@ const UrlPathInputWithParams = React.memo(({ protocol, method, onUrlChange, w, i
           newPathValue={newPathValue}
           setNewPathValue={setNewPathValue}
           addPathParam={addPathParam}
+          removePathParam={removePathParam}
           labelTxt={labelTxt}
           miniBtn={miniBtn}
           inp={inp}
@@ -108,5 +150,7 @@ const UrlPathInputWithParams = React.memo(({ protocol, method, onUrlChange, w, i
     </>
   );
 });
+
+UrlPathInputWithParams.displayName = "UrlPathInputWithParams";
 
 export default UrlPathInputWithParams;

@@ -1,92 +1,49 @@
 require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 const Project = require('../models/Project');
+const { connectRedis } = require('../config/redis');
 
-async function verify_project(req, res) {
-    const { projectId } = req.body;
-
-    if (!projectId) {
-        return res.status(400).json({ error: 'Project ID required' });
-    }
-
-    try {
-      
-        // Query using the custom string 'id' field
-        const project = await Project.findOne({
-            id: projectId,
-            isActive: true,
-        });
-
-        if (!project) {
-            return res.status(403).json({ error: 'Invalid project' });
-        }
-
-        const hasAccess =
-            project.username === req.user.username ||
-            (project.members && project.members.includes(req.user.username)) ||
-            req.user.role === 'admin';
-
-        if (!hasAccess) {
-            return res.status(403).json({ error: 'Access denied – you are not a member of this project' });
-        }
-
-        return res.json({
-            valid: true,
-            project: {
-                id: project.id,
-                name: project.projectname,
-                invitationCode: project.invitationCode,
-            },
-        });
-    } catch (error) {
-        console.error('Project verification error:', error);
-        return res.status(500).json({ error: 'Internal server error' });
-    }
-}
-
-module.exports = verify_project;
-
-
-
-
-/*
-const Project = require('../models/Project');
-const { internalRedis } = require('../config/redis');
-
-const CACHE_TTL = 60; // seconds
+const CACHE_TTL = 60; // 1 minute
 
 async function verify_project(req, res) {
   const { projectId } = req.body;
-  const { username, role } = req.user; // guaranteed by auth middleware
+  const username = req.user?.username;
+  const role = req.user?.role;
 
   if (!projectId) {
     return res.status(400).json({ error: 'Project ID required' });
   }
 
-  const cacheKey = `cache:${username}:verify_project:${projectId}`;
+  if (!username) {
+    return res.status(401).json({ error: 'Authentication required' });
+  }
+
+  const cacheKey = `verify:${username}:${projectId}`;
 
   try {
-    // 1. Try to serve from Redis cache
-    const cached = await internalRedis.get(cacheKey);
+    const client = await connectRedis();
+    const cached = await client.get(cacheKey);
     if (cached) {
-      const data = JSON.parse(cached);
-      return res.json(data);
+      return res.json(JSON.parse(cached));
     }
-  } catch (err) {
-    // Redis error – fall through to database
-  }
+  } catch (_) {}
 
   try {
     const project = await Project.findOne({
       id: projectId,
       isActive: true,
-    });
+    }).lean();
 
     if (!project) {
       return res.status(403).json({ error: 'Invalid project' });
     }
 
-    const isMember = project.username === username || project.members.includes(username) || role === 'admin';
-    if (!isMember) {
+    const hasAccess =
+      project.username === username ||
+      (project.members && project.members.includes(username)) ||
+      role === 'admin';
+
+    if (!hasAccess) {
       return res.status(403).json({ error: 'Access denied – you are not a member of this project' });
     }
 
@@ -99,18 +56,16 @@ async function verify_project(req, res) {
       },
     };
 
-    // 2. Store in Redis cache
     try {
-      await internalRedis.setex(cacheKey, CACHE_TTL, JSON.stringify(responseData));
-    } catch (err) {
-      // Cache set failed – no problem
-    }
+      const client = await connectRedis();
+      await client.setEx(cacheKey, CACHE_TTL, JSON.stringify(responseData));
+    } catch (_) {}
 
     return res.json(responseData);
   } catch (error) {
-    console.error('[verify-project] Error:', error);
+    console.error('Project verification error:', error.message);
     return res.status(500).json({ error: 'Internal server error' });
   }
 }
 
-module.exports = verify_project;*/
+module.exports = verify_project;

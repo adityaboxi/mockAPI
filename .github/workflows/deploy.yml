@@ -9,8 +9,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v5
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.0.0
@@ -39,18 +39,38 @@ jobs:
             git reset --hard FETCH_HEAD
 
             # -----------------------------------------------------------
-            # 2. WRITE .env FILES FROM SECRETS
+            # 2. WRITE .env FILES FROM SECRETS (RAW LITERAL WRITE)
             # -----------------------------------------------------------
-            echo "${{ secrets.SERVER_ENV }}" > server/.env
-            echo "${{ secrets.CLIENT_ENV }}" > client/.env
-            echo "${{ secrets.MOCK_SERVER_ENV }}" > mock-server/.env
+            cat << 'EOF' > server/.env
+            ${{ secrets.SERVER_ENV }}
+            EOF
+
+            cat << 'EOF' > client/.env
+            ${{ secrets.CLIENT_ENV }}
+            EOF
+
+            cat << 'EOF' > mock-server/.env
+            ${{ secrets.MOCK_SERVER_ENV }}
+            EOF
 
             mkdir -p telemetry-server
             if [ -n "${{ secrets.TELEMETRY_ENV }}" ]; then
-              echo "${{ secrets.TELEMETRY_ENV }}" > telemetry-server/.env
+              cat << 'EOF' > telemetry-server/.env
+              ${{ secrets.TELEMETRY_ENV }}
+              EOF
             else
-              # Production defaults – adjust as needed
-              printf "PORT=3003\nSESSION_SECRET=your-strong-secret\nREDIS_URL=redis://redis:6379\nDASHBOARD_USER=admin\nDASHBOARD_PASS=password\nCLIENT_ORIGIN=https://opentelemetry.client.mockapi.info\nNODE_ENV=production\nVITE_API_BASE_URL=/api\nVITE_WS_URL=/api\n" > telemetry-server/.env
+              # Production defaults for Telemetry
+              cat << 'EOF' > telemetry-server/.env
+            PORT=3003
+            SESSION_SECRET=your-strong-secret
+            REDIS_URL=redis://redis:6378
+            DASHBOARD_USER=admin
+            DASHBOARD_PASS=password
+            CLIENT_ORIGIN=https://opentelemetry.client.mockapi.info
+            NODE_ENV=production
+            VITE_API_BASE_URL=/api
+            VITE_WS_URL=/api
+            EOF
             fi
 
             # -----------------------------------------------------------
@@ -79,22 +99,33 @@ jobs:
               else
                 CHANGED_FILES=$(git diff --name-only --diff-filter=A HEAD)
               fi
-              echo "Changed files: $CHANGED_FILES"
+              echo "Changed files:"
+              echo "$CHANGED_FILES"
 
-              if folder_exists "telemetry-server" && echo "$CHANGED_FILES" | grep -q "^telemetry-server/"; then
-                DEPLOY_TELEMETRY=true
-              fi
-              if folder_exists "server" && echo "$CHANGED_FILES" | grep -q "^server/"; then
-                DEPLOY_SERVER=true
-              fi
-              if folder_exists "mock-server" && echo "$CHANGED_FILES" | grep -q "^mock-server/"; then
-                DEPLOY_MOCK=true
-              fi
-              if folder_exists "client" && echo "$CHANGED_FILES" | grep -q "^client/"; then
-                DEPLOY_CLIENT=true
-              fi
-              if folder_exists "domainservice" && echo "$CHANGED_FILES" | grep -q "^domainservice/"; then
-                DEPLOY_DOMAIN=true
+              # If root deployment scripts or workflows change, deploy everything
+              if echo "$CHANGED_FILES" | grep -qE "(^deploy\.sh|^package\.json|^\.github/)"; then
+                echo "🚀 Global configuration modified - deploying full stack"
+                folder_exists "telemetry-server" && DEPLOY_TELEMETRY=true
+                folder_exists "server" && DEPLOY_SERVER=true
+                folder_exists "mock-server" && DEPLOY_MOCK=true
+                folder_exists "client" && DEPLOY_CLIENT=true
+                folder_exists "domainservice" && DEPLOY_DOMAIN=true
+              else
+                if folder_exists "telemetry-server" && echo "$CHANGED_FILES" | grep -q "^telemetry-server/"; then
+                  DEPLOY_TELEMETRY=true
+                fi
+                if folder_exists "server" && echo "$CHANGED_FILES" | grep -q "^server/"; then
+                  DEPLOY_SERVER=true
+                fi
+                if folder_exists "mock-server" && echo "$CHANGED_FILES" | grep -q "^mock-server/"; then
+                  DEPLOY_MOCK=true
+                fi
+                if folder_exists "client" && echo "$CHANGED_FILES" | grep -q "^client/"; then
+                  DEPLOY_CLIENT=true
+                fi
+                if folder_exists "domainservice" && echo "$CHANGED_FILES" | grep -q "^domainservice/"; then
+                  DEPLOY_DOMAIN=true
+                fi
               fi
             fi
 
@@ -107,37 +138,17 @@ jobs:
             export DEPLOY_SERVER DEPLOY_MOCK DEPLOY_CLIENT DEPLOY_DOMAIN DEPLOY_TELEMETRY
 
             # -----------------------------------------------------------
-            # 4. ENSURE NETWORKS EXIST
+            # 4. ENSURE DOCKER NETWORKS EXIST
             # -----------------------------------------------------------
             docker network create orch-net 2>/dev/null || true
             docker network create shared-net 2>/dev/null || true
 
             # -----------------------------------------------------------
-            # 5. 🧹 PRE-DEPLOYMENT CLEANUP (PREVENTS IMAGE TAG CONFLICTS)
-            # -----------------------------------------------------------
-            echo "🧹 Stopping and removing old containers..."
-            # If using docker-compose, use: docker compose down --remove-orphans
-            # Otherwise, stop all containers (adjust if you have multiple)
-            if command -v docker-compose &> /dev/null || command -v compose &> /dev/null; then
-              docker compose down --remove-orphans 2>/dev/null || true
-            else
-              docker stop $(docker ps -aq) 2>/dev/null || true
-              docker rm $(docker ps -aq) 2>/dev/null || true
-            fi
-
-            # Remove old conflicting image (if exists) – only if we are deploying the server
-            if [ "$DEPLOY_SERVER" = true ]; then
-              echo "🗑️ Removing old mockapi-server:latest to avoid tag conflict..."
-              docker rmi -f mockapi-server:latest 2>/dev/null || true
-            fi
-
-            # -----------------------------------------------------------
-            # 6. RUN DEPLOY.SH WITH RETRY
+            # 5. RUN DEPLOY.SH WITH RETRIES & AUTOMATIC RECOVERY
             # -----------------------------------------------------------
             chmod +x deploy.sh
-            echo "🚀 Running deploy.sh – this will build, start, and health-check all services."
+            echo "🚀 Running deploy.sh for active services (SERVER=$DEPLOY_SERVER MOCK=$DEPLOY_MOCK CLIENT=$DEPLOY_CLIENT DOMAIN=$DEPLOY_DOMAIN TELEMETRY=$DEPLOY_TELEMETRY)"
 
-            # Retry up to 3 times
             MAX_RETRIES=3
             ATTEMPT=1
             while [ $ATTEMPT -le $MAX_RETRIES ]; do
@@ -157,11 +168,10 @@ jobs:
               fi
             done
 
-            
-            # ----------------------------------------------------------
-            # 7. POST-DEPLOYMENT CLEANUP (FREE DISK SPACE)
             # -----------------------------------------------------------
-            echo "🧹 Cleaning up unused Docker images..."
-            docker system prune -f --filter "until=24h" 2>/dev/null || true
+            # 6. POST-DEPLOYMENT CLEANUP (FREE AWS DISK SPACE)
+            # -----------------------------------------------------------
+            echo "🧹 Pruning unused dangling Docker layers..."
+            docker image prune -f --filter "dangling=true" 2>/dev/null || true
 
-            echo "✅ Deployment and health checks passed."
+            echo "✅ Deployment and health checks successfully completed."

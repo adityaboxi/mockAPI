@@ -1,25 +1,46 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+// src/components/ProjectList/ProjectDetailsModal.jsx
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useTheme } from "../../context/ThemeContext";
+import { useToast } from "../../context/ToastContext";
+import { apiClient } from "../../services/apiClient";
 
-const API_PROJECTS = import.meta.env.VITE_API_URL_PROJECTS;
-const API_RESET_INVITE = import.meta.env.VITE_API_URL_RESET_INVITE;
-const API_VERIFY_INVITE_OTP = import.meta.env.VITE_API_URL_VERIFY_INVITE_OTP;
-const API_UPDATE_PROJECT_STATUS = import.meta.env.VITE_API_UPDATE_PROJECT_STATUS;
-const API_DELETE_PROJECT = import.meta.env.VITE_API_URL_DELETEPROJECT;
+const API_PROJECTS = import.meta.env.VITE_API_URL_PROJECTS || '/api/projects';
+const API_RESET_INVITE = import.meta.env.VITE_API_URL_RESET_INVITE || '/api/reset-invitation-code';
+const API_VERIFY_INVITE_OTP = import.meta.env.VITE_API_URL_VERIFY_INVITE_OTP || '/api/verify-invitationcode-otp';
+const API_UPDATE_PROJECT_STATUS = import.meta.env.VITE_API_UPDATE_PROJECT_STATUS || '/api/projects';
+const API_DELETE_PROJECT = import.meta.env.VITE_API_URL_DELETEPROJECT || '/api/deleteproject';
 
 function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvitationCodeUpdated }) {
   const { theme } = useTheme();
+  const { showSuccess, showError, showInfo, showWarning } = useToast();
   const isWhiteTheme = theme === "white";
 
   // ---- State ----
+  const [members, setMembers] = useState(() => project?.members || []);
   const [showOtpSection, setShowOtpSection] = useState(false);
   const [timer, setTimer] = useState(0);
   const [otpCode, setOtpCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [otpError, setOtpError] = useState(null);
   const [localInvitationCode, setLocalInvitationCode] = useState(() => project?.invitationCode || "");
-  const [members, setMembers] = useState(project?.members || []);
   const [createdAt, setCreatedAt] = useState(project?.createdAt || "N/A");
+
+  const formattedCreatedAt = useMemo(() => {
+    if (!createdAt || createdAt === "N/A") return "Recently created";
+    try {
+      let num = typeof createdAt === "string" ? Number(createdAt) : createdAt;
+      if (!isNaN(num) && typeof num === "number" && num > 0) {
+        if (num < 1e11) num = num * 1000;
+        const d = new Date(num);
+        if (!isNaN(d.getTime())) return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+      }
+      const d = new Date(createdAt);
+      if (!isNaN(d.getTime())) return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+      return "Recently created";
+    } catch {
+      return "Recently created";
+    }
+  }, [createdAt]);
 
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [statusSuccess, setStatusSuccess] = useState(false);
@@ -42,32 +63,49 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
 
   const intervalRef = useRef(null);
   const successTimeoutRef = useRef(null);
+  const mountedRef = useRef(true);
 
-  // ---- Timer cleanup ----
+  // ---- Cleanup ----
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       if (intervalRef.current) clearInterval(intervalRef.current);
       if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
       if (inviteTimeoutRef.current) clearTimeout(inviteTimeoutRef.current);
     };
   }, []);
 
+  // Escape key handler
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape" && isOpen) {
+        onClose?.();
+      }
+    };
+    if (isOpen) {
+      window.addEventListener("keydown", handleKeyDown);
+    }
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   // ---- Fetch fresh members/createdAt when modal opens ----
   useEffect(() => {
     if (!isOpen || !project?.id) return;
-    setLocalInvitationCode(project.invitationCode);
+    setLocalInvitationCode(project.invitationCode || "");
     setIsSubscribed(project.issubdcribe || false);
-    fetch(API_PROJECTS, { credentials: "include" })
-      .then((r) => r.json())
+    apiClient
+      .get(API_PROJECTS)
       .then((data) => {
+        if (!mountedRef.current) return;
         const projects = Array.isArray(data) ? data : [];
         const fresh = projects.find((p) => p.id === project.id);
         if (fresh?.members) setMembers(fresh.members);
         if (fresh?.createdAt) setCreatedAt(fresh.createdAt);
         if (fresh?.issubdcribe !== undefined) setIsSubscribed(fresh.issubdcribe);
       })
-      .catch(console.error);
-  }, [isOpen, project?.id]);
+      .catch(() => {});
+  }, [isOpen, project?.id, project?.invitationCode, project?.issubdcribe]);
 
   // ---- Timer countdown ----
   useEffect(() => {
@@ -78,61 +116,57 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
     } else if (timer === 0 && intervalRef.current) {
       clearInterval(intervalRef.current);
     }
-    return () => clearInterval(intervalRef.current);
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
   }, [timer]);
 
-  // ---- Handlers (memoized) ----
+  // ---- Handlers ----
   const handleResetCode = useCallback(async () => {
     setIsLoading(true);
     setOtpError(null);
     try {
-      const res = await fetch(API_RESET_INVITE, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ project_id: project.id || project._id, projectName: project.projectname }),
+      await apiClient.post(API_RESET_INVITE, {
+        project_id: project.id || project._id,
+        projectName: project.projectname,
       });
-      if (res.ok) {
+      if (mountedRef.current) {
         setShowOtpSection(true);
         setTimer(120);
-      } else {
-        const err = await res.json();
-        setOtpError(err.error || "Failed to send OTP");
       }
+      showInfo("Reset OTP sent to your registered email.");
     } catch (e) {
-      setOtpError("Network error");
+      if (mountedRef.current) setOtpError(e.message || "Failed to send OTP");
+      showError(e.message || "Failed to send OTP");
     } finally {
-      setIsLoading(false);
+      if (mountedRef.current) setIsLoading(false);
     }
-  }, [project.id, project._id, project.projectname]);
+  }, [project.id, project._id, project.projectname, showInfo, showError]);
 
   const handleVerifyOtp = useCallback(async () => {
-    if (!otpCode) return;
+    if (!otpCode.trim()) return;
     setIsLoading(true);
     setOtpError(null);
     try {
-      const res = await fetch(API_VERIFY_INVITE_OTP, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ project_id: project.id || project._id, otp: otpCode }),
+      const data = await apiClient.post(API_VERIFY_INVITE_OTP, {
+        project_id: project.id || project._id,
+        otp: otpCode.trim(),
       });
-      const data = await res.json();
-      if (res.ok) {
+      if (mountedRef.current) {
         setLocalInvitationCode(data.newInvitationCode);
-        if (onInvitationCodeUpdated) onInvitationCodeUpdated(project.id, data.newInvitationCode);
         setShowOtpSection(false);
         setOtpCode("");
-        onClose();
-      } else {
-        setOtpError(data.error || "Verification failed");
       }
+      if (onInvitationCodeUpdated) onInvitationCodeUpdated(project.id, data.newInvitationCode);
+      showSuccess("Invitation code regenerated successfully!");
+      onClose();
     } catch (err) {
-      setOtpError("Network error");
+      if (mountedRef.current) setOtpError(err.message || "Verification failed");
+      showError(err.message || "Verification failed");
     } finally {
-      setIsLoading(false);
+      if (mountedRef.current) setIsLoading(false);
     }
-  }, [otpCode, project.id, project._id, onInvitationCodeUpdated, onClose]);
+  }, [otpCode, project.id, project._id, onInvitationCodeUpdated, onClose, showSuccess, showError]);
 
   const handleStatusChange = useCallback(async (newStatus, target) => {
     if (statusUpdating) return;
@@ -140,39 +174,40 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
     setStatusError(null);
     const projectId = project.id || project._id;
     try {
-      const res = await fetch(`${API_UPDATE_PROJECT_STATUS}/${projectId}/status`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ isActive: newStatus }),
+      await apiClient.patch(`${API_UPDATE_PROJECT_STATUS}/${projectId}/status`, {
+        isActive: newStatus,
       });
-      if (res.ok) {
-        if (onStatusChange) onStatusChange(newStatus);
+      if (onStatusChange) onStatusChange(newStatus);
+      if (mountedRef.current) {
         setSuccessTarget(target);
         setStatusSuccess(true);
-        if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
-        successTimeoutRef.current = setTimeout(() => {
+      }
+      showSuccess(`Project marked as ${newStatus ? 'Active' : 'Inactive'}`);
+      if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
+      successTimeoutRef.current = setTimeout(() => {
+        if (mountedRef.current) {
           setStatusSuccess(false);
           setSuccessTarget(null);
-        }, 2000);
-      } else {
-        const err = await res.json();
-        setStatusError(err.error || "Failed to update status");
-      }
+        }
+      }, 2000);
     } catch (e) {
-      setStatusError("Network error");
+      if (mountedRef.current) setStatusError(e.message || "Failed to update status");
+      showError(e.message || "Failed to update status");
     } finally {
-      setStatusUpdating(false);
+      if (mountedRef.current) setStatusUpdating(false);
     }
-  }, [project.id, project._id, statusUpdating, onStatusChange]);
+  }, [project.id, project._id, statusUpdating, onStatusChange, showSuccess, showError]);
 
   const copyInvitationCode = useCallback(async () => {
     if (!localInvitationCode) return;
 
     const showCopied = () => {
-      setInviteCopied(true);
+      if (mountedRef.current) setInviteCopied(true);
+      showSuccess("Invitation code copied to clipboard!");
       if (inviteTimeoutRef.current) clearTimeout(inviteTimeoutRef.current);
-      inviteTimeoutRef.current = setTimeout(() => setInviteCopied(false), 2000);
+      inviteTimeoutRef.current = setTimeout(() => {
+        if (mountedRef.current) setInviteCopied(false);
+      }, 2000);
     };
 
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -180,9 +215,7 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
         await navigator.clipboard.writeText(localInvitationCode);
         showCopied();
         return;
-      } catch (err) {
-        console.error("Clipboard write failed, falling back:", err);
-      }
+      } catch (_) {}
     }
 
     const textarea = document.createElement("textarea");
@@ -194,41 +227,42 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
     try {
       document.execCommand("copy");
       showCopied();
-    } catch (err) {
-      console.error("Fallback copy failed:", err);
+    } catch (_) {
     } finally {
       document.body.removeChild(textarea);
     }
-  }, [localInvitationCode]);
+  }, [localInvitationCode, showSuccess]);
 
   const handleDeleteProject = useCallback(async () => {
     if (isDeleting) return;
     const invitationCode = localInvitationCode || project?.invitationCode;
-    if (!invitationCode) {
-      setDeleteError("Missing invitation code - cannot delete project");
+    const projectId = project?.id || project?._id;
+    if (!invitationCode && !projectId) {
+      setDeleteError("Missing project identifier - cannot delete project");
+      showError("Missing project identifier - cannot delete project");
       return;
     }
+
+    if (!window.confirm("Are you sure you want to permanently delete this workspace and all its API endpoints?")) {
+      return;
+    }
+
     setIsDeleting(true);
     setDeleteError(null);
     try {
-      const response = await fetch(API_DELETE_PROJECT, {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ invitationCode }),
+      await apiClient.delete(API_DELETE_PROJECT, {
+        invitationCode,
+        projectId,
       });
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || errorData.message || "Failed to delete project");
-      }
+      showSuccess("Project deleted successfully");
       onClose();
     } catch (err) {
-      setDeleteError(err.message);
-      console.error("Delete error:", err);
+      if (mountedRef.current) setDeleteError(err.message || "Failed to delete project");
+      showError(err.message || "Failed to delete project");
     } finally {
-      setIsDeleting(false);
+      if (mountedRef.current) setIsDeleting(false);
     }
-  }, [isDeleting, localInvitationCode, project?.invitationCode, onClose]);
+  }, [isDeleting, localInvitationCode, project?.invitationCode, project?.id, project?._id, onClose, showSuccess, showError]);
 
   // ---- Subscribe handler ----
   const handleSubscribe = useCallback(async () => {
@@ -236,26 +270,22 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
     setIsSubscribing(true);
     setSubscribeError(null);
     try {
-      const res = await fetch("/api/subscribeproject", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ projectId: project.id }),
-      });
-      const data = await res.json();
-      if (res.ok) {
+      await apiClient.post("/api/subscribeproject", { projectId: project.id });
+      if (mountedRef.current) {
         setIsSubscribed(true);
         setSubscribeSuccess(true);
-        setTimeout(() => setSubscribeSuccess(false), 3000);
-      } else {
-        setSubscribeError(data.error || "Subscription failed");
       }
+      showSuccess("Subscribed to workspace telemetry updates!");
+      setTimeout(() => {
+        if (mountedRef.current) setSubscribeSuccess(false);
+      }, 3000);
     } catch (err) {
-      setSubscribeError("Network error");
+      if (mountedRef.current) setSubscribeError(err.message || "Subscription failed");
+      showError(err.message || "Subscription failed");
     } finally {
-      setIsSubscribing(false);
+      if (mountedRef.current) setIsSubscribing(false);
     }
-  }, [project.id, isSubscribing, isSubscribed]);
+  }, [project.id, isSubscribing, isSubscribed, showSuccess, showError]);
 
   // ---- Unsubscribe handler ----
   const handleUnsubscribe = useCallback(async () => {
@@ -263,32 +293,23 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
     setIsUnsubscribing(true);
     setSubscribeError(null);
     try {
-      const res = await fetch("/api/unsubscribeproject", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ projectId: project.id }),
-      });
-      const data = await res.json();
-      if (res.ok) {
+      await apiClient.post("/api/unsubscribeproject", { projectId: project.id });
+      if (mountedRef.current) {
         setIsSubscribed(false);
         setUnsubscribeSuccess(true);
-        setTimeout(() => setUnsubscribeSuccess(false), 3000);
-      } else {
-        setSubscribeError(data.error || "Unsubscription failed");
       }
+      showInfo("Unsubscribed from workspace telemetry.");
+      setTimeout(() => {
+        if (mountedRef.current) setUnsubscribeSuccess(false);
+      }, 3000);
     } catch (err) {
-      setSubscribeError("Network error");
+      if (mountedRef.current) setSubscribeError(err.message || "Unsubscription failed");
+      showError(err.message || "Unsubscription failed");
     } finally {
-      setIsUnsubscribing(false);
+      if (mountedRef.current) setIsUnsubscribing(false);
     }
-  }, [project.id, isUnsubscribing, isSubscribed]);
+  }, [project.id, isUnsubscribing, isSubscribed, showInfo, showError]);
 
-  const handleClose = useCallback(() => {
-    onClose();
-  }, [onClose]);
-
-  // ---- Render ----
   if (!isOpen) return null;
 
   const displayMembers = members.length > 0 ? members : ["No members yet"];
@@ -303,7 +324,6 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
   const inputBorder = isWhiteTheme ? "border-gray-300" : "border-zinc-700";
   const inputFocus = "focus:border-blue-500 focus:ring-1 focus:ring-blue-500";
 
-  // Determine button state
   const isSubscribingOrUnsubscribing = isSubscribing || isUnsubscribing;
   const buttonDisabled = isSubscribingOrUnsubscribing;
   const buttonText = isSubscribing
@@ -314,26 +334,35 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
     ? "Unsubscribe"
     : "Subscribe";
   const buttonStyle = isSubscribed
-    ? "bg-red-600 hover:bg-red-500 text-white"
+    ? "bg-rose-600 hover:bg-rose-500 text-white"
     : "bg-blue-600 hover:bg-blue-500 text-white";
   const buttonDisabledStyle = isSubscribed
-    ? "bg-red-600/50"
+    ? "bg-rose-600/50"
     : "bg-blue-600/50";
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/50 backdrop-blur-sm" onClick={handleClose}>
+    <div
+      className="fixed inset-0 flex items-center justify-center z-50 bg-black/60 backdrop-blur-sm"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
       <div
-        className={`rounded-2xl border shadow-2xl p-6 space-y-5 w-96 max-w-[95vw] max-h-[90vh] overflow-y-auto ${modalBg} ${borderColor} ${textPrimary}`}
+        className={`rounded-2xl border shadow-2xl p-6 space-y-5 w-96 max-w-[95vw] max-h-[90vh] overflow-y-auto custom-scrollbar ${modalBg} ${borderColor} ${textPrimary}`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex justify-between items-center border-b pb-2.5">
           <h3 className="text-sm font-semibold flex items-center gap-2">
-            <span className="text-blue-500">⚙️</span> Workspace Settings
+            <span className="text-blue-500" aria-hidden="true">⚙️</span> Workspace Settings
           </h3>
           <button
-            onClick={handleClose}
-            className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${isWhiteTheme ? "hover:bg-gray-100 text-gray-500" : "hover:bg-zinc-800 text-zinc-400"} focus:outline-none focus:ring-2 focus:ring-blue-500`}
+            type="button"
+            onClick={onClose}
+            className={`w-7 h-7 rounded-full flex items-center justify-center transition-colors ${
+              isWhiteTheme ? "hover:bg-gray-100 text-gray-500" : "hover:bg-zinc-800 text-zinc-400"
+            } focus:outline-none focus:ring-2 focus:ring-blue-500`}
+            aria-label="Close workspace settings"
           >
             ✕
           </button>
@@ -344,7 +373,7 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
           {/* Invitation code row */}
           <div className="flex items-center justify-between">
             <span className={`text-xs font-medium ${textSecondary}`}>Invite Code</span>
-            <div className="flex items-center gap-2 cursor-pointer" onClick={copyInvitationCode}>
+            <div className="flex items-center gap-2 cursor-pointer select-none" onClick={copyInvitationCode}>
               <code className={`font-mono text-xs font-bold px-2 py-1 rounded ${isWhiteTheme ? "bg-gray-100 text-indigo-600" : "bg-zinc-800 text-indigo-400"}`}>
                 {localInvitationCode}
               </code>
@@ -353,7 +382,7 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
                   key={inviteCopied ? "check" : "copy"}
                   className={`w-4 h-4 absolute inset-0 transition-all duration-200 ease-out ${
                     inviteCopied
-                      ? "text-green-500 scale-110 opacity-100"
+                      ? "text-emerald-500 scale-110 opacity-100"
                       : `${textSecondary} hover:text-blue-400 scale-100 opacity-100`
                   }`}
                   fill="none"
@@ -387,20 +416,21 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
           {/* Created at */}
           <div className="flex items-center justify-between">
             <span className={`text-xs font-medium ${textSecondary}`}>Created</span>
-            <code className={`font-mono text-xs ${textSecondary}`}>{createdAt}</code>
+            <code className={`font-mono text-xs ${textSecondary}`}>{formattedCreatedAt}</code>
           </div>
 
           {/* Delete project */}
           <div className="flex items-center justify-between border-t pt-3 mt-1">
-            <span className={`text-xs font-medium ${textSecondary}`}>Delete project</span>
+            <span className={`text-xs font-medium ${textSecondary}`}>Delete workspace</span>
             <button
+              type="button"
               onClick={handleDeleteProject}
               disabled={isDeleting}
               className={`
                 px-3 py-1 rounded text-xs font-medium transition-all
-                bg-red-600 hover:bg-red-500 text-white
+                bg-rose-600 hover:bg-rose-500 text-white
                 disabled:opacity-50 disabled:cursor-not-allowed
-                focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1
+                focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-1
                 ${isWhiteTheme ? "focus:ring-offset-white" : "focus:ring-offset-zinc-900"}
               `}
             >
@@ -417,12 +447,13 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
               )}
             </button>
           </div>
-          {deleteError && <p className="text-red-400 text-xs text-right -mt-1">{deleteError}</p>}
+          {deleteError && <p className="text-rose-400 text-xs text-right -mt-1">{deleteError}</p>}
 
-          {/* ─── Subscribe / Unsubscribe button ────────────── */}
+          {/* Subscribe / Unsubscribe button */}
           <div className="flex items-center justify-between border-t pt-3 mt-1">
             <span className={`text-xs font-medium ${textSecondary}`}>Subscription</span>
             <button
+              type="button"
               onClick={isSubscribed ? handleUnsubscribe : handleSubscribe}
               disabled={buttonDisabled}
               className={`
@@ -431,7 +462,7 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
                 disabled:opacity-50 disabled:cursor-not-allowed
                 focus:outline-none focus:ring-2 focus:ring-offset-1
                 ${isWhiteTheme ? "focus:ring-offset-white" : "focus:ring-offset-zinc-900"}
-                ${isSubscribed ? "focus:ring-red-500" : "focus:ring-blue-500"}
+                ${isSubscribed ? "focus:ring-rose-500" : "focus:ring-blue-500"}
               `}
             >
               {isSubscribing || isUnsubscribing ? (
@@ -454,7 +485,7 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
             <p className="text-amber-400 text-xs text-right">↩️ Unsubscribed</p>
           )}
           {subscribeError && (
-            <p className="text-red-400 text-xs text-right">{subscribeError}</p>
+            <p className="text-rose-400 text-xs text-right">{subscribeError}</p>
           )}
         </div>
 
@@ -477,6 +508,7 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
         {/* Status toggle buttons */}
         <div className="flex gap-2 pt-2 border-t">
           <button
+            type="button"
             onClick={() => handleStatusChange(true, "active")}
             disabled={isActive || statusUpdating}
             className={`
@@ -502,6 +534,7 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
             )}
           </button>
           <button
+            type="button"
             onClick={() => handleStatusChange(false, "inactive")}
             disabled={!isActive || statusUpdating}
             className={`
@@ -527,11 +560,12 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
             )}
           </button>
         </div>
-        {statusError && <p className="text-red-400 text-xs text-center">{statusError}</p>}
+        {statusError && <p className="text-rose-400 text-xs text-center">{statusError}</p>}
 
         {/* Reset code / OTP section */}
         <div className="border-t pt-3">
           <button
+            type="button"
             onClick={handleResetCode}
             disabled={isLoading}
             className={`
@@ -555,14 +589,15 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
                   onChange={(e) => setOtpCode(e.target.value)}
                   placeholder="6-digit OTP"
                   className={`
-                    flex-1 px-3 py-1.5 text-xs rounded border outline-none transition-all
+                    flex-1 px-3 py-1.5 text-xs rounded border outline-none transition-all font-mono
                     ${inputBg} ${inputBorder} ${inputFocus}
                     ${isWhiteTheme ? "text-gray-800" : "text-zinc-200"}
                   `}
                 />
                 <button
+                  type="button"
                   onClick={handleVerifyOtp}
-                  disabled={isLoading || !otpCode}
+                  disabled={isLoading || !otpCode.trim()}
                   className={`
                     px-4 py-1.5 rounded text-xs font-medium transition-all
                     bg-emerald-600 hover:bg-emerald-500 text-white
@@ -574,10 +609,10 @@ function ProjectDetailsModal({ project, isOpen, onClose, onStatusChange, onInvit
                   Verify
                 </button>
               </div>
-              {otpError && <p className="text-red-400 text-xs text-center">{otpError}</p>}
+              {otpError && <p className="text-rose-400 text-xs text-center">{otpError}</p>}
               {timer > 0 && (
                 <p className="text-xs text-center text-zinc-500">
-                  Resend available in <span className="font-mono">{timer}</span>s
+                  Resend available in <span className="font-mono font-bold text-blue-400">{timer}</span>s
                 </p>
               )}
             </div>

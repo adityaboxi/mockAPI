@@ -1,17 +1,17 @@
-import { useEffect, useState } from 'react';
+// src/components/Footer.jsx
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../context/ThemeContext';
 import { useSocket } from "../context/SocketContext";
 
-const VERSION = "v1.0";
-const TERMS_TEXT = "Terms and conditions";
+const VERSION = "v1.0.0-PROD";
 
 const Footer = () => {
   const { theme } = useTheme();
   const navigate = useNavigate();
   const socket = useSocket();
   const isWhiteTheme = theme === 'white';
-  const [isLive, setIsLive] = useState(false);
+  const [isLive, setIsLive] = useState(() => socket?.connected || false);
 
   useEffect(() => {
     if (!socket) return;
@@ -35,65 +35,80 @@ const Footer = () => {
     };
   }, [socket]);
 
-  const handleTermsClick = () => navigate("/terms");
-  const handleSettingsClick = () => navigate("/setting");
-
   // Theme-aware utility classes
-  const bg = isWhiteTheme ? "bg-white" : "bg-zinc-950";
-  const border = isWhiteTheme ? "border-gray-200" : "border-zinc-800";
-  const textBase = isWhiteTheme ? "text-gray-500" : "text-zinc-400";
-  const textHover = isWhiteTheme ? "hover:text-gray-700" : "hover:text-zinc-200";
-  const divider = isWhiteTheme ? "text-gray-300" : "text-zinc-600";
+  const bg = isWhiteTheme
+    ? "bg-white/80 border-slate-200/80 backdrop-blur-md"
+    : "bg-[#0c0c0e]/80 border-zinc-800/60 backdrop-blur-md";
+  const border = isWhiteTheme ? "border-slate-200/80" : "border-zinc-800/60";
+  const textBase = isWhiteTheme ? "text-slate-500" : "text-zinc-400";
+  const textHover = isWhiteTheme ? "hover:text-slate-900" : "hover:text-white";
+  const divider = isWhiteTheme ? "text-slate-300" : "text-zinc-700";
+  const statusBadgeBg = isWhiteTheme
+    ? "bg-slate-100 border-slate-200 text-slate-700"
+    : "bg-black/20 border-zinc-800/40 text-zinc-300";
 
   return (
     <footer
       className={`
-        h-12 flex flex-wrap justify-between items-center px-6 text-xs shrink-0
-        ${bg} border-t ${border} ${textBase} ${textHover}
-        transition-colors duration-200
+        h-10 flex flex-wrap justify-between items-center px-5 text-xs shrink-0
+        ${bg} border-t ${border} ${textBase}
+        transition-colors duration-200 select-none z-10
       `}
     >
       {/* Left side */}
-      <div className="flex items-center space-x-4">
+      <div className="flex items-center space-x-3 text-[11px]">
         <button
-          onClick={handleTermsClick}
-          className="tracking-wide hover:underline cursor-pointer focus:outline-none transition-colors"
+          type="button"
+          onClick={() => navigate("/terms")}
+          className={`tracking-wide transition-colors ${textHover}`}
         >
-          {TERMS_TEXT}
+          Terms of Service
         </button>
-        <span className={`hidden sm:inline text-[11px] ${divider}`}>•</span>
-        <span className={`hidden sm:inline text-[11px] font-mono opacity-70 ${textBase}`}>
+        <span className={divider}>•</span>
+        <button
+          type="button"
+          onClick={() => navigate("/tools")}
+          className={`tracking-wide transition-colors ${textHover}`}
+        >
+          API Tools
+        </button>
+        <span className={`hidden sm:inline ${divider}`}>•</span>
+        <span className="hidden sm:inline font-mono opacity-60 text-[10px]">
           {VERSION}
         </span>
       </div>
 
       {/* Right side */}
-      <div className="flex items-center space-x-4">
+      <div className="flex items-center space-x-3.5">
         {/* Live indicator */}
-        <div className="hidden md:flex items-center space-x-1.5">
+        <div className={`flex items-center space-x-1.5 px-2 py-0.5 rounded-full border ${statusBadgeBg}`}>
           <div
             className={`w-1.5 h-1.5 rounded-full transition-colors duration-300 ${
-              isLive ? "bg-green-500 animate-pulse" : "bg-red-500"
+              isLive ? "bg-emerald-400 animate-pulse shadow-xs shadow-emerald-400/50" : "bg-rose-500"
             }`}
           />
-          <span className={`text-[10px] uppercase tracking-wider font-medium ${textBase}`}>
-            {isLive ? "Live" : "Offline"}
+          <span className="text-[10px] font-mono font-semibold uppercase tracking-wider">
+            {isLive ? "Socket Live" : "Reconnecting"}
           </span>
         </div>
 
         {/* Settings button */}
         <button
-          onClick={handleSettingsClick}
-          className="group flex items-center justify-center w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-500 text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 hover:scale-105"
-          aria-label="Settings"
+          type="button"
+          onClick={() => navigate("/setting")}
+          className={`p-1 rounded-lg transition-all ${
+            isWhiteTheme ? "hover:bg-slate-200/80 text-slate-600" : "hover:bg-zinc-800 text-zinc-400 hover:text-white"
+          }`}
+          aria-label="Open Settings"
+          title="Open Settings"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"
             fill="none"
             viewBox="0 0 24 24"
-            strokeWidth={1.5}
+            strokeWidth={1.75}
             stroke="currentColor"
-            className="w-4 h-4 transition-transform duration-300 group-hover:rotate-90"
+            className="w-3.5 h-3.5 transition-transform duration-300 hover:rotate-45"
           >
             <path
               strokeLinecap="round"
@@ -112,4 +127,4 @@ const Footer = () => {
   );
 };
 
-export default Footer;
+export default React.memo(Footer);

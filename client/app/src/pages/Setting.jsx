@@ -1,30 +1,55 @@
 // src/pages/Setting.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { useTheme } from "../context/ThemeContext";
 import { useAuth } from "../context/AuthContext";
+import { useToast } from "../context/ToastContext";
 import { useNavigate } from "react-router-dom";
 
 const Setting = () => {
   const { theme, toggleTheme } = useTheme();
-  const { user, logout, refreshUser, subscribeUser, unsubscribeUser } = useAuth();
+  const { user, logout, refreshUser, unsubscribeUser } = useAuth();
+  const { showSuccess, showError } = useToast();
   const navigate = useNavigate();
   const isWhiteTheme = theme === "white";
   const isAuthenticated = user && user.role !== "guest";
   const isSubscribed = user?.subscribe === true;
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   const handleLogin = () => navigate("/login");
   const handleManageAccountClick = () => navigate("/manageaccount");
 
   const handleCancelSubscription = async () => {
+    if (isProcessing) return;
     if (window.confirm("Are you sure you want to cancel your subscription?")) {
       setIsProcessing(true);
       try {
-        await unsubscribeUser();
-      } catch {
-        // silent
+        const res = await unsubscribeUser();
+        if (res.success) {
+          showSuccess("Subscription downgraded to Free Tier.");
+        } else {
+          showError(res.error || "Failed to cancel subscription.");
+        }
+      } catch (err) {
+        showError(err.message || "Failed to cancel subscription.");
       } finally {
         setIsProcessing(false);
+      }
+    }
+  };
+
+  const handleSignOut = async () => {
+    if (isLoggingOut) return;
+    if (window.confirm("Are you sure you want to sign out?")) {
+      setIsLoggingOut(true);
+      try {
+        await logout();
+        showSuccess("Signed out successfully.");
+        navigate("/login");
+      } catch (err) {
+        showError(err.message || "Logout failed");
+      } finally {
+        setIsLoggingOut(false);
       }
     }
   };
@@ -38,13 +63,20 @@ const Setting = () => {
     checkSubscription();
   }, [isAuthenticated, refreshUser]);
 
+  // Keyboard navigation helper
+  const handleCardKeyDown = (e, callback) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      callback();
+    }
+  };
+
   // ─── Theme‑aware styles ──────────────────────────────────────────
   const pageBg = isWhiteTheme ? "bg-gray-50" : "bg-zinc-950";
   const pageText = isWhiteTheme ? "text-gray-800" : "text-zinc-300";
   const headerBg = isWhiteTheme ? "bg-white" : "bg-zinc-900";
   const borderColor = isWhiteTheme ? "border-gray-200" : "border-zinc-800";
   const mutedText = isWhiteTheme ? "text-gray-500" : "text-zinc-400";
-  const hoverText = isWhiteTheme ? "hover:text-gray-900" : "hover:text-white";
   const cardBg = isWhiteTheme ? "bg-white" : "bg-zinc-900";
   const cardHover = isWhiteTheme ? "hover:bg-gray-50" : "hover:bg-zinc-800/80";
   const cardShadow = isWhiteTheme ? "shadow-sm" : "shadow-sm shadow-black/10";
@@ -84,7 +116,7 @@ const Setting = () => {
       </header>
 
       {/* ─── Main content ─── */}
-      <div className="flex-1 p-6 max-w-lg mx-auto w-full space-y-4">
+      <main className="flex-1 p-6 max-w-lg mx-auto w-full space-y-4">
         {/* Theme Toggle */}
         <div
           className={`
@@ -116,11 +148,14 @@ const Setting = () => {
 
         {/* Account Identity */}
         <div
+          role="button"
+          tabIndex={0}
           onClick={handleManageAccountClick}
+          onKeyDown={(e) => handleCardKeyDown(e, handleManageAccountClick)}
           className={`
             p-4 rounded-xl border transition-all duration-200 cursor-pointer group
             ${cardBg} ${borderColor} ${cardShadow} ${cardHover}
-            flex items-center justify-between gap-4
+            flex items-center justify-between gap-4 focus:outline-none focus:ring-2 focus:ring-blue-500
           `}
         >
           <div className="space-y-0.5 select-none min-w-0 flex-1">
@@ -142,11 +177,14 @@ const Setting = () => {
 
         {/* Dashboard */}
         <div
+          role="button"
+          tabIndex={0}
           onClick={() => navigate("/dashboard")}
+          onKeyDown={(e) => handleCardKeyDown(e, () => navigate("/dashboard"))}
           className={`
             p-4 rounded-xl border transition-all duration-200 cursor-pointer group
             ${cardBg} ${borderColor} ${cardShadow} ${cardHover}
-            flex items-center justify-between gap-4
+            flex items-center justify-between gap-4 focus:outline-none focus:ring-2 focus:ring-blue-500
           `}
         >
           <div className="space-y-0.5 select-none min-w-0 flex-1">
@@ -168,11 +206,14 @@ const Setting = () => {
 
         {/* Tools */}
         <div
+          role="button"
+          tabIndex={0}
           onClick={() => navigate("/tools")}
+          onKeyDown={(e) => handleCardKeyDown(e, () => navigate("/tools"))}
           className={`
             p-4 rounded-xl border transition-all duration-200 cursor-pointer group
             ${cardBg} ${borderColor} ${cardShadow} ${cardHover}
-            flex items-center justify-between gap-4
+            flex items-center justify-between gap-4 focus:outline-none focus:ring-2 focus:ring-blue-500
           `}
         >
           <div className="space-y-0.5 select-none min-w-0 flex-1">
@@ -192,19 +233,22 @@ const Setting = () => {
           </div>
         </div>
 
-        {/* ─── 🔑 Change Password (NEW) ─── */}
+        {/* ─── 🔑 Change Password ─── */}
         <div
+          role="button"
+          tabIndex={0}
           onClick={() => navigate("/change-password")}
+          onKeyDown={(e) => handleCardKeyDown(e, () => navigate("/change-password"))}
           className={`
             p-4 rounded-xl border transition-all duration-200 cursor-pointer group
             ${cardBg} ${borderColor} ${cardShadow} ${cardHover}
-            flex items-center justify-between gap-4
+            flex items-center justify-between gap-4 focus:outline-none focus:ring-2 focus:ring-blue-500
           `}
         >
           <div className="space-y-0.5 select-none min-w-0 flex-1">
             <h3 className="text-xs font-semibold tracking-wide">🔑 Change Password</h3>
             <p className={`text-[11px] leading-relaxed ${mutedText}`}>
-              Update your password by verifying your current one.
+              Update your password by verifying your current credentials.
             </p>
           </div>
           <div
@@ -295,9 +339,42 @@ const Setting = () => {
             )}
           </div>
         </div>
-      </div>
+
+        {/* ─── 🚪 Sign Out / Logout ─── */}
+        {isAuthenticated && (
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={handleSignOut}
+            onKeyDown={(e) => handleCardKeyDown(e, handleSignOut)}
+            className={`
+              p-4 rounded-xl border transition-all duration-200 cursor-pointer group
+              ${cardBg} ${borderColor} ${cardShadow} hover:border-rose-500/40 hover:bg-rose-500/5
+              flex items-center justify-between gap-4 focus:outline-none focus:ring-2 focus:ring-rose-500
+            `}
+          >
+            <div className="space-y-0.5 select-none min-w-0 flex-1">
+              <h3 className="text-xs font-semibold tracking-wide text-rose-500">🚪 Sign Out</h3>
+              <p className={`text-[11px] leading-relaxed ${mutedText}`}>
+                Terminate active session and return to authentication portal.
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={isLoggingOut}
+              className={`
+                px-3.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-200
+                bg-rose-600/15 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30
+                whitespace-nowrap shrink-0 disabled:opacity-50 disabled:cursor-not-allowed
+              `}
+            >
+              {isLoggingOut ? "Signing out..." : "Sign Out"}
+            </button>
+          </div>
+        )}
+      </main>
     </div>
   );
 };
 
-export default Setting;
+export default React.memo(Setting);

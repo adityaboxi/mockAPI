@@ -1,8 +1,7 @@
 // src/pages/OpenApi.jsx
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import { useTheme } from '../context/ThemeContext';
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+import { apiClient } from '../services/apiClient';
 
 // ---------- Constants ----------
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
@@ -11,20 +10,36 @@ const ALLOWED_EXTENSIONS = ['.json', '.yaml', '.yml'];
 
 // ---------- Helper: validate OpenAPI spec content ----------
 function validateOpenApiSpec(content, isJson) {
-  let spec;
-  try {
-    spec = isJson ? JSON.parse(content) : require('js-yaml').load(content);
-  } catch (e) {
-    return { valid: false, error: `Invalid ${isJson ? 'JSON' : 'YAML'} format: ${e.message}` };
+  if (isJson) {
+    let spec;
+    try {
+      spec = JSON.parse(content);
+    } catch (e) {
+      return { valid: false, error: `Invalid JSON format: ${e.message}` };
+    }
+    if (!spec || typeof spec !== 'object') {
+      return { valid: false, error: 'Empty or invalid OpenAPI JSON structure.' };
+    }
+    if (!spec.openapi && !spec.swagger) {
+      return { valid: false, error: 'Missing "openapi" or "swagger" field – not a valid OpenAPI spec.' };
+    }
+    if (!spec.paths || typeof spec.paths !== 'object' || Object.keys(spec.paths).length === 0) {
+      return { valid: false, error: 'Missing "paths" field or no endpoints defined.' };
+    }
+    return { valid: true, spec };
+  } else {
+    // Basic structural check for YAML files before uploading
+    if (!content || typeof content !== 'string' || content.trim().length === 0) {
+      return { valid: false, error: 'Empty YAML specification file.' };
+    }
+    if (!content.includes('openapi:') && !content.includes('swagger:')) {
+      return { valid: false, error: 'Missing "openapi:" or "swagger:" field in YAML.' };
+    }
+    if (!content.includes('paths:')) {
+      return { valid: false, error: 'Missing "paths:" field in YAML specification.' };
+    }
+    return { valid: true };
   }
-
-  if (!spec.openapi && !spec.swagger) {
-    return { valid: false, error: 'Missing "openapi" or "swagger" field – not a valid OpenAPI spec.' };
-  }
-  if (!spec.paths || typeof spec.paths !== 'object' || Object.keys(spec.paths).length === 0) {
-    return { valid: false, error: 'Missing "paths" field or no endpoints defined.' };
-  }
-  return { valid: true, spec };
 }
 
 // ---------- Component ----------
@@ -36,7 +51,7 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
   const [projects, setProjects] = useState([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
   const [projectError, setProjectError] = useState(null);
-  const [projectName, setProjectName] = useState(''); // ✅ ADD THIS
+  const [projectName, setProjectName] = useState('');
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -52,6 +67,11 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
   const pollTimeoutRef = useRef(null);
   const mountedRef = useRef(true);
   const lastJobIdRef = useRef(null);
+  const selectedProjectIdRef = useRef(selectedProjectId);
+
+  useEffect(() => {
+    selectedProjectIdRef.current = selectedProjectId;
+  }, [selectedProjectId]);
 
   // ─── Lifecycle ──────────────────────────────────────────────────
   useEffect(() => {
@@ -66,7 +86,7 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
   // ─── When selected project changes, update project name ──────
   useEffect(() => {
     if (selectedProjectId) {
-      const selected = projects.find(p => p.id === selectedProjectId);
+      const selected = projects.find((p) => p.id === selectedProjectId);
       if (selected) {
         setProjectName(selected.projectname || selected.id);
       }
@@ -78,18 +98,13 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
     setLoadingProjects(true);
     setProjectError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/projects`, {
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+      const data = await apiClient.get('/api/projects');
       if (!mountedRef.current) return;
-      
+
       const projs = Array.isArray(data) ? data : [];
       setProjects(projs);
-      
-      // If no project selected and we have projects, select first one
-      if (!selectedProjectId && projs.length > 0) {
+
+      if (!selectedProjectIdRef.current && projs.length > 0) {
         onProjectSelect?.(projs[0].id);
       }
     } catch (err) {
@@ -97,27 +112,27 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
     } finally {
       if (mountedRef.current) setLoadingProjects(false);
     }
-  }, [selectedProjectId, onProjectSelect]);
+  }, [onProjectSelect]);
 
   useEffect(() => {
     fetchProjects();
   }, [fetchProjects]);
 
   // ─── Validate file ──────────────────────────────────────────────
-  const validateFile = useCallback(async (file) => {
-    if (!file) return { valid: false, error: 'No file selected' };
-    if (file.size > MAX_FILE_SIZE) {
+  const validateFile = useCallback(async (selectedFile) => {
+    if (!selectedFile) return { valid: false, error: 'No file selected' };
+    if (selectedFile.size > MAX_FILE_SIZE) {
       return { valid: false, error: `File too large (max ${MAX_FILE_SIZE / 1024 / 1024} MB)` };
     }
-    const ext = '.' + (file.name.split('.').pop() || '').toLowerCase();
+    const ext = '.' + (selectedFile.name.split('.').pop() || '').toLowerCase();
     const isValidExt = ALLOWED_EXTENSIONS.includes(ext);
-    const isValidType = ALLOWED_TYPES.includes(file.type);
+    const isValidType = ALLOWED_TYPES.includes(selectedFile.type);
     if (!isValidType && !isValidExt) {
       return { valid: false, error: 'Invalid file type. Please upload JSON or YAML.' };
     }
     try {
-      const content = await file.text();
-      const isJson = file.name.endsWith('.json') || file.type === 'application/json';
+      const content = await selectedFile.text();
+      const isJson = selectedFile.name.endsWith('.json') || selectedFile.type === 'application/json';
       const result = validateOpenApiSpec(content, isJson);
       if (!result.valid) {
         return { valid: false, error: result.error };
@@ -130,7 +145,7 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
 
   // ─── Handle file selection ──────────────────────────────────────
   const handleFileChange = async (e) => {
-    const f = e.target.files[0];
+    const f = e.target.files?.[0];
     if (!f) return;
     setStatus({ type: '', message: '', detail: '', code: '' });
     const result = await validateFile(f);
@@ -149,7 +164,7 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
   const handleDrop = async (e) => {
     e.preventDefault();
     setDragActive(false);
-    const f = e.dataTransfer.files[0];
+    const f = e.dataTransfer.files?.[0];
     if (!f) return;
     setStatus({ type: '', message: '', detail: '', code: '' });
     const result = await validateFile(f);
@@ -195,7 +210,7 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
   };
 
   // ─── Poll job status ────────────────────────────────────────────
-  const pollJobStatus = useCallback(async (jobId, attempts = 0) => {
+  const pollJobStatus = useCallback(async (activeJobId, attempts = 0) => {
     if (!mountedRef.current) return;
     const MAX_ATTEMPTS = 90;
     if (attempts >= MAX_ATTEMPTS) {
@@ -203,18 +218,14 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
         type: 'error',
         message: '⏰ Import timed out',
         detail: 'The import is taking too long. You can retry or check server logs.',
-        code: 'TIMEOUT'
+        code: 'TIMEOUT',
       });
       setLoading(false);
       setUploadProgress(0);
       return;
     }
     try {
-      const res = await fetch(`${API_BASE}/api/import-status/${jobId}`, {
-        credentials: 'include',
-      });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
+      const data = await apiClient.get(`/api/import-status/${activeJobId}`);
       if (!mountedRef.current) return;
 
       if (data.progress !== undefined) setUploadProgress(data.progress);
@@ -222,16 +233,14 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
         type: data.status === 'completed' ? 'success' : 'loading',
         message: data.message || 'Processing...',
         detail: data.detail || '',
-        code: data.status || 'processing'
+        code: data.status || 'processing',
       });
 
       if (data.status === 'completed') {
         setLoading(false);
         setUploadProgress(100);
-        if (data.result?.endpoints) {
-          setImportedEndpoints(data.result.endpoints);
-        }
-        fetchProjects();
+        setImportedEndpoints(data.result?.endpoints || 0);
+        await fetchProjects();
         onProjectRefresh?.();
         setFile(null);
         if (fileInputRef.current) fileInputRef.current.value = '';
@@ -245,7 +254,7 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
           type: 'error',
           message: '❌ Import failed',
           detail: data.detail || 'The import job failed.',
-          code: 'IMPORT_FAILED'
+          code: 'IMPORT_FAILED',
         });
         setLoading(false);
         setUploadProgress(0);
@@ -254,7 +263,7 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
       }
 
       pollTimeoutRef.current = setTimeout(() => {
-        pollJobStatus(jobId, attempts + 1);
+        pollJobStatus(activeJobId, attempts + 1);
       }, 2000);
     } catch (err) {
       if (!mountedRef.current) return;
@@ -262,7 +271,7 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
         type: 'error',
         message: '❌ Status check failed',
         detail: err.message || 'Unable to retrieve job status',
-        code: 'STATUS_CHECK_FAILED'
+        code: 'STATUS_CHECK_FAILED',
       });
       setLoading(false);
       setJobId(null);
@@ -272,26 +281,24 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
   // ─── Import handler ────────────────────────────────────────────
   const handleImport = useCallback(async () => {
     if (!file || loading) return;
-    
-    // 🚨 CRITICAL: Check if project is selected
+
     if (!selectedProjectId) {
       setStatus({
         type: 'error',
         message: '⚠️ No project selected',
         detail: 'Please select a project from the left sidebar first.',
-        code: 'NO_PROJECT_SELECTED'
+        code: 'NO_PROJECT_SELECTED',
       });
       return;
     }
 
-    // Check if selected project exists in the list
-    const selectedProject = projects.find(p => p.id === selectedProjectId);
+    const selectedProject = projects.find((p) => p.id === selectedProjectId);
     if (!selectedProject) {
       setStatus({
         type: 'error',
         message: '⚠️ Project not found',
         detail: 'The selected project no longer exists. Please refresh and select again.',
-        code: 'PROJECT_NOT_FOUND'
+        code: 'PROJECT_NOT_FOUND',
       });
       return;
     }
@@ -315,43 +322,9 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
     formData.append('projectName', selectedProject.projectname || selectedProject.id);
 
     try {
-      const response = await fetch(`${API_BASE}/api/import-openapi`, {
-        method: 'POST',
-        credentials: 'include',
-        body: formData,
+      const data = await apiClient.post('/api/import-openapi', formData, {
         signal: controller.signal,
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        // Handle specific error codes from backend
-        if (data.code === 'PROJECT_NOT_FOUND') {
-          setStatus({
-            type: 'error',
-            message: '⚠️ Project not found or access denied',
-            detail: data.message || 'You do not have access to this project. Please select another project.',
-            code: 'PROJECT_NOT_FOUND'
-          });
-          // Refresh project list to update state
-          fetchProjects();
-          setLoading(false);
-          setUploadProgress(0);
-          return;
-        }
-
-        let errorMsg = data.error || `Server responded with ${response.status}`;
-        setStatus({
-          type: 'error',
-          message: '❌ Import failed',
-          detail: errorMsg,
-          code: data.code || 'UNKNOWN_ERROR'
-        });
-        setLoading(false);
-        setUploadProgress(0);
-        abortControllerRef.current = null;
-        return;
-      }
 
       if (!mountedRef.current) return;
 
@@ -360,7 +333,7 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
         type: 'loading',
         message: '⏳ Import queued...',
         detail: `Job ${data.jobId} is being processed by BullMQ.`,
-        code: 'QUEUED'
+        code: 'QUEUED',
       });
       setUploadProgress(10);
       lastJobIdRef.current = data.jobId;
@@ -377,19 +350,19 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
           type: 'error',
           message: '❌ Import failed',
           detail: err.message || 'Unknown error occurred',
-          code: 'NETWORK_ERROR'
+          code: 'NETWORK_ERROR',
         });
       }
       setLoading(false);
       setUploadProgress(0);
       abortControllerRef.current = null;
     }
-  }, [file, loading, selectedProjectId, projects, pollJobStatus, fetchProjects]);
+  }, [file, loading, selectedProjectId, projects, pollJobStatus]);
 
   // ─── Retry handler ─────────────────────────────────────────────
   const handleRetry = useCallback(() => {
     if (lastJobIdRef.current) {
-      setRetryCount(prev => prev + 1);
+      setRetryCount((prev) => prev + 1);
       setStatus({ type: 'loading', message: '⏳ Retrying...', detail: `Attempt ${retryCount + 1}` });
       setLoading(true);
       setUploadProgress(0);
@@ -405,9 +378,10 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
   const filteredProjects = useMemo(() => {
     if (!searchTerm.trim()) return projects;
     const term = searchTerm.toLowerCase();
-    return projects.filter(proj =>
-      (proj.projectname || proj.id)?.toLowerCase().includes(term) ||
-      proj.id?.toLowerCase().includes(term)
+    return projects.filter(
+      (proj) =>
+        (proj.projectname || proj.id)?.toLowerCase().includes(term) ||
+        proj.id?.toLowerCase().includes(term)
     );
   }, [projects, searchTerm]);
 
@@ -450,13 +424,12 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
 
   const inputClass = `w-full rounded-lg px-4 py-2.5 text-sm outline-none transition-all duration-200 border ${inputBg} ${inputBorder} ${inputFocus} ${inputText} ${inputPlaceholder}`;
 
-  const selectedProject = projects.find(p => p.id === selectedProjectId);
+  const selectedProject = projects.find((p) => p.id === selectedProjectId);
 
-  // ─── Render ──────────────────────────────────────────────────────
   return (
     <div className={`flex h-full ${pageBg} transition-colors duration-200`}>
       {/* ====== LEFT SIDEBAR: Project List ====== */}
-      <div className={`w-64 shrink-0 border-r flex flex-col ${sidebarBg} ${borderColor}`}>
+      <aside className={`w-64 shrink-0 border-r flex flex-col ${sidebarBg} ${borderColor}`}>
         <div className={`px-4 py-3 border-b ${borderColor} text-xs font-semibold uppercase ${textMuted} flex justify-between items-center`}>
           <span className="flex items-center gap-2">
             <span>📁</span> Projects
@@ -481,13 +454,13 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
           />
         </div>
 
-        <div className="flex-1 overflow-y-auto px-2 py-2">
+        <div className="flex-1 overflow-y-auto px-2 py-2 custom-scrollbar">
           {loadingProjects ? (
             <div className={`text-sm text-center py-4 ${textMuted} animate-pulse`}>
               Loading projects...
             </div>
           ) : projectError ? (
-            <div className={`text-sm text-center py-4 text-red-400`}>
+            <div className="text-sm text-center py-4 text-red-400">
               Error: {projectError}
             </div>
           ) : filteredProjects.length === 0 ? (
@@ -541,10 +514,10 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
             </span>
           )}
         </div>
-      </div>
+      </aside>
 
       {/* ====== MAIN CONTENT: Upload Area ====== */}
-      <div className={`flex-1 overflow-auto p-6 max-w-3xl mx-auto ${pageBg} ${textPrimary}`}>
+      <main className="flex-1 overflow-auto p-6 max-w-3xl mx-auto custom-scrollbar">
         <h1 className="text-2xl font-semibold mb-2">📂 Import OpenAPI</h1>
         <p className={`text-sm ${textMuted} mb-6`}>
           Upload a JSON or YAML file to automatically create all endpoints for the selected project.
@@ -565,7 +538,7 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
           )}
         </div>
 
-        {/* Project Name (auto-filled from selection) */}
+        {/* Project Name */}
         <div className="mb-5">
           <label htmlFor="projectName" className={`block text-sm font-medium ${textMuted} mb-1.5`}>
             Project Name <span className="text-red-400" aria-hidden="true">*</span>
@@ -580,13 +553,13 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
             disabled={loading || !!selectedProjectId}
           />
           <p className={`text-xs ${textMini} mt-1`}>
-            {selectedProjectId 
-              ? 'Project name is auto-filled from the selected project.' 
+            {selectedProjectId
+              ? 'Project name is auto-filled from the selected project.'
               : 'This name will be used to identify your project in the dashboard.'}
           </p>
         </div>
 
-        {/* File Drop Zone - disabled if no project */}
+        {/* File Drop Zone */}
         <div
           onDragOver={selectedProject ? handleDragOver : undefined}
           onDragLeave={selectedProject ? handleDragLeave : undefined}
@@ -612,7 +585,7 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
             }
           }}
         >
-          <div className="text-5xl mb-2">📄</div>
+          <div className="text-5xl mb-2 select-none">📄</div>
           <div className={`${isWhiteTheme ? 'text-gray-700' : 'text-zinc-300'}`}>
             <strong className="text-indigo-400">Click to browse</strong> or drag & drop
           </div>
@@ -639,7 +612,7 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
             <span className={`text-sm ${textMini}`}>{(file.size / 1024).toFixed(1)} KB</span>
             <button
               onClick={handleClear}
-              className={`text-red-400 hover:text-red-300 text-xl leading-none transition-colors`}
+              className="text-red-400 hover:text-red-300 text-xl leading-none transition-colors"
               aria-label="Remove selected file"
             >
               ✕
@@ -710,12 +683,6 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
           </div>
         )}
 
-        {status.type === 'success' && (
-          <div className={`mt-4 text-xs ${textMini} text-center border-t ${borderColor} pt-3`}>
-            💡 The endpoints are now being synced to your project container via BullMQ.
-          </div>
-        )}
-
         {/* BullMQ Info */}
         <div className={`mt-6 text-xs ${textMini} text-center border-t ${borderColor} pt-4`}>
           <span className="flex items-center justify-center gap-2">
@@ -725,9 +692,9 @@ function OpenApi({ selectedProjectId, onProjectSelect, onProjectRefresh }) {
             <span>Project container sync in progress</span>
           </span>
         </div>
-      </div>
+      </main>
     </div>
   );
 }
 
-export default OpenApi;
+export default React.memo(OpenApi);

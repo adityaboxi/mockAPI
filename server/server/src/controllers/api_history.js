@@ -3,6 +3,9 @@ require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 
 const Project = require('../models/Project');
 const ProjectApiHistory = require('../models/ProjectApiHistory');
+const { connectRedis } = require('../config/redis');
+
+const CACHE_TTL = 30; // 30 seconds cache
 
 const api_history = async (req, res) => {
   try {
@@ -12,40 +15,56 @@ const api_history = async (req, res) => {
     if (!projectId) return res.status(400).json({ error: 'projectId required' });
     if (!username) return res.status(401).json({ error: 'Authentication required' });
 
-    const project = await Project.findOne({ id: projectId });
+    const cacheKey = `api_history:${projectId}:${username}`;
+    try {
+      const client = await connectRedis();
+      const cached = await client.get(cacheKey);
+      if (cached) {
+        return res.json(JSON.parse(cached));
+      }
+    } catch (_) {}
+
+    const project = await Project.findOne({ id: projectId }).lean();
     if (!project) return res.status(404).json({ error: 'Project not found' });
 
-    const isMember = project.username === username || (project.members && project.members.includes(username));
+    const isMember =
+      project.username === username || (project.members && project.members.includes(username));
     if (!isMember) return res.status(403).json({ error: 'Access denied – not a member' });
 
-    let projectHistory = await ProjectApiHistory.findOne({ projectCode: project.invitationCode });
+    let projectHistory = await ProjectApiHistory.findOne({
+      $or: [{ projectID: project.id }, { projectCode: project.invitationCode }],
+    });
+
     if (!projectHistory) {
       projectHistory = new ProjectApiHistory({
-        projectID: project._id.toString(),
+        projectID: project.id,
         projectCode: project.invitationCode,
-        accessByUsernames: [],
-        endpoints: []
+        accessByUsernames: [username],
+        endpoints: [],
       });
       await projectHistory.save();
-    }
-
-    if (!projectHistory.accessByUsernames.includes(username)) {
+    } else if (!projectHistory.accessByUsernames.includes(username)) {
       projectHistory.accessByUsernames.push(username);
       await projectHistory.save();
     }
 
-    // ✅ Return versions array with version string and full URL
-    const result = projectHistory.endpoints.map(ep => ({
+    const result = (projectHistory.endpoints || []).map((ep) => ({
       baseUrlPath: ep.baseUrlPath,
-      versions: ep.versions.map(v => ({
+      versions: (ep.versions || []).map((v) => ({
         version: v.version,
-        fullUrl: v.actualFullUrl
-      }))
+        fullUrl: v.actualFullUrl || '',
+      })),
     }));
-    res.json(result);
+
+    try {
+      const client = await connectRedis();
+      await client.setEx(cacheKey, CACHE_TTL, JSON.stringify(result));
+    } catch (_) {}
+
+    return res.json(result);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('api_history error:', error.message);
+    return res.status(500).json({ error: error.message || 'Internal server error' });
   }
 };
 

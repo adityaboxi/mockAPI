@@ -1,28 +1,20 @@
+require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
+
 const yaml = require('js-yaml');
 const multer = require('multer');
-const { Queue } = require('bullmq');
-const IORedis = require('ioredis');
 const Project = require('../models/Project');
 const ProjectApiHistory = require('../models/ProjectApiHistory');
 const SystemEventLog = require('../models/SystemEventLog');
+const { connectRedis } = require('../config/redis');
+const importQueue = require('../queues/importQueue');
+const projectQueue = require('../queues/projectQueue');
+const { mockSyncQueue, addMockSyncJob } = require('../queues/mockSyncQueue');
 
 // ---------- Multer configuration ----------
-const upload = multer({ storage: multer.memoryStorage() });
-
-// ---------- Redis connection ----------
-const REDIS_HOST = process.env.REDIS_HOST || 'redis-external';
-const REDIS_PORT = parseInt(process.env.REDIS_PORT || '6379', 10);
-const connectionOpts = {
-  host: REDIS_HOST,
-  port: REDIS_PORT,
-  maxRetriesPerRequest: null,
-  enableReadyCheck: false,
-};
-
-// ---------- Queue instances ----------
-const importQueue = new Queue('openapi-import', { connection: connectionOpts });
-const projectQueue = new Queue('projectQueue', { connection: connectionOpts });
-const mockSyncQueue = new Queue('mockSyncQueue', { connection: connectionOpts });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+});
 
 // ---------- Helper: Generate Project ID (username_projectName) ----------
 function generateProjectId(username, projectName) {
@@ -32,44 +24,39 @@ function generateProjectId(username, projectName) {
 
 // ---------- Helper: Build actual full URL with project ID ----------
 function buildActualFullUrl(protocol, host, projectId, version, urlPath, pathParams, queryParams) {
-  // Resolve path parameters
   let resolvedPath = urlPath || '';
-  pathParams.forEach(({ key, value }) => {
+  (pathParams || []).forEach(({ key, value }) => {
     resolvedPath = resolvedPath.replace(new RegExp(`:${key}`, 'g'), value || `{${key}}`);
   });
-  
-  // Remove leading slash if present
+
   if (resolvedPath.startsWith('/')) resolvedPath = resolvedPath.slice(1);
-  
-  // Build the full URL: protocol://host/p/projectId/version/path
   let fullUrl = `${protocol}://${host}/p/${projectId}/${resolvedPath}`;
-  
-  // Add query parameters
+
   if (queryParams?.length) {
     const qs = queryParams
-      .filter(q => q.key && q.value)
-      .map(q => `${encodeURIComponent(q.key)}=${encodeURIComponent(q.value)}`)
+      .filter((q) => q.key && q.value)
+      .map((q) => `${encodeURIComponent(q.key)}=${encodeURIComponent(q.value)}`)
       .join('&');
     if (qs) fullUrl += `?${qs}`;
   }
-  
+
   return fullUrl;
 }
 
-// ---------- Helper: Extract endpoints from spec (only paths) ----------
+// ---------- Helper: Extract endpoints from spec ----------
 function extractEndpointsFromSpec(spec) {
   const basePath = spec.basePath || '';
   const endpointsMap = {};
 
-  Object.keys(spec.paths || {}).forEach(rawPath => {
+  Object.keys(spec.paths || {}).forEach((rawPath) => {
     const fullPath = basePath + rawPath;
     const pathObj = spec.paths[rawPath];
 
-    Object.keys(pathObj || {}).forEach(method => {
-      if (!['get', 'post', 'put', 'delete', 'patch', 'options', 'head'].includes(method)) return;
+    Object.keys(pathObj || {}).forEach((method) => {
+      if (!['get', 'post', 'put', 'delete', 'patch', 'options', 'head'].includes(method.toLowerCase())) return;
       const operation = pathObj[method];
       const version = 'v1';
-      const versionedPath = `/${version}${fullPath}`;
+      const versionedPath = `/${version}${fullPath.startsWith('/') ? fullPath : `/${fullPath}`}`;
 
       if (!endpointsMap[fullPath]) {
         endpointsMap[fullPath] = { baseUrlPath: fullPath, versions: [] };
@@ -79,16 +66,15 @@ function extractEndpointsFromSpec(spec) {
         method: method.toUpperCase(),
         urlPath: versionedPath,
         version: version,
-        protocol: 'https', // Will be overridden by worker
+        protocol: 'https',
         statusCode: 200,
         requestBody: operation?.requestBody?.content?.['application/json']?.schema?.example || null,
         responseBody: operation?.responses?.['200']?.content?.['application/json']?.schema?.example || null,
         summary: operation?.summary || '',
         description: operation?.description || '',
         operationId: operation?.operationId || `${method}_${rawPath.replace(/\//g, '_')}`,
-        // Extract path parameters from the path
         pathParams: [],
-        queryParams: operation?.parameters?.filter(p => p.in === 'query').map(p => ({ key: p.name, value: '' })) || [],
+        queryParams: operation?.parameters?.filter((p) => p.in === 'query').map((p) => ({ key: p.name, value: '' })) || [],
       });
     });
   });
@@ -103,127 +89,90 @@ async function importOpenApi(req, res) {
     const file = req.file;
     const username = req.user?.username || req.user?.email || req.user?.id;
 
-    // =============================================================
-    // STEP 1: VALIDATE INPUT
-    // =============================================================
     if (!file) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'File is required',
-        code: 'NO_FILE'
+        code: 'NO_FILE',
       });
     }
 
     if (!username) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         error: 'Authentication required - username not found',
-        code: 'UNAUTHORIZED'
+        code: 'UNAUTHORIZED',
       });
     }
 
-    // =============================================================
-    // STEP 2: DETERMINE PROJECT ID (username_projectName)
-    // =============================================================
     let finalProjectId = projectId;
-
     if (!finalProjectId && projectName) {
       finalProjectId = generateProjectId(username, projectName);
     }
 
     if (!finalProjectId) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Project ID or Project Name is required',
-        code: 'PROJECT_ID_REQUIRED'
+        code: 'PROJECT_ID_REQUIRED',
       });
     }
 
-    console.log(`[import-openapi] Processing import for project: ${finalProjectId} by user: ${username}`);
-
-    // =============================================================
-    // STEP 3: CHECK IF PROJECT EXISTS IN DATABASE
-    // =============================================================
-    const existingProject = await Project.findOne({ 
+    const existingProject = await Project.findOne({
       id: finalProjectId,
-      $or: [
-        { username: username },
-        { members: { $in: [username] } }
-      ]
-    });
+      $or: [{ username: username }, { members: username }],
+    }).lean();
 
-    // 🚨 CRITICAL: If project doesn't exist, FUCK OFF
     if (!existingProject) {
-      console.warn(`[import-openapi] ❌ Project not found or user not authorized: ${finalProjectId}`);
-      
-      const projectExists = await Project.findOne({ id: finalProjectId });
-      
+      const projectExists = await Project.findOne({ id: finalProjectId }).lean();
       if (projectExists) {
         return res.status(403).json({
           error: 'You do not have access to this project',
           code: 'PROJECT_ACCESS_DENIED',
           projectId: finalProjectId,
-          message: 'You are not a member or creator of this project. Please ask the project owner to add you.'
+          message: 'You are not a member or creator of this project.',
         });
       }
-      
+
       return res.status(404).json({
         error: 'Project not found',
         code: 'PROJECT_NOT_FOUND',
         projectId: finalProjectId,
-        message: `Project "${finalProjectId}" does not exist. Please create it first or select an existing project.`
+        message: `Project "${finalProjectId}" does not exist. Please create it first.`,
       });
     }
 
-    console.log(`[import-openapi] ✅ Project exists: ${finalProjectId} (${existingProject.projectname})`);
-
-    // =============================================================
-    // STEP 4: PARSE FILE CONTENT
-    // =============================================================
     const content = file.buffer.toString('utf-8');
-    const isJson = file.originalname.endsWith('.json') || file.mimetype === 'application/json';
+    const isJson = file.originalname?.endsWith('.json') || file.mimetype === 'application/json';
     let spec;
 
     try {
       spec = isJson ? JSON.parse(content) : yaml.load(content);
     } catch (err) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'Invalid file format: ' + err.message,
-        code: 'INVALID_FORMAT'
+        code: 'INVALID_FORMAT',
       });
     }
 
-    // =============================================================
-    // STEP 5: VALIDATE OPENAPI SPEC
-    // =============================================================
     if (!spec || !spec.paths || Object.keys(spec.paths).length === 0) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'No paths found in OpenAPI spec',
-        code: 'NO_PATHS'
+        code: 'NO_PATHS',
       });
     }
 
-    // =============================================================
-    // STEP 6: EXTRACT ENDPOINTS (ONLY PATHS, NO DOMAIN)
-    // =============================================================
     const endpoints = extractEndpointsFromSpec(spec);
-    console.log(`[import-openapi] Extracted ${endpoints.length} endpoints`);
-
     if (endpoints.length === 0) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         error: 'No valid endpoints found in the OpenAPI spec',
-        code: 'NO_ENDPOINTS'
+        code: 'NO_ENDPOINTS',
       });
     }
 
-    // =============================================================
-    // STEP 7: BUILD FULL URLs USING PROJECT ID
-    // =============================================================
     const protocol = process.env.PROTOCOL || 'http';
     const host = process.env.HOST || 'localhost:8080';
-    
-    // Build full URLs for each endpoint using the project ID
+
     for (const endpoint of endpoints) {
       for (const ver of endpoint.versions) {
-        // Build the full URL: protocol://host/p/projectId/version/path
-        const fullUrl = buildActualFullUrl(
+        ver.actualFullUrl = buildActualFullUrl(
           protocol,
           host,
           finalProjectId,
@@ -232,36 +181,28 @@ async function importOpenApi(req, res) {
           ver.pathParams || [],
           ver.queryParams || []
         );
-        ver.actualFullUrl = fullUrl;
         ver.protocol = protocol;
-        console.log(`[import-openapi] 🔗 Built URL: ${fullUrl}`);
       }
     }
 
-    // =============================================================
-    // STEP 8: SAVE TO PROJECT API HISTORY
-    // =============================================================
-    let projectHistory = await ProjectApiHistory.findOne({ projectID: finalProjectId });
+    let projectHistory = await ProjectApiHistory.findOne({
+      $or: [{ projectID: finalProjectId }, { projectCode: existingProject.invitationCode }],
+    });
 
     if (projectHistory) {
       projectHistory.endpoints = endpoints;
       projectHistory.updatedAt = new Date();
       await projectHistory.save();
-      console.log(`[import-openapi] Updated ProjectApiHistory for: ${finalProjectId}`);
     } else {
       projectHistory = new ProjectApiHistory({
         projectID: finalProjectId,
-        projectCode: finalProjectId,
+        projectCode: existingProject.invitationCode || finalProjectId,
         accessByUsernames: [username],
         endpoints: endpoints,
       });
       await projectHistory.save();
-      console.log(`[import-openapi] Created ProjectApiHistory for: ${finalProjectId}`);
     }
 
-    // =============================================================
-    // STEP 9: CREATE SYSTEM EVENT LOGS
-    // =============================================================
     const systemLogs = [];
     for (const endpoint of endpoints) {
       for (const ver of endpoint.versions) {
@@ -275,45 +216,31 @@ async function importOpenApi(req, res) {
           accessByUsername: [username],
           statusCode: 201,
           createdAt: new Date(),
-          updatedAt: new Date()
+          updatedAt: new Date(),
         });
       }
     }
 
     if (systemLogs.length > 0) {
       await SystemEventLog.insertMany(systemLogs);
-      console.log(`[import-openapi] Created ${systemLogs.length} system event logs`);
     }
 
-    // =============================================================
-    // STEP 10: PUBLISH TO REDIS FOR REAL-TIME UPDATES
-    // =============================================================
     try {
-      const redisClient = new IORedis(connectionOpts);
-      await redisClient.publish('api_history_update', JSON.stringify({ projectId: finalProjectId }));
-      await redisClient.quit();
-      console.log(`[import-openapi] Published API history update for: ${finalProjectId}`);
-    } catch (err) {
-      console.error('[import-openapi] Failed to publish history update:', err);
-    }
+      const client = await connectRedis();
+      if (client.isOpen) {
+        await client.publish('api_history_update', JSON.stringify({ projectId: finalProjectId }));
+      }
+    } catch (_) {}
 
-    // =============================================================
-    // STEP 11: ENQUEUE BULLMQ JOBS
-    // =============================================================
-    
-    // 11a. Enqueue project container job (ensure container is running)
     await projectQueue.add('create-or-update-project', {
       action: 'update',
       projectId: finalProjectId,
       isActive: true,
     });
-    console.log(`[import-openapi] Enqueued project container job for: ${finalProjectId}`);
 
-    // 11b. Enqueue mock sync jobs for each API
     let apiCount = 0;
     for (const endpoint of endpoints) {
       for (const ver of endpoint.versions) {
-        // Build the version data for the mock sync
         await mockSyncQueue.add('sync-api', {
           action: 'set',
           projectId: finalProjectId,
@@ -328,14 +255,12 @@ async function importOpenApi(req, res) {
             summary: ver.summary || '',
             description: ver.description || '',
             actualFullUrl: ver.actualFullUrl,
-          }
+          },
         });
         apiCount++;
       }
     }
-    console.log(`[import-openapi] Enqueued ${apiCount} API sync jobs for: ${finalProjectId}`);
 
-    // 11c. Enqueue the main import job for status tracking
     const job = await importQueue.add('import', {
       projectId: finalProjectId,
       projectName: existingProject.projectname,
@@ -345,27 +270,21 @@ async function importOpenApi(req, res) {
       apiCount: apiCount,
     });
 
-    console.log(`[import-openapi] Job enqueued: ${job.id} for user ${username}`);
-
-    // =============================================================
-    // STEP 12: RETURN SUCCESS RESPONSE
-    // =============================================================
-    res.status(202).json({
+    return res.status(202).json({
       success: true,
       jobId: job.id,
       projectId: finalProjectId,
       projectName: existingProject.projectname,
       endpoints: endpoints.length,
       apiCount: apiCount,
-      message: `Import queued successfully. Poll /api/import-status/${job.id} for progress.`
+      message: `Import queued successfully. Poll /api/import-status/${job.id} for progress.`,
     });
-
   } catch (err) {
-    console.error('[import-openapi] Error:', err);
-    res.status(500).json({ 
+    console.error('[import-openapi] Error:', err.message);
+    return res.status(500).json({
       error: 'Failed to import OpenAPI spec',
       code: 'INTERNAL_ERROR',
-      details: err.message 
+      details: err.message,
     });
   }
 }

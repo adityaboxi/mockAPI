@@ -3,116 +3,122 @@ require('../opentelemetry/universal-logger');  // <-- Add this line FIRST
 const Project = require('../models/Project');
 const ProjectApiHistory = require('../models/ProjectApiHistory');
 const SystemEventLog = require('../models/SystemEventLog');
-const User = require('../models/User');                 // <-- added
-const { redisClient } = require('../config/redis');
+const User = require('../models/User');
+const RequestJoinProject = require('../models/RequestJoinProject');
+const TeamLatency = require('../models/TeamLatency');
+const ProjectLatency = require('../models/ProjectLatency');
+const BlockedIP = require('../models/BlockedIP');
+const ApiCallLog = require('../models/ApiCallLog');
+const { connectRedis } = require('../config/redis');
+const { clearProjectMockDefinitions } = require('../utils/redisMock');
 const projectQueue = require('../queues/projectQueue');
-
-// ─── Helper: delete mock definitions from Redis ──────────────
-async function deleteMockDefinitionsForProject(projectId) {
-  if (!redisClient.isOpen) await redisClient.connect();
-  const pattern = `mockapi:def:${projectId}:*`;
-  let deletedCount = 0;
-  for await (const item of redisClient.scanIterator({ MATCH: pattern, COUNT: 100 })) {
-    const batch = Array.isArray(item) ? item : [item];
-    for (const key of batch) {
-      if (typeof key === 'string' && key.trim() !== '') {
-        await redisClient.del(key);
-        deletedCount++;
-      } else {
-        console.warn('⚠️ Skipping invalid key from scan:', key);
-      }
-    }
-  }
-  return deletedCount;
-}
 
 // ─── Main controller ──────────────────────────────────────────
 async function delete_project(req, res) {
-  const { invitationCode } = req.body;
+  const { invitationCode, projectId: inputProjectId } = req.body;
   const username = req.user?.username;
   const role = req.user?.role;
 
-  // ─── 1. Authentication ────────────────────────────────────
   if (!username) {
     return res.status(401).json({ error: 'Authentication required' });
   }
-  if (!invitationCode) {
-    return res.status(400).json({ error: 'invitationCode is required' });
+  if (!invitationCode && !inputProjectId) {
+    return res.status(400).json({ error: 'invitationCode or projectId is required' });
   }
 
   try {
-    // ─── 2. Find project ────────────────────────────────────
-    const project = await Project.findOne({ invitationCode });
+    const query = invitationCode ? { invitationCode } : { id: inputProjectId };
+    const project = await Project.findOne(query);
     if (!project) {
       return res.status(404).json({ error: 'Project not found' });
     }
 
-    // ─── 3. Authorization ───────────────────────────────────
     const isCreator = project.username === username;
     const isAdmin = role === 'admin';
     if (!isCreator && !isAdmin) {
       return res.status(403).json({ error: 'Only project creators or admins can delete this project' });
     }
 
-    // Store owner username for later use
     const ownerUsername = project.username;
+    const projectId = project.id;
+    const invCode = project.invitationCode;
 
-    // ─── 4. Delete associated history & logs ────────────────
-    await ProjectApiHistory.deleteOne({ projectCode: invitationCode });
-    await SystemEventLog.deleteMany({ projectId: project.id });
+    // Cascade deletion in MongoDB collections
+    await Promise.all([
+      ProjectApiHistory.deleteMany({ $or: [{ projectID: projectId }, { projectCode: invCode }] }),
+      SystemEventLog.deleteMany({ projectId }),
+      RequestJoinProject.deleteMany({ invitationCode: invCode }),
+      TeamLatency.deleteMany({ project_id: projectId }),
+      ProjectLatency.deleteMany({ project_id: projectId }),
+      BlockedIP.deleteMany({ project_id: projectId }),
+      ApiCallLog.deleteMany({ project_id: projectId }),
+      Project.deleteOne({ id: projectId }),
+    ]);
 
-    // ─── 5. Delete Redis mock definitions ──────────────────
-    await deleteMockDefinitionsForProject(project.id);
-
-    // ─── 6. Delete invitation key ──────────────────────────
-    if (!redisClient.isOpen) await redisClient.connect();
-    await redisClient.del(`invitation:${invitationCode}`);
-
-    // ─── 7. Invalidate user caches ──────────────────────────
-    const membersToInvalidate = new Set([project.username, ...project.members]);
-    for (const member of membersToInvalidate) {
-      await redisClient.del(`user:projects:${member}`);
+    // Clean up Redis Mock Definitions safely
+    try {
+      await clearProjectMockDefinitions(projectId);
+    } catch (e) {
+      console.warn('[delete-project] Redis mock cleanup warning:', e.message);
     }
 
-    // ─── 8. Delete project document ──────────────────────────
-    await Project.deleteOne({ id: project.id });
-
-    // ─── 9. Decrement project count for the owner ──────────
-    //    We do this AFTER successful deletion to avoid count inconsistency.
-    if (ownerUsername) {
-      const updatedUser = await User.findOneAndUpdate(
-        { username: ownerUsername, noofProjects: { $gt: 0 } },   // only decrement if >0
-        { $inc: { noofProjects: -1 } },
-        { new: true }
-      );
-      if (updatedUser) {
-        console.log(`[delete-project] Decremented project count for ${ownerUsername} – new count: ${updatedUser.noofProjects}`);
-      } else {
-        console.warn(`[delete-project] Could not decrement count for ${ownerUsername} – user not found or count already 0.`);
+    // Clean up Invitation & Member Caches
+    try {
+      const client = await connectRedis();
+      if (client && client.isOpen) {
+        await client.del(`invitation:${invCode}`);
+        const membersToInvalidate = new Set([project.username, ...(project.members || [])]);
+        for (const member of membersToInvalidate) {
+          await client.del(`user:projects:${member}`);
+        }
       }
+    } catch (e) {
+      console.warn('[delete-project] Redis cache invalidation warning:', e.message);
     }
 
-    // ─── 10. Queue delete job for worker ────────────────────
-    await projectQueue.add('delete', {
-      action: 'delete',
-      projectId: project.id,
-    }, {
-      jobId: `delete_${project.id}_${Date.now()}`,
-    });
+    // Decrement project count for the owner
+    if (ownerUsername) {
+      await User.updateOne({ username: ownerUsername, noofProjects: { $gt: 0 } }, { $inc: { noofProjects: -1 } });
+    }
 
-    // ─── 11. Emit socket event ─────────────────────────────
+    // Queue delete job for worker container teardown
+    try {
+      await projectQueue.add(
+        'delete',
+        {
+          action: 'delete',
+          projectId,
+        },
+        {
+          jobId: `delete_${projectId}_${Date.now()}`,
+        }
+      );
+    } catch (e) {
+      console.warn('[delete-project] BullMQ delete queue warning:', e.message);
+    }
+
     if (req.io) {
-      req.io.to(project.id).emit('project_deleted', { projectId: project.id });
+      req.io.to(projectId).emit('project_deleted', { projectId });
+      const allMembers = new Set([ownerUsername, ...(project.members || [])]);
+      allMembers.forEach((member) => {
+        req.io.to(`user_${member}`).emit('project_deleted', { projectId });
+      });
     }
+
+    try {
+      const client = await connectRedis();
+      if (client && client.isOpen) {
+        await client.publish('api_history_update', JSON.stringify({ projectId, deleted: true }));
+      }
+    } catch (_) {}
 
     return res.status(200).json({
       success: true,
-      message: `Project '${project.id}' deleted successfully`,
+      message: `Project '${projectId}' deleted successfully`,
     });
-
   } catch (error) {
-    console.error('[delete-project] Error:', error);
-    return res.status(500).json({ error: 'Internal server error' });
+    console.error('[delete-project] Error:', error.message);
+    return res.status(500).json({ error: error.message || 'Internal server error' });
   }
 }
 
