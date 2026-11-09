@@ -46,10 +46,12 @@ console.log(`[worker-server] 📌 Internal Redis: ${INTERNAL_REDIS_HOST}:${INTER
 const mockSyncQueue = new Queue('mockSyncQueue', { connection: connectionOpts });
 const projectQueueProducer = new Queue('projectQueue', { connection: connectionOpts });
 
-// ---------- Pool & Concurrency ----------
+// ---------- Pool, Limits & Concurrency ----------
 const POOL_SIZE = parseInt(process.env.POOL_SIZE, 10) || 10;
 const WORKER_CONCURRENCY = parseInt(process.env.WORKER_CONCURRENCY, 10) || 10;
-console.log(`[worker-server] 📌 Pool size: ${POOL_SIZE}, Worker concurrency: ${WORKER_CONCURRENCY}`);
+const CONTAINER_MEMORY_LIMIT = parseInt(process.env.CONTAINER_MEMORY_LIMIT, 10) || 128 * 1024 * 1024; // 128 MB max per project container
+const CONTAINER_NANO_CPUS = parseInt(process.env.CONTAINER_NANO_CPUS, 10) || 500000000; // 0.5 vCPU max per project container
+console.log(`[worker-server] 📌 Pool size: ${POOL_SIZE}, Concurrency: ${WORKER_CONCURRENCY}, MemLimit: ${CONTAINER_MEMORY_LIMIT / 1024 / 1024}MB, NanoCPUs: ${CONTAINER_NANO_CPUS}`);
 
 const containerNameFor = (projectId) => `proj-${projectId}`;
 
@@ -267,6 +269,9 @@ async function ensureProjectContainer(projectId, isActive) {
           HostConfig: {
             NetworkMode: NETWORK,
             RestartPolicy: { Name: 'no' },
+            Memory: CONTAINER_MEMORY_LIMIT,
+            MemorySwap: CONTAINER_MEMORY_LIMIT,
+            NanoCpus: CONTAINER_NANO_CPUS,
             LogConfig: { Type: 'json-file', Config: { 'max-size': '5m', 'max-file': '2' } },
           },
           Labels: { 'managed-by': 'right-system' },
@@ -368,6 +373,9 @@ async function acquirePoolContainer(targetName, projectId) {
       HostConfig: {
         NetworkMode: NETWORK,
         RestartPolicy: { Name: 'no' },
+        Memory: CONTAINER_MEMORY_LIMIT,
+        MemorySwap: CONTAINER_MEMORY_LIMIT,
+        NanoCpus: CONTAINER_NANO_CPUS,
         LogConfig: { Type: 'json-file', Config: { 'max-size': '5m', 'max-file': '2' } },
       },
       Labels: { 'managed-by': 'right-system' },
@@ -409,6 +417,9 @@ async function replenishPool() {
         HostConfig: {
           NetworkMode: NETWORK,
           RestartPolicy: { Name: 'no' },
+          Memory: CONTAINER_MEMORY_LIMIT,
+          MemorySwap: CONTAINER_MEMORY_LIMIT,
+          NanoCpus: CONTAINER_NANO_CPUS,
           LogConfig: { Type: 'json-file', Config: { 'max-size': '5m', 'max-file': '2' } },
         },
         Labels: { 'managed-by': 'pool' },

@@ -185,9 +185,7 @@ function normalizeNodeId(rawId) {
   if (clean === 'telemetry-client') return 'client';
   if (clean === 'telemetry-redis') return 'redis';
   if (clean.startsWith('proj-pool')) return 'new project';
-  if (clean === 'proj-adiisme_xnidif') return 'project1';
-  if (clean === 'proj-adiisme_shih') return 'project2';
-  if (clean.startsWith('proj-') || clean.includes('project')) return clean.replace('proj-', 'project');
+  if (clean.startsWith('proj-') || clean.includes('project')) return clean.replace('proj-', 'project-');
   return rawId;
 }
 

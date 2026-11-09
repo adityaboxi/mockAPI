@@ -57,8 +57,15 @@ const projectSchema = new mongoose.Schema(
   {
     timestamps: true,
     versionKey: false,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
 );
+
+// Backward & Forward compatibility aliases for schema field typos
+projectSchema.alias('isSubscribed', 'issubdcribe');
+projectSchema.alias('numApis', 'noofApis');
+projectSchema.alias('numMembers', 'noofmemebers');
 
 // High-Speed Multikey Compound Indexes
 projectSchema.index({ username: 1, isActive: 1 });

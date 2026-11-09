@@ -214,6 +214,35 @@ const fakerAliasMap = {
   'phone.phoneNumber': 'phone.number',
 };
 
+function parseSafeFakerArgs(argStr) {
+  if (!argStr || !argStr.trim()) return [];
+  const raw = argStr.trim();
+
+  // 1. Direct JSON array attempt: [arg1, arg2]
+  try {
+    return JSON.parse(`[${raw.replace(/'/g, '"')}]`);
+  } catch (_) {}
+
+  // 2. Safe parse unquoted JS object keys e.g. { min: 10, max: 20 }
+  try {
+    const jsonCompat = raw
+      .replace(/'/g, '"')
+      .replace(/([{,]\s*)([a-zA-Z0-9_$]+)\s*:/g, '$1"$2":');
+    return JSON.parse(`[${jsonCompat}]`);
+  } catch (_) {}
+
+  // 3. Safe fallback: comma-delimited scalar values (never uses eval or new Function)
+  return raw.split(',').map((item) => {
+    const trimmed = item.trim().replace(/^["']|["']$/g, '');
+    const num = Number(trimmed);
+    if (!isNaN(num) && trimmed !== '') return num;
+    if (trimmed === 'true') return true;
+    if (trimmed === 'false') return false;
+    if (trimmed === 'null') return null;
+    return trimmed;
+  });
+}
+
 function resolveFakerFunction(expr) {
   let cleanExpr = expr.trim();
   if (cleanExpr.startsWith('faker.')) {
@@ -225,19 +254,9 @@ function resolveFakerFunction(expr) {
   const match = cleanExpr.match(/^([a-zA-Z0-9_.]+)\s*\((.*)\)\s*$/s);
   if (match) {
     funcPath = match[1].trim();
-    let argStr = match[2].trim();
+    const argStr = match[2].trim();
     if (argStr) {
-      argStr = argStr.replace(/\\"/g, '"');
-      try {
-        const evalArg = new Function(`return [${argStr}];`);
-        args = evalArg();
-      } catch (_) {
-        try {
-          args = JSON.parse(`[${argStr}]`);
-        } catch (_) {
-          args = [argStr];
-        }
-      }
+      args = parseSafeFakerArgs(argStr);
     }
   }
 
