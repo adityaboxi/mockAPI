@@ -17,7 +17,7 @@ const yaml = require('js-yaml');
 
 const connectDB = require('./config/db');
 const { connectRedis } = require('./config/redis');
-const { authenticateToken } = require('./middleware/auth');
+const { authenticateToken, requireAuth } = require('./middleware/auth');
 const SystemEventLog = require('./models/SystemEventLog');
 
 // ---------- MODELS ----------
@@ -383,33 +383,33 @@ const startServer = async () => {
   app.get('/api/sync-auth', sync_auth);
   app.post('/api/guest-session', guest_session);
 
-  app.post('/api/subscribe', authenticateToken, subscribe);
-  app.post('/api/unsubscribe', authenticateToken, unsubscribe);
+  app.post('/api/subscribe', authenticateToken, requireAuth, subscribe);
+  app.post('/api/unsubscribe', authenticateToken, requireAuth, unsubscribe);
 
-  app.post('/api/create-project', authenticateToken, create_project);
-  app.post('/api/join-project', authenticateToken, join_project);
+  app.post('/api/create-project', authenticateToken, requireAuth, create_project);
+  app.post('/api/join-project', authenticateToken, requireAuth, join_project);
   app.get('/api/projects', authenticateToken, projects);
-  app.patch('/api/projects/:projectId/status', authenticateToken, updateProjectStatus);
+  app.patch('/api/projects/:projectId/status', authenticateToken, requireAuth, updateProjectStatus);
   app.post('/api/verify-project', authenticateToken, verify_project);
-  app.post('/api/reset-invitation-code', authenticateToken, reset_invitation_code);
-  app.post('/api/verify-invitationcode-otp', authenticateToken, verify_invitationcode_otp);
-  app.delete('/api/deleteproject', authenticateToken, delete_project);
+  app.post('/api/reset-invitation-code', authenticateToken, requireAuth, reset_invitation_code);
+  app.post('/api/verify-invitationcode-otp', authenticateToken, requireAuth, verify_invitationcode_otp);
+  app.delete('/api/deleteproject', authenticateToken, requireAuth, delete_project);
 
   app.get('/api/requests/received', authenticateToken, get_received_requests);
   app.get('/api/requests/sent', authenticateToken, get_sent_requests);
-  app.post('/api/requests/accept/:requestId', authenticateToken, approve_project_request);
-  app.delete('/api/requests/revoke/:requestId', authenticateToken, revoke_request);
+  app.post('/api/requests/accept/:requestId', authenticateToken, requireAuth, approve_project_request);
+  app.delete('/api/requests/revoke/:requestId', authenticateToken, requireAuth, revoke_request);
 
   app.get('/api/user-apis', authenticateToken, get_user_apis);
-  app.post('/api/update-api', authenticateToken, update_api);
-  app.post('/api/add-api', authenticateToken, add_api);
+  app.post('/api/update-api', authenticateToken, requireAuth, update_api);
+  app.post('/api/add-api', authenticateToken, requireAuth, add_api);
   app.post('/api/api-version-data', authenticateToken, api_version_data);
   app.get('/api/api-history', authenticateToken, api_history);
-  app.delete('/api/versions/delete/:versionId', authenticateToken, delete_api_version);
+  app.delete('/api/versions/delete/:versionId', authenticateToken, requireAuth, delete_api_version);
 
-  app.post('/api/ask-ai', authenticateToken, ask_ai);
+  app.post('/api/ask-ai', authenticateToken, requireAuth, ask_ai);
   app.get('/api/ai-result/:jobId', authenticateToken, getAiResult);
-  app.post('/api/reverse-ai', authenticateToken, reverse_ai);
+  app.post('/api/reverse-ai', authenticateToken, requireAuth, reverse_ai);
 
   app.post('/api/logs', authenticateToken, logs);
 

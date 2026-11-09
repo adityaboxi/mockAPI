@@ -4,6 +4,9 @@ const jwt = require('jsonwebtoken');
 
 const authenticateToken = (req, res, next) => {
   const secret = process.env.JWT_SECRET || 'jwt_default_secret_key';
+  if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production') {
+    console.error('[CRITICAL SECURITY WARNING] JWT_SECRET is not set in environment variables!');
+  }
 
   // 1. Check Cookies, Authorization Header, or x-auth-token Header
   let token = req.cookies?.token;

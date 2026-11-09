@@ -67,8 +67,15 @@ async function create_project(req, res) {
       return res.status(403).json({ error: 'Guest users cannot create projects' });
     }
 
-    // ─── 3. Determine project limit ─────────────────────────
+    // ─── 3. Determine project limit & duplicate check ─────────
     const maxProjects = user.subscribe ? 5 : 2;
+
+    const trimmedProjectName = projectname.trim();
+    const generatedCustomId = `${username}_${trimmedProjectName.replace(/\s+/g, '_')}`;
+    const duplicateCheck = await Project.findOne({ id: generatedCustomId }).lean();
+    if (duplicateCheck) {
+      return res.status(400).json({ error: 'You already have a workspace with this name' });
+    }
 
     // ─── 4. Atomic check + increment ────────────────────────
     const updatedUser = await User.findOneAndUpdate(
@@ -94,15 +101,6 @@ async function create_project(req, res) {
           user.subscribe ? 'Please upgrade your plan.' : 'Upgrade to create more.'
         }`,
       });
-    }
-
-    // ─── 5. Duplicate check ─────────────────────────────────
-    const trimmedProjectName = projectname.trim();
-    const generatedCustomId = `${username}_${trimmedProjectName.replace(/\s+/g, '_')}`;
-    const duplicateCheck = await Project.findOne({ id: generatedCustomId }).lean();
-    if (duplicateCheck) {
-      await User.updateOne({ username }, { $inc: { noofProjects: -1 } });
-      return res.status(400).json({ error: 'You already have a workspace with this name' });
     }
 
     // ─── 6. Generate invitation code ──────────────────────

@@ -92,10 +92,24 @@ function formatUserFriendlyError(err, status, data) {
   return userError;
 }
 
-// In-Memory Request Deduplication and SWR/TTL Cache
+// In-Memory Request Deduplication and SWR/TTL Cache with LRU Eviction
 const inFlightRequests = new Map();
 const responseCache = new Map();
+const MAX_CACHE_SIZE = 100; // Hard limit to prevent long-running session memory bloat
 const DEFAULT_TTL_MS = 10000; // 10s default TTL for GET requests
+
+/**
+ * Safely adds an entry to responseCache enforcing MAX_CACHE_SIZE LRU eviction.
+ */
+function setCacheEntry(key, value) {
+  if (responseCache.size >= MAX_CACHE_SIZE) {
+    const oldestKey = responseCache.keys().next().value;
+    if (oldestKey) {
+      responseCache.delete(oldestKey);
+    }
+  }
+  responseCache.set(key, value);
+}
 
 /**
  * Invalidates cached GET requests matching a pattern, or clears all if omitted.
@@ -176,10 +190,10 @@ async function request(endpoint, options = {}) {
         throw formatUserFriendlyError(null, response.status, data);
       }
 
-      // Store in memory cache if cacheable
+      // Store in memory cache if cacheable using LRU setCacheEntry
       if (isCacheable && response.ok) {
         const etag = response.headers.get('etag');
-        responseCache.set(cacheKey, {
+        setCacheEntry(cacheKey, {
           data,
           etag,
           timestamp: Date.now(),
